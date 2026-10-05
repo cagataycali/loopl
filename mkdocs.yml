@@ -55,7 +55,8 @@ theme:
         name: Switch to dark mode
 
 extra_css:
-  - stylesheets/loopl.css
+  # bump the suffix on every CSS change: Cloudflare caches assets for 4 h (HTML is DYNAMIC)
+  - stylesheets/loopl.v2.css
 
 plugins:
   - search:
