@@ -191,33 +191,24 @@ public final class Engine {
         if let saved = SavedConversation.from(transcript, id: currentId, modelName: loadedModel?.name) { archive.upsert(saved) }
     }
 
-    /// Maxed-out defaults per model: the recommended context for this phone's RAM,
-    /// new tokens bounded only by that context, the model card's temperature.
-    private func config(for spec: ModelSpec) -> AgentConfig {
-        var c = AgentConfig()
-        c.family = spec.family
-        c.params.contextLength = min(spec.ctxUsable8GB, spec.ctxNominal)
-        c.params.maxTokens = c.params.contextLength
-        return c
-    }
-
     public func send(_ text: String) {
         guard !isGenerating else { return }
-        guard let model, let spec = loadedModel else { lastError = "the model is still loading"; return }
+        guard let model, loadedModel != nil else { lastError = "the model is still loading"; return }
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         lastError = nil
-        let agent = self.agent ?? Agent(model: model, tools: activeTools, systemPrompt: settings.systemPrompt, config: config(for: spec))
+        // Generation params are the model's own maxed defaults (spec.defaultParams, set at load): no caps here.
+        let agent = self.agent ?? Agent(model: model, tools: activeTools, systemPrompt: settings.systemPrompt)
         self.agent = agent
         transcript.user(text)
-        let tools = activeTools, cfg = config(for: spec)
+        let tools = activeTools, prompt = settings.systemPrompt
         runTask = Task { [weak self] in
-            await agent.update(tools: tools, config: cfg)
+            await agent.setTools(tools); await agent.setSystemPrompt(prompt)
             do {
                 for try await event in agent.stream(text) {
                     guard let self else { return }
                     if self.transcript.apply(event) { self.archiveCurrent() }
-                    if case .toolFinished(let r) = event { if r.isError { LooplDesign.failure() } else { LooplDesign.haptic() } }
+                    if case .toolResult(let r) = event { if r.isError { LooplDesign.failure() } else { LooplDesign.haptic() } }
                 }
             } catch {
                 self?.lastError = error.localizedDescription
@@ -228,8 +219,4 @@ public final class Engine {
     }
 
     public func stop() { runTask?.cancel() }
-}
-
-extension Agent {
-    func update(tools: [any Tool], config: AgentConfig) { self.tools = tools; self.config = config }
 }

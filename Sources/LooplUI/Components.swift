@@ -227,6 +227,36 @@ public struct ToolRow: View {
     private func duration(_ ms: Double) -> String { ms < 1 ? "<1 ms" : ms < 1000 ? "\(Int(ms.rounded())) ms" : String(format: "%.1f s", ms / 1000) }
 }
 
+/// The model's thinking, folded to one quiet line; tap to read it.
+public struct ReasoningRow: View {
+    public var text: String
+    public var streaming: Bool
+    @State private var expanded = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    public init(text: String, streaming: Bool) { self.text = text; self.streaming = streaming }
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button { withAnimation(reduceMotion ? nil : LooplDesign.spring) { expanded.toggle() } } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "brain").font(.caption2).foregroundStyle(.secondary)
+                    Text(streaming ? "Thinking…" : "Thought for a moment").font(.callout).foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right").font(.caption2.weight(.semibold)).foregroundStyle(.tertiary).rotationEffect(.degrees(expanded ? 90 : 0))
+                }.contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(streaming ? "model is thinking" : "model reasoning")
+            .accessibilityHint(expanded ? "collapses the reasoning" : "shows the reasoning")
+            if expanded {
+                Text(text).font(.footnote).foregroundStyle(.secondary).lineSpacing(3).textSelection(.enabled)
+                    .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(LooplDesign.secondaryBackground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+    }
+}
+
 /// The expanded details of a tool call: arguments in, result out, monospaced.
 public struct ToolCallCard: View {
     public var call: ToolUse

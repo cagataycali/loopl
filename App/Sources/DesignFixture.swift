@@ -42,19 +42,19 @@ enum DesignFixture {
             engine.readiness = .downloading(spec, done: 162_000_000, total: spec.sizeBytes)
         case "tool":
             t.user("What time is it in Istanbul, and what is 23 × 47?")
-            t.apply(.iterationStarted(1))
+            t.apply(.startEventLoop(cycle: 1))
             t.apply(.text("Let me check both."))
-            let c1 = ToolCall(id: "call_1", name: "current_time", arguments: ["timezone": .string("Europe/Istanbul")])
-            let c2 = ToolCall(id: "call_2", name: "calculator", arguments: ["expression": .string("23*47")])
-            t.apply(.assistantMessage(.assistant(text: "Let me check both.", toolCalls: [c1, c2])))
-            t.apply(.toolStarted(c1)); t.apply(.toolFinished(ToolResult(callId: "call_1", name: "current_time", content: "2026-10-05T06:14:09+03:00 (Europe/Istanbul, Sunday)", isError: false, durationMs: 2.1)))
-            t.apply(.toolStarted(c2)); t.apply(.toolFinished(ToolResult(callId: "call_2", name: "calculator", content: "23*47 = 1081", isError: false, durationMs: 0.4)))
-            t.apply(.iterationStarted(2))
+            let c1 = ToolUse(toolUseId: "tooluse_1", name: "current_time", input: ["timezone": .string("Europe/Istanbul")])
+            let c2 = ToolUse(toolUseId: "tooluse_2", name: "calculator", input: ["expression": .string("23*47")])
+            t.apply(.modelMessage(.assistant(text: "Let me check both.", toolUses: [c1, c2])))
+            t.apply(.toolStarted(c1)); t.apply(.toolResult(ToolResult(toolUseId: "tooluse_1", name: "current_time", content: "2026-10-05T06:14:09+03:00 (Europe/Istanbul, Sunday)", durationMs: 2.1)))
+            t.apply(.toolStarted(c2)); t.apply(.toolResult(ToolResult(toolUseId: "tooluse_2", name: "calculator", content: "23*47 = 1081", durationMs: 0.4)))
+            t.apply(.startEventLoop(cycle: 2))
             t.apply(.text("It's **06:14** on Sunday morning in Istanbul, and 23 × 47 = **1081**."))
-            t.apply(.finished(iterations: 2, reason: .answered))
+            t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("It's **06:14** on Sunday morning in Istanbul, and 23 × 47 = **1081**."), metrics: EventLoopMetrics())))
         default: // streaming
             t.user("Explain what an agent loop is, in three short points, with a Swift example.")
-            t.apply(.iterationStarted(1))
+            t.apply(.startEventLoop(cycle: 1))
             t.apply(.text("""
             An agent loop is the smallest program that lets a language model *act*:
 

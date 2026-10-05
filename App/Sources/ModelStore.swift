@@ -47,7 +47,8 @@ public final class ModelStore {
     }
 
     /// A model counts as downloaded when its directory holds config.json and
-    /// at least one *.safetensors with no *.part sidecars left.
+    /// at least one *.safetensors (MLX) — or the single .gguf the spec names —
+    /// with no *.part sidecars left.
     public func refresh() {
         var used: Int64 = 0
         for spec in catalog.models where spec.isDownloadable {
@@ -57,7 +58,11 @@ public final class ModelStore {
             let bytes = files.reduce(Int64(0)) { $0 + Int64((try? $1.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) }
             used += bytes
             let names = Set(files.map(\.lastPathComponent))
-            let complete = names.contains("config.json") && names.contains { $0.hasSuffix(".safetensors") } && !names.contains { $0.hasSuffix(".part") }
+            let complete: Bool = if let gguf = spec.file {
+                names.contains(gguf) && !names.contains { $0.hasSuffix(".part") }          // one .gguf file (llama.cpp)
+            } else {
+                names.contains("config.json") && names.contains { $0.hasSuffix(".safetensors") } && !names.contains { $0.hasSuffix(".part") }
+            }
             if complete { states[spec.id] = .downloaded(bytes: bytes) }
             else if bytes > 0 { states[spec.id] = .paused(done: bytes, total: spec.sizeBytes) }
             else if case .failed? = states[spec.id] { /* keep the message */ }
@@ -73,9 +78,9 @@ public final class ModelStore {
         states[spec.id] = .downloading(done: 0, total: spec.sizeBytes, filesDone: 0, files: 0)
         let dir = Self.directory(for: spec)
         tasks[spec.id] = Task {
-            let dl = HFDownloader(token: nil)
+            let dl = HFDownloader()
             do {
-                let files = try await dl.listFiles(repo: spec.repo, revision: spec.revision ?? "main")
+                let files = try await dl.files(for: spec)
                 let total = files.reduce(Int64(0)) { $0 + $1.size }
                 let counter = ByteCounter()
                 for (filesDone, f) in files.enumerated() {

@@ -106,13 +106,9 @@ enum SelfTest {
             emit("loaded in \(String(format: "%.1f", Date().timeIntervalSince(tLoad))) s · available memory \(MemoryBudget.label(MemoryBudget.available))")
 
             // 3) agent run with the built-in tools
-            var cfg = AgentConfig()
-            cfg.family = spec.family
-            cfg.params.contextLength = min(8192, spec.ctxNominal)
-            cfg.params.maxTokens = 512
-            cfg.budget = Budget(maxIterations: 12, maxWallTime: 600)   // a cap only for the unattended proof
+            // No caps: the loop runs until the model stops. The unattended proof bounds itself by wall clock below.
             let tools: [any Loopl.Tool] = [CurrentTimeTool(), CalculatorTool(), DeviceInfoTool(), RememberTool(), RecallTool(), HttpGetTool()]
-            let agent = Agent(model: model, tools: tools, systemPrompt: AppSettings.defaultSystemPrompt, config: cfg)
+            let agent = Agent(model: model, tools: tools, systemPrompt: AppSettings.defaultSystemPrompt)
             var toolsUsed: [[String: Any]] = []
             var toolRounds = 0
             var answer = ""
@@ -120,25 +116,30 @@ enum SelfTest {
             var warnings: [String] = []
             var text = ""
             let tRun = Date()
+            let deadline = Task { try await Task.sleep(nanoseconds: 600_000_000_000); emit("⚠︎ 10 min wall clock — cancelling the proof") }
             for try await e in agent.stream(prompt) {
+                if deadline.isCancelled == false, Date().timeIntervalSince(tRun) > 600 { break }
                 switch e {
-                case .iterationStarted(let i): emit("iteration \(i)"); text = ""
+                case .startEventLoop(let c): emit("cycle \(c)"); text = ""
                 case .text(let t): text += t
-                case .assistantMessage(let m):
-                    if !m.toolCalls.isEmpty { toolRounds += 1 }
-                    emit("assistant: \(m.text.prefix(200))\(m.toolCalls.isEmpty ? "" : "  → calls \(m.toolCalls.map(\.name))")")
+                case .modelMessage(let m):
+                    if m.hasToolUse { toolRounds += 1 }
+                    emit("assistant: \(m.text.prefix(200))\(m.toolUses.isEmpty ? "" : "  → calls \(m.toolUses.map(\.name))")")
                     answer = m.text
-                case .toolStarted(let c): emit("tool ▶ \(c.name) \(JSONValue.object(c.arguments).compact)")
-                case .toolFinished(let r):
+                case .toolStarted(let c): emit("tool ▶ \(c.name) \(JSONValue.object(c.input).compact)")
+                case .toolResult(let r):
                     emit("tool \(r.isError ? "✗" : "✓") \(r.name) (\(Int(r.durationMs)) ms): \(r.content.prefix(120))")
                     toolsUsed.append(["name": r.name, "ms": r.durationMs, "error": r.isError, "result": String(r.content.prefix(300))])
                 case .metrics(let m): metrics = m
-                case .warning(let w): warnings.append(w); emit("⚠︎ \(w)")
-                case .finished(let n, let reason):
-                    emit("finished after \(n) iterations (\(reason.rawValue))")
-                    report["iterations"] = n; report["finish_reason"] = reason.rawValue
+                case .throttle(let d): warnings.append("throttled \(Int(d)) s"); emit("⚠︎ model busy, retrying in \(Int(d)) s")
+                case .forceStop(let why): warnings.append(why); emit("⚠︎ \(why)")
+                case .result(let r):
+                    emit("finished after \(r.metrics.cycleCount) cycles (\(r.stopReason.rawValue))")
+                    report["iterations"] = r.metrics.cycleCount; report["finish_reason"] = r.stopReason.rawValue
+                default: break
                 }
             }
+            deadline.cancel()
             _ = text
             report["run_s"] = Date().timeIntervalSince(tRun)
             report["answer"] = answer

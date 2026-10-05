@@ -21,9 +21,9 @@ struct SavedConversation: Codable, Identifiable, Hashable {
             switch $0.kind {
             case .user(let s): .user(s)
             case .assistant(let s): .assistant(s)
-            case .toolCall(let c, let r): .tool(name: c.name, args: c.arguments, result: r?.content, isError: r?.isError ?? false, ms: r?.durationMs ?? 0)
+            case .toolUse(let c, let r): .tool(name: c.name, args: c.input, result: r?.content, isError: r?.isError ?? false, ms: r?.durationMs ?? 0)
             case .note(let s): .note(s)
-            case .warning: nil
+            case .reasoning: nil
             }
         }
         guard items.contains(where: { if case .user = $0 { return true }; return false }) else { return nil }
@@ -38,8 +38,8 @@ struct SavedConversation: Codable, Identifiable, Hashable {
             case .user(let s): return TranscriptItem(kind: .user(s))
             case .assistant(let s): return TranscriptItem(kind: .assistant(s))
             case .tool(let name, let args, let result, let isError, let ms):
-                let call = ToolCall(name: name, arguments: args)
-                return TranscriptItem(kind: .toolCall(call, result: result.map { ToolResult(callId: call.id, name: name, content: $0, isError: isError, durationMs: ms) }))
+                let use = ToolUse(name: name, input: args)
+                return TranscriptItem(kind: .toolUse(use, result: result.map { ToolResult(toolUseId: use.toolUseId, name: name, status: isError ? .error : .success, content: $0, durationMs: ms) }))
             case .note(let s): return TranscriptItem(kind: .note(s))
             }
         }
