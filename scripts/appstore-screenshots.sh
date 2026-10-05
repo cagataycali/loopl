@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # App Store screenshots from the simulator using the DEBUG `--design-fixture` scenes.
 #   scripts/appstore-screenshots.sh [--skip-build]
-# Output: App/AppStore/<size>/NN-<scene>.png  (6.9" 1320×2868 from iPhone 17 Pro Max · 6.5" 1284×2778 from iPhone 11 Pro Max)
+# Output: App/AppStore/<size>/NN-<scene>.png  (6.9" 1320×2868 from iPhone 17 Pro Max · 6.5" 1242×2688 from iPhone 11 Pro Max · ipad13 2064×2752 from iPad Pro 13")
 # plus App/AppStore/<size>/framed/*.png captions when ImageMagick (`magick`) is present.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -18,6 +18,9 @@ sim_for() { # name devicetype runtime → udid (create once)
 }
 
 UD69=$(sim_for appstore-69 com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro-Max "$RUNTIME_26")
+UD13=""
+IPAD_TYPE=$(xcrun simctl list devicetypes | grep -o 'com.apple.CoreSimulator.SimDeviceType.iPad-Pro-13-inch-M[0-9]*[^)]*' | head -1)
+if [ -n "$IPAD_TYPE" ]; then UD13=$(sim_for appstore-ipad13 "$IPAD_TYPE" "$RUNTIME_26"); fi
 UD65=""
 if xcrun simctl list devicetypes | grep -q "iPhone-11-Pro-Max" && [ -n "$RUNTIME_18" ]; then
   UD65=$(sim_for appstore-65 com.apple.CoreSimulator.SimDeviceType.iPhone-11-Pro-Max "$RUNTIME_18")
@@ -72,5 +75,6 @@ shoot() { # udid size
 }
 
 shoot "$UD69" "6.9"
+if [ -n "$UD13" ]; then shoot "$UD13" "ipad13"; fi
 if [ -n "$UD65" ]; then shoot "$UD65" "6.5"; else echo "NOTE: no iPhone 11 Pro Max sim available — 6.5\" set must be produced by resizing 6.9\" (1320×2868 → 1284×2778, letterbox) at upload time"; fi
 echo "done → $OUT"

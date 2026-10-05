@@ -177,10 +177,10 @@ public struct UserBubble: View {
 public struct ToolRow: View {
     public var call: ToolUse
     public var result: ToolResult?
-    @State private var expanded = false
+    @State private var expanded: Bool
     @State private var spin = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    public init(call: ToolUse, result: ToolResult?) { self.call = call; self.result = result }
+    public init(call: ToolUse, result: ToolResult?, expanded: Bool = false) { self.call = call; self.result = result; _expanded = State(initialValue: expanded) }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -334,16 +334,18 @@ public struct TokenMeter: View {
 public struct AgentTranscriptView<Empty: View, Banner: View>: View {
     public var transcript: Transcript
     public var showPerformance: Bool
+    /// Open every tool row by default (fixtures / screenshots); rows still toggle.
+    public var expandTools = false
     private let empty: () -> Empty
     private let banner: () -> Banner
     @State private var pinned = true
     @State private var lastCount = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    public init(_ transcript: Transcript, showPerformance: Bool = false,
+    public init(_ transcript: Transcript, showPerformance: Bool = false, expandTools: Bool = false,
                 @ViewBuilder banner: @escaping () -> Banner = { EmptyView() },
                 @ViewBuilder empty: @escaping () -> Empty) {
-        self.transcript = transcript; self.showPerformance = showPerformance; self.banner = banner; self.empty = empty
+        self.transcript = transcript; self.showPerformance = showPerformance; self.expandTools = expandTools; self.banner = banner; self.empty = empty
     }
 
     public var body: some View {
@@ -403,7 +405,7 @@ public struct AgentTranscriptView<Empty: View, Banner: View>: View {
         switch item.kind {
         case .user(let s): UserTurn(s).padding(.top, 8)
         case .assistant(let s): StreamingTextView(s, streaming: transcript.isRunning && item.id == transcript.items.last?.id)
-        case .toolUse(let c, let r): ToolRow(call: c, result: r)
+        case .toolUse(let c, let r): ToolRow(call: c, result: r, expanded: expandTools)
         case .reasoning(let r): Text(r).font(.caption).foregroundStyle(.secondary).italic()
         case .note(let s): Text(s).font(.caption).foregroundStyle(.tertiary)
         }

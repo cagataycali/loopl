@@ -19,6 +19,9 @@ enum DesignFixture {
         return CommandLine.arguments[i + 1]
     }
 
+    /// The `tool` scene opens its tool rows so a screenshot shows the args/result card.
+    static var expandTools: Bool { requested && scene == "tool" }
+
     /// `--design-tab chat|models|settings` picks the pane the fixture opens on.
     static var initialPane: RootView.Pane {
         #if DEBUG
@@ -36,7 +39,7 @@ enum DesignFixture {
         settings.offline = scene == "offline"
         var t = Transcript()
         switch scene {
-        case "empty":
+        case "empty", "offline":
             break
         case "downloading":
             engine.readiness = .downloading(spec, done: 162_000_000, total: spec.sizeBytes)

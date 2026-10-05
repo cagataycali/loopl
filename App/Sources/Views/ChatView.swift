@@ -15,7 +15,7 @@ struct ChatView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                AgentTranscriptView(engine.transcript, showPerformance: settings.showPerformance) {
+                AgentTranscriptView(engine.transcript, showPerformance: settings.showPerformance, expandTools: DesignFixture.expandTools) {
                     readinessBanner
                 } empty: {
                     EmptyState(hint: emptyHint)
