@@ -1,0 +1,107 @@
+site_name: loopl
+site_url: https://loopl.dev/
+site_description: "loopl — agents that run on the phone. A native Swift agent SDK for on-device inference, plus a free iOS app. No cloud, no login."
+repo_url: https://github.com/cagataycali/loopl
+repo_name: cagataycali/loopl
+edit_uri: ""
+copyright: "© 2026 Çağatay Çalı · loopl is open source · No data collected"
+
+theme:
+  name: material
+  custom_dir: docs/overrides
+  language: en
+  logo: assets/loopl-mark.svg
+  favicon: assets/loopl-mark.svg
+  font:
+    text: Inter
+    code: JetBrains Mono
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - navigation.indexes
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+
+extra_css:
+  - stylesheets/loopl.css
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/cagataycali/loopl
+    - icon: fontawesome/brands/apple
+      link: https://loopl.dev/app/
+    - icon: fontawesome/solid/fire
+      link: https://tiny.technology
+  generator: false
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+nav:
+  - Home: index.md
+  - Getting started:
+      - getting-started/index.md
+      - Install (SwiftPM): getting-started/install.md
+      - Your first agent: getting-started/first-agent.md
+      - Run on a device: getting-started/run-on-device.md
+  - SDK:
+      - sdk/index.md
+      - Agent: sdk/agent.md
+      - Messages & events: sdk/messages-events.md
+      - Tools & JSON schema: sdk/tools.md
+      - Model protocol: sdk/models.md
+      - Budget & the unlimited loop: sdk/budget.md
+      - Strands mapping: sdk/strands-mapping.md
+  - Runtimes:
+      - runtimes/index.md
+      - MLX Swift: runtimes/mlx.md
+      - Apple Foundation Models: runtimes/apple-foundation-models.md
+      - GGUF / llama.cpp: runtimes/gguf.md
+  - Models: models.md
+  - App:
+      - app/index.md
+      - Download flow: app/downloads.md
+      - Offline mode: app/offline.md
+      - Hugging Face token: app/hf-token.md
+  - Privacy: privacy.md
+  - FAQ: faq.md
+  - Changelog: changelog.md

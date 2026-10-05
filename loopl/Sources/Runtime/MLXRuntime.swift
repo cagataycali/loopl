@@ -80,7 +80,7 @@ public actor MLXRuntime: LLMRuntime {
 
                     let specs = toolSpecs(tools)
                     let prompt: [Int] = try await container.perform { context in
-                        try PromptEncoder.encode(messages: messages, tools: tools, specs: specs, family: spec.family, tokenizer: context.tokenizer)
+                        try PromptEncoder.encode(messages: messages, tools: tools, specs: specs, family: spec.family, kwargs: spec.chatTemplateKwargs?.mapValues { $0.anyValue }, tokenizer: context.tokenizer)
                     }
                     stats.promptTokens = prompt.count
                     stats.contextUsed = prompt.count
@@ -150,21 +150,21 @@ extension MLXLMCommon.JSONValue {
 /// Chat-template rendering with the right fallbacks, in one place so a
 /// unit test can pin it with a fake tokenizer.
 enum PromptEncoder {
-    static func encode(messages: [Message], tools: [any AgentTool], specs: [[String: any Sendable]], family: ToolFamily, tokenizer: any MLXLMCommon.Tokenizer) throws -> [Int] {
+    static func encode(messages: [Message], tools: [any AgentTool], specs: [[String: any Sendable]], family: ToolFamily, kwargs: [String: any Sendable]?, tokenizer: any MLXLMCommon.Tokenizer) throws -> [Int] {
         let dicts = messages.map(\.templateDictionary)
         // 1. Native template with tools (Qwen3, Llama 3.x, Phi-4, SmolLM3…).
-        if !tools.isEmpty, let ids = try? tokenizer.applyChatTemplate(messages: dicts, tools: specs, additionalContext: nil) { return ids }
+        if !tools.isEmpty, let ids = try? tokenizer.applyChatTemplate(messages: dicts, tools: specs, additionalContext: kwargs) { return ids }
         // 2. Template without tools: inject the manual spec into the system prompt, fold tool turns.
         let folded = PromptBuilder.foldToolMessages(messages)
         var withSystem = folded
         let baseSystem: String? = { if case .system(let s)? = folded.first { return s }; return nil }()
         let sys = PromptBuilder.toolSystemPrompt(tools: tools, family: family, base: baseSystem)
         if baseSystem != nil { withSystem[0] = .system(sys) } else if !sys.isEmpty { withSystem.insert(.system(sys), at: 0) }
-        if let ids = try? tokenizer.applyChatTemplate(messages: withSystem.map(\.templateDictionary), tools: nil, additionalContext: nil) { return ids }
+        if let ids = try? tokenizer.applyChatTemplate(messages: withSystem.map(\.templateDictionary), tools: nil, additionalContext: kwargs) { return ids }
         // 3. Gemma-style templates reject a system role: merge it into the first user turn.
         if case .system(let s) = withSystem.first, withSystem.count > 1, case .user(let u) = withSystem[1] {
             var merged = Array(withSystem.dropFirst(2)); merged.insert(.user(s + "\n\n" + u), at: 0)
-            if let ids = try? tokenizer.applyChatTemplate(messages: merged.map(\.templateDictionary), tools: nil, additionalContext: nil) { return ids }
+            if let ids = try? tokenizer.applyChatTemplate(messages: merged.map(\.templateDictionary), tools: nil, additionalContext: kwargs) { return ids }
         }
         // 4. No template at all: ChatML text.
         return tokenizer.encode(text: PromptBuilder.chatML(withSystem), addSpecialTokens: false)

@@ -15,9 +15,12 @@ public struct ModelSpec: Sendable, Codable, Hashable, Identifiable {
     public var gated: Bool                // needs an accepted licence + HF token
     public var notes: String?
     public var revision: String? = nil
+    /// Extra kwargs for the chat template (e.g. Qwen3 `enable_thinking: false`).
+    public var chatTemplateKwargs: [String: JSONValue]? = nil
 
     enum CodingKeys: String, CodingKey {
         case id, name, repo, runtime, family, gated, notes, revision
+        case chatTemplateKwargs = "chat_template_kwargs"
         case paramsB = "params_b", sizeBytes = "size_bytes", ctxNominal = "ctx_nominal"
         case ctxUsable8GB = "ctx_usable_8gb", minRAMGB = "min_ram_gb"
     }

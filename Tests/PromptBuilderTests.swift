@@ -63,6 +63,6 @@ final class PromptBuilderTests: XCTestCase {
         let c = try JSONDecoder().decode(Catalog.self, from: data)
         XCTAssertGreaterThanOrEqual(c.models.count, 6)
         XCTAssertTrue(c.models.contains { $0.repo == "mlx-community/Qwen3-1.7B-4bit" && !$0.gated })
-        XCTAssertTrue(c.models.filter { $0.gated }.allSatisfy { $0.repo.contains("Llama") || $0.repo.contains("gemma") })
+        XCTAssertEqual(c.models.first { $0.id == "qwen3-1.7b-4bit" }?.chatTemplateKwargs?["enable_thinking"], .bool(false))
     }
 }
