@@ -1,4 +1,7 @@
 import SwiftUI
+import Loopl
+import LooplUI
+import LooplRuntimes
 
 struct SettingsView: View {
     @Bindable var engine: Engine
@@ -43,9 +46,9 @@ struct SettingsView: View {
                     Picker("Preferred runtime", selection: $settings.preferredRuntime) {
                         ForEach(RuntimeKind.allCases) { Text($0.label).tag($0) }
                     }
-                    runtimeStatus("MLX", MLXRuntime.availability())
-                    runtimeStatus("Apple Intelligence", AppleFMRuntime.availability())
-                    runtimeStatus("llama.cpp", GGUFRuntime.availability())
+                    runtimeStatus("MLX", MLXModel.availability())
+                    runtimeStatus("Apple Intelligence", AppleFoundationModel.availability())
+                    runtimeStatus("llama.cpp", GGUFModel.availability())
                     Toggle("Demo (scripted) runtime", isOn: $settings.demoRuntime)
                     Text("Replays a scripted tool-call conversation so the UI can be exercised in the simulator. Not a model, not a benchmark — the Chat header says DEMO while it is on.")
                         .font(.footnote).foregroundStyle(.secondary)

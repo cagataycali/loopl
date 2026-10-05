@@ -1,5 +1,5 @@
 import XCTest
-@testable import loopl
+import Loopl
 
 final class ToolCallParserTests: XCTestCase {
     func testHermesSingleCall() {

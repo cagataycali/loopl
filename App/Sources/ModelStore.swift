@@ -1,4 +1,5 @@
 import Foundation
+import Loopl
 import Observation
 
 /// Where models live and how they get there. `@MainActor` because the

@@ -1,4 +1,6 @@
-name: loopl
+# Lives in App/ so the xcodeproj is NOT in the Swift package root (Xcode then
+# confuses the package's targets with the app's). Generate with `xcodegen -s App/project.yml`.
+name: LooplApp
 options:
   bundleIdPrefix: technology.tiny
   deploymentTarget:
@@ -15,40 +17,32 @@ settings:
     # MLX + safetensors want the big address space; Metal only exists on device.
     IPHONEOS_DEPLOYMENT_TARGET: '18.0'
 packages:
-  # On-device inference: ml-explore/mlx-swift-lm (the libraries moved out of
-  # mlx-swift-examples in 2025; README of that repo says so). Products
-  # MLXLLM + MLXLMCommon only — NOT MLXHuggingFace (its macros pull
-  # MLXFoundationModels, which needs iOS 27 types under the default trait).
-  # We write the Downloader / TokenizerLoader bridges by hand (Runtime/MLXBridges.swift).
-  mlx-swift-lm:
-    url: https://github.com/ml-explore/mlx-swift-lm
-    exactVersion: 3.32.3
-  # Tokenizers (BPE/SentencePiece + Jinja chat templates) for the MLX path.
-  swift-transformers:
-    url: https://github.com/huggingface/swift-transformers
-    exactVersion: 1.3.4
+  # The SDK lives in this repo's Package.swift (products Loopl / LooplRuntimes /
+  # LooplUI). MLX + swift-transformers are its dependencies, not the app's.
+  Loopl:
+    path: ..
 targets:
-  loopl:
+  # Target/module LooplApp, product loopl.app — never `loopl`: case-insensitive
+  # disks make loopl.build / loopl.swiftmodule collide with the package's Loopl.
+  LooplApp:
     type: application
     platform: iOS
     sources:
-    - loopl/Sources
-    - loopl/Assets.xcassets
+    - Sources
+    - Assets.xcassets
     # NOT a folder reference: a top-level "Resources" dir inside an iOS .app
     # makes the installer fail with "Missing bundle ID" (it reads as a macOS bundle).
-    - path: loopl/Resources
+    - path: Resources
       buildPhase: resources
     dependencies:
-    - package: mlx-swift-lm
-      product: MLXLLM
-    - package: mlx-swift-lm
-      product: MLXLMCommon
-    - package: swift-transformers
-      product: Tokenizers
-    - package: swift-transformers
-      product: Hub
+    - package: Loopl
+      product: Loopl
+    - package: Loopl
+      product: LooplRuntimes
+    - package: Loopl
+      product: LooplUI
     info:
-      path: loopl/Info.plist
+      path: Info.plist
       properties:
         CFBundleDisplayName: loopl
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
@@ -57,13 +51,18 @@ targets:
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
         - UIInterfaceOrientationPortrait
+        UISupportedInterfaceOrientations~ipad:
+        - UIInterfaceOrientationPortrait
+        - UIInterfaceOrientationPortraitUpsideDown
+        - UIInterfaceOrientationLandscapeLeft
+        - UIInterfaceOrientationLandscapeRight
         UIBackgroundModes:
         - processing
         # Models are 0.4–2.5 GB; URLSession downloads keep running briefly in background.
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: false
     entitlements:
-      path: loopl/loopl.entitlements
+      path: loopl.entitlements
       properties:
         # MLX maps whole safetensors files; iOS caps a plain app well below
         # 8 GB. The increased-memory-limit entitlement raises the jetsam ceiling
@@ -72,18 +71,26 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: technology.tiny.loopl
-        TARGETED_DEVICE_FAMILY: '1'
+        # The app module must not be `loopl`: on a case-insensitive disk its
+        # loopl.swiftmodule collides with the SDK's Loopl.swiftmodule.
+        PRODUCT_NAME: loopl
+        TARGETED_DEVICE_FAMILY: '1,2'
         SWIFT_OBJC_INTEROP_MODE: objc
         ENABLE_USER_SCRIPT_SANDBOXING: false
-  looplTests:
+  # The SDK tests, hosted by the app so `xcodebuild test` on a simulator runs them
+  # (same files as the SwiftPM test target; swift test runs them on the Mac).
+  LooplTests:
     type: bundle.unit-test
     platform: iOS
     sources:
-    - Tests
+    - path: ../Tests/LooplTests
+      excludes: [Fixtures]
     dependencies:
-    - target: loopl
+    - target: LooplApp
+    - package: Loopl
+      product: Loopl
     info:
-      path: Tests/Info.plist
+      path: Tests-Info.plist
       properties: {}
     settings:
       base:
@@ -93,13 +100,13 @@ schemes:
   loopl:
     build:
       targets:
-        loopl: all
-        looplTests: [test]
+        LooplApp: all
+        LooplTests: [test]
     run:
       config: Debug
     test:
       config: Debug
       targets:
-      - looplTests
+      - LooplTests
     archive:
       config: Release

@@ -13,6 +13,7 @@ public struct HFDownloader: Sendable {
         public var path: String
         public var size: Int64
         public var type: String
+        public init(path: String, size: Int64, type: String) { self.path = path; self.size = size; self.type = type }
     }
 
     public enum DLError: LocalizedError {

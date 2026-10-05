@@ -4,7 +4,7 @@ import Foundation
 /// support (or when we could not load a template at all). The output is
 /// pinned by `PromptBuilderTests` — change the snapshot deliberately.
 public enum PromptBuilder {
-    public static func toolSystemPrompt(tools: [any AgentTool], family: ToolFamily, base: String?) -> String {
+    public static func toolSystemPrompt(tools: [any Tool], family: ToolFamily, base: String?) -> String {
         guard !tools.isEmpty else { return base ?? "" }
         let specs = tools.map { $0.spec.compact }.joined(separator: "\n")
         var out = base.map { $0 + "\n\n" } ?? ""

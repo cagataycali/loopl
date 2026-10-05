@@ -1,4 +1,6 @@
 import SwiftUI
+import Loopl
+import LooplUI
 
 struct AgentView: View {
     @Bindable var engine: Engine
@@ -23,7 +25,8 @@ struct AgentView: View {
                     Text("http_get is refused while offline mode is on — the agent sees the refusal as a tool error and answers without it.")
                 }
                 Section("Loop") {
-                    Stepper("Max iterations: \(settings.maxIterations)", value: $settings.maxIterations, in: 1...20)
+                    Stepper(settings.maxIterations == 0 ? "Iterations: unlimited (loopl default)" : "Max iterations: \(settings.maxIterations)", value: $settings.maxIterations, in: 0...50)
+                    Text("Unlimited means the loop runs until the model stops calling tools or you tap Stop. A loop detector warns when the same call repeats 3× — it never stops the agent for you.").font(.footnote).foregroundStyle(.secondary)
                     HStack { Text("Tool dialect"); Spacer(); Text(engine.loadedModel?.family.rawValue ?? "from model").foregroundStyle(.secondary) }
                 }
                 Section("System prompt") {

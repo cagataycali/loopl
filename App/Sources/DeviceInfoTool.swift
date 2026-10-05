@@ -1,11 +1,12 @@
 import Foundation
+import Loopl
 import UIKit
 
-public struct DeviceInfoTool: AgentTool {
+public struct DeviceInfoTool: Tool {
     public init() {}
     public let name = "device_info"
     public let description = "Battery level and state, available memory for this app, total RAM, OS version, offline-mode flag and thermal state of this iPhone."
-    public let parameters: JSONValue = ["type": "object", "properties": [:], "required": []]
+    public let parameters: JSONValue = ToolSchema.object([:])
     public func call(_ args: [String: JSONValue]) async throws -> String {
         let info = await MainActor.run { () -> [String] in
             let dev = UIDevice.current

@@ -1,8 +1,8 @@
 import XCTest
-@testable import loopl
+import Loopl
 
 final class PromptBuilderTests: XCTestCase {
-    let tools: [any AgentTool] = [CalculatorTool()]
+    let tools: [any Tool] = [CalculatorTool()]
 
     func testHermesSystemPromptSnapshot() {
         let p = PromptBuilder.toolSystemPrompt(tools: tools, family: .hermes, base: "Be brief.")
@@ -57,8 +57,7 @@ final class PromptBuilderTests: XCTestCase {
     }
 
     func testCatalogDecodes() throws {
-        let url = Bundle(for: PromptBuilderTests.self).url(forResource: "models", withExtension: "json")
-            ?? Bundle.main.url(forResource: "models", withExtension: "json")
+        let url = Bundle.module.url(forResource: "models", withExtension: "json", subdirectory: "Fixtures") ?? Bundle.module.url(forResource: "models", withExtension: "json")
         let data = try Data(contentsOf: XCTUnwrap(url))
         let c = try JSONDecoder().decode(Catalog.self, from: data)
         XCTAssertGreaterThanOrEqual(c.models.count, 6)

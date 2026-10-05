@@ -23,8 +23,9 @@ public struct GenerationParams: Sendable, Hashable {
     public init() {}
 }
 
-/// Live numbers for the Chat HUD — every one measured, none estimated.
-public struct StreamStats: Sendable, Hashable {
+/// Live numbers for the HUD — every one measured, none estimated (Apple FM
+/// token counts are labelled as estimates by that runtime).
+public struct Metrics: Sendable, Hashable {
     public var promptTokens: Int = 0
     public var generatedTokens: Int = 0
     /// Milliseconds from `stream()` call to the first visible token.
@@ -35,33 +36,33 @@ public struct StreamStats: Sendable, Hashable {
     public var contextMax: Int = 0
     public var finished = false
     public var stopReason: String = ""
+    public var estimated = false
     public init() {}
 }
 
-/// What a runtime streams back. `.toolCall` is for runtimes that detect
-/// calls natively (MLX's tool-call policy, Foundation Models' Tool);
-/// text-only runtimes just stream `.text` and the agent loop parses it.
-public enum Token: Sendable {
+/// What a model streams back. `.toolCall` is for runtimes that detect calls
+/// natively (MLX's tool-call policy, Foundation Models' Tool); text-only
+/// runtimes just stream `.text` and the agent parses it.
+public enum ModelEvent: Sendable {
     case text(String)
     case toolCall(ToolCall)
-    case stats(StreamStats)
+    case metrics(Metrics)
 }
 
-public struct RuntimeError: LocalizedError, Sendable {
+public struct ModelError: LocalizedError, Sendable {
     public let message: String
     public init(_ m: String) { message = m }
     public var errorDescription: String? { message }
 }
 
-/// The one contract every engine implements. Runtimes are actors (model
-/// state must never be touched from two tasks); the UI observes them
-/// through the `@MainActor` `Engine` object.
-public protocol LLMRuntime: Actor {
+/// The one contract every engine implements (Strands: `Model`). Models are
+/// actors — weights must never be touched from two tasks.
+public protocol Model: Actor {
     nonisolated var kind: RuntimeKind { get }
     var loadedModelId: String? { get }
     /// `progress` is 0…1 for weight loading (download is the model manager's job).
-    func load(_ model: ModelSpec, from directory: URL?, progress: @Sendable @escaping (Double) -> Void) async throws
-    nonisolated func stream(messages: [Message], tools: [any AgentTool], params: GenerationParams) -> AsyncThrowingStream<Token, Error>
+    func load(_ spec: ModelSpec, from directory: URL?, progress: @Sendable @escaping (Double) -> Void) async throws
+    nonisolated func stream(messages: [Message], tools: [any Tool], params: GenerationParams) -> AsyncThrowingStream<ModelEvent, Error>
     func unload() async
     /// Whether this runtime can run at all on this build/device (Metal, OS version…).
     nonisolated static func availability() -> RuntimeAvailability

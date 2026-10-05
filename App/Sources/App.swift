@@ -1,4 +1,6 @@
 import SwiftUI
+import Loopl
+import LooplUI
 
 @main
 struct LooplApp: App {
@@ -9,7 +11,9 @@ struct LooplApp: App {
     var body: some Scene {
         WindowGroup {
             Group {
-                if let engine {
+                if SelfTest.requested {
+                    SelfTestView(settings: settings, store: store)
+                } else if let engine {
                     RootView(engine: engine, settings: settings, store: store)
                 } else {
                     ProgressView().task { engine = Engine(settings: settings, store: store) }

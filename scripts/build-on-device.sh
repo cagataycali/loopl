@@ -9,9 +9,9 @@ DEVICE_ID="${DEVICE_ID:-$(xcrun devicectl list devices 2>/dev/null | awk '/conne
 TEAM="${DEVELOPMENT_TEAM:-K6B7JDYLLL}"
 DERIVED="${DERIVED:-/tmp/dd-loopl-device}"
 APP_ID="technology.tiny.loopl"
-[ -d loopl.xcodeproj ] || xcodegen generate
+[ -d App/LooplApp.xcodeproj ] || xcodegen generate -s App/project.yml
 echo "▸ building for $DEVICE_ID (team $TEAM)…"
-xcodebuild -project loopl.xcodeproj -scheme loopl -destination "id=$DEVICE_ID" -configuration Debug \
+xcodebuild -project App/LooplApp.xcodeproj -scheme loopl -destination "id=$DEVICE_ID" -configuration Debug \
   -derivedDataPath "$DERIVED" -allowProvisioningUpdates -allowProvisioningDeviceRegistration \
   -skipPackagePluginValidation -skipMacroValidation DEVELOPMENT_TEAM="$TEAM" build
 APP="$DERIVED/Build/Products/Debug-iphoneos/loopl.app"

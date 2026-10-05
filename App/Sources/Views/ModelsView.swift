@@ -1,4 +1,7 @@
 import SwiftUI
+import Loopl
+import LooplUI
+import LooplRuntimes
 
 struct ModelsView: View {
     @Bindable var engine: Engine
@@ -51,28 +54,15 @@ struct ModelRow: View {
     private var isLoaded: Bool { engine.loadedModel?.id == spec.id }
     private var availability: RuntimeAvailability {
         switch spec.runtime {
-        case .mlx: MLXRuntime.availability()
-        case .appleFM: AppleFMRuntime.availability()
-        case .gguf: GGUFRuntime.availability()
+        case .mlx: MLXModel.availability()
+        case .appleFM: AppleFoundationModel.availability()
+        case .gguf: GGUFModel.availability()
         }
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(spec.name).font(.headline)
-                Spacer()
-                if isLoaded { Pill(text: "loaded") }
-                if spec.gated { Pill(text: "gated", tint: .orange) }
-            }
-            if !spec.repo.isEmpty { Text(spec.repo).font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(1) }
-            HStack(spacing: 10) {
-                if spec.isDownloadable { meta("\(spec.sizeLabel)") }
-                meta("\(spec.paramsB.formatted(.number.precision(.fractionLength(0...1))))B")
-                meta("ctx \(spec.ctxNominal.formatted()) · use \(spec.ctxUsable8GB.formatted())")
-                meta(spec.family.rawValue)
-            }
-            if let n = spec.notes { Text(n).font(.caption).foregroundStyle(.secondary) }
+            ModelPickerRow(spec: spec, loaded: isLoaded)
             if !MemoryBudget.fits(spec) && spec.isDownloadable {
                 Label("Over the memory budget right now (needs ≈1.3× weights free)", systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange)
             }
@@ -84,19 +74,10 @@ struct ModelRow: View {
         .padding(.vertical, 4)
     }
 
-    private func meta(_ s: String) -> some View { Text(s).font(.caption2).foregroundStyle(.secondary) }
-
     @ViewBuilder private var controls: some View {
         switch state {
         case .downloading(let done, let total, let fd, let files):
-            VStack(alignment: .leading, spacing: 4) {
-                ProgressView(value: Double(done), total: Double(max(total, 1)))
-                HStack {
-                    Text("\(ByteCountFormatter.string(fromByteCount: done, countStyle: .file)) / \(ByteCountFormatter.string(fromByteCount: total, countStyle: .file)) · file \(min(fd + 1, max(files, 1)))/\(files)").font(.caption2).foregroundStyle(.secondary)
-                    Spacer()
-                    Button("Pause") { store.pause(spec) }.font(.caption)
-                }
-            }
+            DownloadProgressRow(done: done, total: total, fileIndex: fd, fileCount: files) { store.pause(spec) }
         case .paused(let done, let total):
             HStack {
                 Text("Paused · \(ByteCountFormatter.string(fromByteCount: done, countStyle: .file)) of ≈\(ByteCountFormatter.string(fromByteCount: total, countStyle: .file))").font(.caption).foregroundStyle(.secondary)
@@ -133,7 +114,7 @@ struct ModelRow: View {
 
     private var loadButton: some View {
         Button {
-            LooplDesign.haptic(.medium)
+            LooplDesign.haptic(1)
             Task { if isLoaded { await engine.unload() } else { await engine.load(spec) } }
         } label: {
             if engine.loadProgress != nil && !isLoaded { ProgressView().controlSize(.mini) }

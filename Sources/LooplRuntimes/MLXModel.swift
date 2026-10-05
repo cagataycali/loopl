@@ -1,4 +1,5 @@
 import Foundation
+import Loopl
 
 #if canImport(MLXLLM) && canImport(MLXLMCommon) && !targetEnvironment(simulator)
 import MLX
@@ -35,7 +36,7 @@ struct TransformersTokenizerLoader: MLXLMCommon.TokenizerLoader {
 /// MLX on Metal. Loads ONLY from a local directory — the model manager owns
 /// downloads, so this runtime can never reach the network (the offline proof
 /// is structural: there is no URLSession in this file).
-public actor MLXRuntime: LLMRuntime {
+public actor MLXModel: Model {
     public nonisolated let kind: RuntimeKind = .mlx
     public private(set) var loadedModelId: String?
     private var container: ModelContainer?
@@ -45,15 +46,15 @@ public actor MLXRuntime: LLMRuntime {
 
     public nonisolated static func availability() -> RuntimeAvailability { .ok }
 
-    public func load(_ model: ModelSpec, from directory: URL?, progress: @Sendable @escaping (Double) -> Void) async throws {
-        guard let directory else { throw RuntimeError("\(model.name) is not downloaded") }
+    public func load(_ spec: ModelSpec, from directory: URL?, progress: @Sendable @escaping (Double) -> Void) async throws {
+        guard let directory else { throw ModelError("\(spec.name) is not downloaded") }
         await unload()
         progress(0.05)
         MLX.GPU.set(cacheLimit: 32 * 1024 * 1024)
         let c = try await LLMModelFactory.shared.loadContainer(from: directory, using: TransformersTokenizerLoader())
         container = c
-        spec = model
-        loadedModelId = model.id
+        self.spec = spec
+        loadedModelId = spec.id
         progress(1)
     }
 
@@ -69,13 +70,13 @@ public actor MLXRuntime: LLMRuntime {
         return (container, spec)
     }
 
-    public nonisolated func stream(messages: [Message], tools: [any AgentTool], params: GenerationParams) -> AsyncThrowingStream<Token, Error> {
+    public nonisolated func stream(messages: [Loopl.Message], tools: [any Loopl.Tool], params: GenerationParams) -> AsyncThrowingStream<ModelEvent, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
-                    guard let (container, spec) = await self.snapshot() else { throw RuntimeError("no model loaded") }
+                    guard let (container, spec) = await self.snapshot() else { throw ModelError("no model loaded") }
                     let started = Date()
-                    var stats = StreamStats()
+                    var stats = Metrics()
                     stats.contextMax = params.contextLength
 
                     let specs = toolSpecs(tools)
@@ -84,7 +85,7 @@ public actor MLXRuntime: LLMRuntime {
                     }
                     stats.promptTokens = prompt.count
                     stats.contextUsed = prompt.count
-                    continuation.yield(.stats(stats))
+                    continuation.yield(.metrics(stats))
 
                     let gp = GenerateParameters(maxTokens: params.maxTokens, maxKVSize: params.contextLength, temperature: params.temperature, topP: params.topP)
 
@@ -105,10 +106,10 @@ public actor MLXRuntime: LLMRuntime {
                             stats.contextUsed = prompt.count + chunks
                             if let ft = firstToken { let dt = Date().timeIntervalSince(ft); if dt > 0.05 { stats.tokensPerSecond = Double(chunks) / dt } }
                             continuation.yield(.text(s))
-                            continuation.yield(.stats(stats))
+                            continuation.yield(.metrics(stats))
                         case .toolCall(let call):
-                            let args = call.function.arguments.mapValues { loopl.JSONValue(any: $0.sendableAny) }
-                            continuation.yield(.toolCall(loopl.ToolCall(id: call.id ?? loopl.ToolCall.makeId(), name: call.function.name, arguments: args)))
+                            let args = call.function.arguments.mapValues { Loopl.JSONValue(any: $0.sendableAny) }
+                            continuation.yield(.toolCall(Loopl.ToolCall(id: call.id ?? Loopl.ToolCall.makeId(), name: call.function.name, arguments: args)))
                         case .rejectedToolCall(let r):
                             continuation.yield(.text("\n[tool call rejected: \(String(describing: r))]\n"))
                         case .info(let info):
@@ -120,7 +121,7 @@ public actor MLXRuntime: LLMRuntime {
                         }
                     }
                     stats.finished = true
-                    continuation.yield(.stats(stats))
+                    continuation.yield(.metrics(stats))
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)
@@ -149,20 +150,20 @@ extension MLXLMCommon.JSONValue {
 /// Chat-template rendering with the right fallbacks, in one place so a
 /// unit test can pin it with a fake tokenizer.
 enum PromptEncoder {
-    static func encode(messages: [Message], tools: [any AgentTool], specs: [[String: any Sendable]], family: ToolFamily, kwargs: [String: any Sendable]?, tokenizer: any MLXLMCommon.Tokenizer) throws -> [Int] {
+    static func encode(messages: [Loopl.Message], tools: [any Loopl.Tool], specs: [[String: any Sendable]], family: ToolFamily, kwargs: [String: any Sendable]?, tokenizer: any MLXLMCommon.Tokenizer) throws -> [Int] {
         let dicts = messages.map(\.templateDictionary)
         // 1. Native template with tools (Qwen3, Llama 3.x, Phi-4, SmolLM3…).
         if !tools.isEmpty, let ids = try? tokenizer.applyChatTemplate(messages: dicts, tools: specs, additionalContext: kwargs) { return ids }
         // 2. Template without tools: inject the manual spec into the system prompt, fold tool turns.
         let folded = PromptBuilder.foldToolMessages(messages)
-        var withSystem = folded
-        let baseSystem: String? = { if case .system(let s)? = folded.first { return s }; return nil }()
+        var withSystem: [Loopl.Message] = folded
+        let baseSystem: String? = { if case Loopl.Message.system(let s)? = folded.first { return s }; return nil }()
         let sys = PromptBuilder.toolSystemPrompt(tools: tools, family: family, base: baseSystem)
-        if baseSystem != nil { withSystem[0] = .system(sys) } else if !sys.isEmpty { withSystem.insert(.system(sys), at: 0) }
+        if baseSystem != nil { withSystem[0] = Loopl.Message.system(sys) } else if !sys.isEmpty { withSystem.insert(Loopl.Message.system(sys), at: 0) }
         if let ids = try? tokenizer.applyChatTemplate(messages: withSystem.map(\.templateDictionary), tools: nil, additionalContext: kwargs) { return ids }
         // 3. Gemma-style templates reject a system role: merge it into the first user turn.
-        if case .system(let s) = withSystem.first, withSystem.count > 1, case .user(let u) = withSystem[1] {
-            var merged = Array(withSystem.dropFirst(2)); merged.insert(.user(s + "\n\n" + u), at: 0)
+        if case Loopl.Message.system(let s)? = withSystem.first, withSystem.count > 1, case Loopl.Message.user(let u) = withSystem[1] {
+            var merged: [Loopl.Message] = Array(withSystem.dropFirst(2)); merged.insert(Loopl.Message.user(s + "\n\n" + u), at: 0)
             if let ids = try? tokenizer.applyChatTemplate(messages: merged.map(\.templateDictionary), tools: nil, additionalContext: kwargs) { return ids }
         }
         // 4. No template at all: ChatML text.
@@ -172,7 +173,7 @@ enum PromptEncoder {
 #else
 /// Simulator / no-MLX build: the type exists so the UI compiles, but it
 /// says so honestly.
-public actor MLXRuntime: LLMRuntime {
+public actor MLXModel: Model {
     public nonisolated let kind: RuntimeKind = .mlx
     public private(set) var loadedModelId: String?
     public init() {}
@@ -183,12 +184,12 @@ public actor MLXRuntime: LLMRuntime {
         return RuntimeAvailability(available: false, reason: "MLX libraries are not linked in this build.")
         #endif
     }
-    public func load(_ model: ModelSpec, from directory: URL?, progress: @Sendable @escaping (Double) -> Void) async throws {
-        throw RuntimeError(Self.availability().reason)
+    public func load(_ spec: ModelSpec, from directory: URL?, progress: @Sendable @escaping (Double) -> Void) async throws {
+        throw ModelError(Self.availability().reason)
     }
     public func unload() async {}
-    public nonisolated func stream(messages: [Message], tools: [any AgentTool], params: GenerationParams) -> AsyncThrowingStream<Token, Error> {
-        AsyncThrowingStream { $0.finish(throwing: RuntimeError(Self.availability().reason)) }
+    public nonisolated func stream(messages: [Loopl.Message], tools: [any Loopl.Tool], params: GenerationParams) -> AsyncThrowingStream<ModelEvent, Error> {
+        AsyncThrowingStream { $0.finish(throwing: ModelError(Self.availability().reason)) }
     }
 }
 #endif

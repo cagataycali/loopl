@@ -1,6 +1,6 @@
 import Foundation
 
-public struct CurrentTimeTool: AgentTool {
+public struct CurrentTimeTool: Tool {
     public init() {}
     public let name = "current_time"
     public let description = "Get the current date and time. Optional IANA timezone such as Europe/Istanbul or America/Los_Angeles; defaults to the device timezone."
@@ -25,7 +25,7 @@ public struct CurrentTimeTool: AgentTool {
     }
 }
 
-public struct CalculatorTool: AgentTool {
+public struct CalculatorTool: Tool {
     public init() {}
     public let name = "calculator"
     public let description = "Evaluate an arithmetic expression exactly. Supports + - * / % ^ parentheses, sqrt abs round floor ceil sin cos tan ln log exp pow min max, pi and e."
@@ -38,7 +38,7 @@ public struct CalculatorTool: AgentTool {
 }
 
 /// Notes in UserDefaults — `remember` writes, `recall` reads (all or by key).
-public struct RememberTool: AgentTool {
+public struct RememberTool: Tool {
     public init() {}
     public let name = "remember"
     public let description = "Store a short note under a key so it can be recalled later in this app."
@@ -52,7 +52,7 @@ public struct RememberTool: AgentTool {
     }
 }
 
-public struct RecallTool: AgentTool {
+public struct RecallTool: Tool {
     public init() {}
     public let name = "recall"
     public let description = "Read notes stored with remember. Pass a key, or omit it to list everything."
@@ -73,7 +73,7 @@ public enum NotesStore {
 
 /// Network access — refused outright when the offline toggle is on, so the
 /// agent proves the "no network while offline" rule through its own tools.
-public struct HttpGetTool: AgentTool {
+public struct HttpGetTool: Tool {
     public init() {}
     public let name = "http_get"
     public let description = "Fetch a URL over HTTPS and return the first 4000 characters of the body. Unavailable in offline mode."
