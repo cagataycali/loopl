@@ -57,7 +57,11 @@ public struct MarkdownBody: View {
                 let last = i == blocks.count - 1
                 switch b {
                 case .paragraph(let s):
-                    (Text(Self.inline(s)) + caret(last)).font(.body).lineSpacing(5)
+                    if last, streaming {
+                        ChunkFadeText(s).font(.body).lineSpacing(5)
+                    } else {
+                        Text(Self.inline(s)).font(.body).lineSpacing(5)
+                    }
                 case .heading(let level, let s):
                     Text(Self.inline(s)).font(level == 1 ? .title2.weight(.semibold) : level == 2 ? .title3.weight(.semibold) : .headline).padding(.top, 4)
                 case .bullet(let items):
@@ -122,14 +126,78 @@ public struct CodeCard: View {
 
 /// A pulsing bar shown where the next token will land.
 public struct StreamingCaret: View {
-    @State private var on = true
+    @State private var on = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     public init() {}
     public var body: some View {
         RoundedRectangle(cornerRadius: 1.5).fill(LooplDesign.accent).frame(width: 3, height: 18)
-            .opacity(on ? 1 : 0.25)
-            .onAppear { if !reduceMotion { withAnimation(.easeInOut(duration: 0.6).repeatForever()) { on.toggle() } } }
+            .opacity(on && !reduceMotion ? 0.25 : 1)
+            // Scoped to `on`: a `withAnimation(.repeatForever)` in onAppear leaks into enclosing transactions.
+            .animation(reduceMotion ? nil : LooplDesign.Motion.pulse, value: on)
+            .onAppear { on = true }
             .accessibilityHidden(true)
+    }
+}
+
+/// Streaming text that fades each new chunk in instead of popping it: the text already on
+/// screen is the stable base; the newest delta is drawn on top in a layer that starts at
+/// opacity 0 and springs to 1 (`Motion.chunk`). Both layers lay out the SAME string (the
+/// hidden part is painted clear), so glyphs never shift when the layer swaps. The caret is
+/// the last glyph of the base and pulses only while streaming. Under Reduce Motion the
+/// chunk appears instantly (no fade, no caret pulse).
+public struct ChunkFadeText: View {
+    public var text: String
+    @State private var committed = ""
+    @State private var tail = ""
+    @State private var generation = 0
+    @State private var caretOn = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    public init(_ text: String) { self.text = text }
+
+    private enum Layer { case base, tail, caret }
+
+    public var body: some View {
+        ZStack(alignment: .topLeading) {
+            Text(layer(.base))
+            if !reduceMotion, !tail.isEmpty {
+                Text(layer(.tail))
+                    .id(generation)
+                    .transition(.asymmetric(insertion: .opacity.animation(LooplDesign.Motion.chunk), removal: .identity))
+            }
+            // The caret is its own layer so its opacity can breathe as a view (text attributes do not animate).
+            Text(layer(.caret))
+                .opacity(caretOn && !reduceMotion ? 0.3 : 1)
+                .animation(reduceMotion ? nil : LooplDesign.Motion.pulse, value: caretOn)
+        }
+        // Content changes must never cross-fade: a repeat-forever pulse in the same transaction would
+        // otherwise keep the previous string ghosting at the top-left forever.
+        .contentTransition(.identity)
+        .onAppear { committed = text; tail = "" }
+        .task { caretOn = true }   // a later transaction than the text, so the pulse animates only the opacity
+        .onChange(of: text) { old, new in
+            if new.hasPrefix(old), new.count > old.count {
+                // Grew: what was on screen is now committed, the delta is the new tail.
+                committed = old; tail = String(new.dropFirst(old.count))
+            } else {
+                committed = new; tail = ""
+            }
+            generation &+= 1
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(text)
+    }
+
+    /// All three layers lay out the identical string; each paints only its own part.
+    private func layer(_ l: Layer) -> AttributedString {
+        var a = MarkdownBody.inline(committed)
+        if l != .base { a.foregroundColor = .clear }
+        var t = AttributedString(tail)
+        if l != .tail { t.foregroundColor = .clear }
+        a.append(t)
+        var c = AttributedString(" ▍")
+        c.foregroundColor = l == .caret ? LooplDesign.accent : .clear
+        a.append(c)
+        return a
     }
 }
 
@@ -172,13 +240,12 @@ public struct UserBubble: View {
 
 // MARK: - Tool rows
 
-/// A quiet inline row — icon · tool name · spinner → ✓/✗ — that expands on tap
+/// A quiet inline row — mark · tool name · (sweep) → ✓/✗ · duration — that expands on tap
 /// to a monospaced card with the arguments and the result.
 public struct ToolRow: View {
     public var call: ToolUse
     public var result: ToolResult?
     @State private var expanded: Bool
-    @State private var spin = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     public init(call: ToolUse, result: ToolResult?, expanded: Bool = false) { self.call = call; self.result = result; _expanded = State(initialValue: expanded) }
 
@@ -192,6 +259,8 @@ public struct ToolRow: View {
                     Text(call.name).font(.callout.monospaced()).foregroundStyle(.primary.opacity(0.8))
                     if let r = result, r.durationMs > 0 {
                         Text(duration(r.durationMs)).font(.caption2.monospacedDigit()).foregroundStyle(.tertiary)
+                            .contentTransition(.numericText())
+                            .transition(.opacity)
                     }
                     Spacer(minLength: 0)
                     Image(systemName: "chevron.right").font(.caption2.weight(.semibold)).foregroundStyle(.tertiary)
@@ -203,9 +272,14 @@ public struct ToolRow: View {
             .accessibilityLabel(a11y)
             .accessibilityHint(expanded ? "collapses the details" : "shows arguments and result")
 
-            if expanded { ToolCallCard(call: call, result: result).transition(.opacity.combined(with: .move(edge: .top))) }
+            if result == nil, !expanded {
+                // Running: a thin sweep under the row, never a spinner.
+                IndeterminateBar().padding(.leading, 24).padding(.trailing, 20).transition(.opacity)
+            }
+            if expanded { ToolCallCard(call: call, result: result).transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top))) }
         }
         .padding(.vertical, 2)
+        .animation(LooplDesign.Motion.faded(LooplDesign.Motion.spring, reduceMotion), value: result == nil)
     }
 
     @ViewBuilder private var status: some View {
@@ -215,9 +289,8 @@ public struct ToolRow: View {
                 .foregroundStyle(r.isError ? Color.red : LooplDesign.accent)
                 .transition(.scale.combined(with: .opacity))
         } else {
-            Image(systemName: LooplDesign.iconTool).font(.caption2).foregroundStyle(.secondary)
-                .rotationEffect(.degrees(spin ? 360 : 0))
-                .onAppear { if !reduceMotion { withAnimation(.linear(duration: 1.6).repeatForever(autoreverses: false)) { spin = true } } }
+            // Running: the mark breathing (no rotating glyph, no spinner).
+            PulsingMark().frame(width: 14, height: 14).transition(.opacity)
         }
     }
     private var a11y: String {
@@ -240,6 +313,7 @@ public struct ReasoningRow: View {
                 HStack(spacing: 8) {
                     Image(systemName: "brain").font(.caption2).foregroundStyle(.secondary)
                     Text(streaming ? "Thinking…" : "Thought for a moment").font(.callout).foregroundStyle(.secondary)
+                        .contentTransition(.interpolate)
                     Spacer(minLength: 0)
                     Image(systemName: "chevron.right").font(.caption2.weight(.semibold)).foregroundStyle(.tertiary).rotationEffect(.degrees(expanded ? 90 : 0))
                 }.contentShape(Rectangle())
@@ -269,7 +343,10 @@ public struct ToolCallCard: View {
             if let r = result {
                 labelled(r.isError ? "error" : "result", r.content)
             } else {
-                HStack(spacing: 6) { ProgressView().controlSize(.mini); Text("running…").font(.caption).foregroundStyle(.secondary) }
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("running…").font(.caption).foregroundStyle(.secondary)
+                    IndeterminateBar()
+                }
             }
         }
         .padding(12)
@@ -392,12 +469,12 @@ public struct AgentTranscriptView<Empty: View, Banner: View>: View {
                     .accessibilityLabel("Scroll to the latest")
                 }
             }
-            .animation(LooplDesign.spring, value: pinned)
+            .animation(LooplDesign.Motion.faded(LooplDesign.Motion.snappy, reduceMotion), value: pinned)
         }
     }
 
     private func scrollDown(_ proxy: ScrollViewProxy, animated: Bool = true) {
-        if animated, !reduceMotion { withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo("loopl.bottom", anchor: .bottom) } }
+        if animated, !reduceMotion { withAnimation(LooplDesign.Motion.value) { proxy.scrollTo("loopl.bottom", anchor: .bottom) } }
         else { proxy.scrollTo("loopl.bottom", anchor: .bottom) }
     }
 
@@ -421,13 +498,13 @@ public extension AgentTranscriptView where Empty == AnyView, Banner == EmptyView
     }
 }
 
-/// The mark and one line — the whole empty state.
+/// The mark and one line — the whole empty state. The mark draws itself the first time it is seen.
 public struct EmptyState: View {
     public var hint: String
     public init(hint: String) { self.hint = hint }
     public var body: some View {
         VStack(spacing: 18) {
-            LooplMark().frame(width: 72, height: 72).accessibilityHidden(true)
+            LooplMarkIntro().frame(width: 72, height: 72).accessibilityHidden(true)
             Text(MarkdownBody.inline(hint)).font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
                 .frame(maxWidth: 300)
         }
@@ -443,7 +520,13 @@ public struct ModelPickerRow: View {
     public var spec: ModelSpec
     public var loaded: Bool
     public var downloaded: Bool
-    public init(spec: ModelSpec, loaded: Bool = false, downloaded: Bool = false) { self.spec = spec; self.loaded = loaded; self.downloaded = downloaded }
+    /// When given, the bolt + highlight share a geometry across rows: switching models slides
+    /// the "loaded" state from the old row to the new one instead of blinking.
+    public var loadedMark: Namespace.ID?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    public init(spec: ModelSpec, loaded: Bool = false, downloaded: Bool = false, loadedMark: Namespace.ID? = nil) {
+        self.spec = spec; self.loaded = loaded; self.downloaded = downloaded; self.loadedMark = loadedMark
+    }
     public var body: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
@@ -461,10 +544,21 @@ public struct ModelPickerRow: View {
                 }
             }
             Spacer()
-            if loaded { Image(systemName: LooplDesign.iconLoaded).foregroundStyle(LooplDesign.accent).accessibilityLabel("loaded") }
-            else if downloaded || !spec.isDownloadable { Image(systemName: "checkmark").foregroundStyle(.secondary).font(.footnote.weight(.semibold)).accessibilityLabel("on this device") }
-            else { Image(systemName: LooplDesign.iconDownload).foregroundStyle(.tertiary).accessibilityLabel("not downloaded") }
+            if loaded {
+                let bolt = Image(systemName: LooplDesign.iconLoaded).foregroundStyle(LooplDesign.accent).accessibilityLabel("loaded")
+                if let loadedMark, !reduceMotion { bolt.matchedGeometryEffect(id: "loaded.bolt", in: loadedMark) } else { bolt.transition(.opacity) }
+            }
+            else if downloaded || !spec.isDownloadable { Image(systemName: "checkmark").foregroundStyle(.secondary).font(.footnote.weight(.semibold)).accessibilityLabel("on this device").transition(.opacity) }
+            else { Image(systemName: LooplDesign.iconDownload).foregroundStyle(.tertiary).accessibilityLabel("not downloaded").transition(.opacity) }
         }
+        .padding(.horizontal, 8).padding(.vertical, 6)
+        .background {
+            if loaded {
+                let glow = RoundedRectangle(cornerRadius: 10, style: .continuous).fill(LooplDesign.accent.opacity(0.08))
+                if let loadedMark, !reduceMotion { glow.matchedGeometryEffect(id: "loaded.glow", in: loadedMark) } else { glow.transition(.opacity) }
+            }
+        }
+        .padding(.horizontal, -8).padding(.vertical, -6)
         .contentShape(Rectangle())
     }
     private func meta(_ s: String) -> some View { Text(s).font(.caption).foregroundStyle(.secondary) }
@@ -482,9 +576,12 @@ public struct DownloadProgressRow: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             ProgressView(value: Double(done), total: Double(max(total, 1))).tint(LooplDesign.accent)
+                .animation(LooplDesign.Motion.value, value: done)
             HStack {
                 Text("\(ByteCountFormatter.string(fromByteCount: done, countStyle: .file)) of \(ByteCountFormatter.string(fromByteCount: total, countStyle: .file))")
                     .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+                    .contentTransition(.numericText())
+                    .animation(LooplDesign.Motion.value, value: done)
                 Spacer()
                 if let onPause { Button("Pause", action: onPause).font(.caption) }
             }

@@ -10,6 +10,8 @@ struct ModelsView: View {
     @Bindable var store: ModelStore
     @Bindable var settings: AppSettings
     @State private var confirmDelete: ModelSpec?
+    @Namespace private var zoom
+    @Namespace private var loadedMark
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// On this device (loaded first) · From Hugging Face · Recommended · Recommended GGUF.
@@ -33,13 +35,17 @@ struct ModelsView: View {
         NavigationStack {
             List {
                 Section {
-                    NavigationLink { HubBrowseView(engine: engine, store: store, settings: settings) } label: {
+                    NavigationLink {
+                        HubBrowseView(engine: engine, store: store, settings: settings)
+                            .navigationTransition(.zoom(sourceID: "browse", in: zoom))
+                    } label: {
                         Label {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Browse Hugging Face").font(.body.weight(.medium))
                                 Text("Any public MLX or GGUF repo — no account").font(.caption).foregroundStyle(.secondary)
                             }
                         } icon: { Image(systemName: "magnifyingglass").foregroundStyle(LooplDesign.accent) }
+                        .matchedTransitionSource(id: "browse", in: zoom)
                     }
                     .accessibilityIdentifier("models-browse-hub")
                 }
@@ -57,7 +63,9 @@ struct ModelsView: View {
                     if settings.offline { Label("Offline mode is on — downloads are refused, models on the device still load.", systemImage: LooplDesign.iconOffline).font(.footnote).foregroundStyle(.orange) }
                 } footer: { Text("Catalog v\(store.catalog.version) · \(store.catalog.updated)") }
             }
-            .animation(reduceMotion ? nil : LooplDesign.spring, value: sections.map { $0.1.map(\.id) })
+            .animation(LooplDesign.Motion.faded(LooplDesign.Motion.spring, reduceMotion), value: sections.map { $0.1.map(\.id) })
+            .animation(LooplDesign.Motion.faded(LooplDesign.Motion.spring, reduceMotion), value: engine.loadedModel?.id)
+            .animation(LooplDesign.Motion.crossfade, value: engine.readiness.isBusy)
             .navigationTitle("Model")
             .refreshable { store.refresh() }
             .onAppear { store.refresh() }
@@ -78,8 +86,8 @@ struct ModelsView: View {
                 Task { await engine.select(spec) }
             } label: {
                 HStack {
-                    ModelPickerRow(spec: spec, loaded: isLoaded, downloaded: state.isDownloaded)
-                    if busy { ProgressView().controlSize(.small).padding(.leading, 4) }
+                    ModelPickerRow(spec: spec, loaded: isLoaded, downloaded: state.isDownloaded, loadedMark: loadedMark)
+                    if busy { PulsingMark().frame(width: 16, height: 16).padding(.leading, 4).transition(.opacity) }
                 }
             }
             .buttonStyle(.plain)
@@ -125,7 +133,7 @@ struct ModelsView: View {
     }
 
     private func delete(_ spec: ModelSpec) {
-        withAnimation(reduceMotion ? nil : LooplDesign.spring) {
+        withAnimation(LooplDesign.Motion.faded(LooplDesign.Motion.spring, reduceMotion)) {
             engine.didDelete(spec)
             if spec.isFromHub { store.remove(spec) } else { store.delete(spec) }
         }

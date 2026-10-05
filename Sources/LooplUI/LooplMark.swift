@@ -48,6 +48,97 @@ public struct LooplMarkShape: Shape {
     }
 }
 
+/// The loop's centreline alone (tail → head), for stroking: `.trim` on it is the
+/// "mark draws itself" launch motion.
+public struct LooplLoopStroke: Shape {
+    public init() {}
+    public func path(in rect: CGRect) -> Path {
+        let s = min(rect.width, rect.height)
+        let ox = rect.midX - s / 2, oy = rect.midY - s / 2
+        var p = Path()
+        p.addArc(center: CGPoint(x: ox + 0.5 * s, y: oy + 0.54 * s), radius: 0.32 * s,
+                 startAngle: .degrees(28), endAngle: .degrees(300), clockwise: false)
+        return p
+    }
+}
+
+/// The flame head alone (same placement as in `LooplMarkShape`).
+public struct LooplFlameShape: Shape {
+    public var weight: CGFloat = 0.115
+    public init(weight: CGFloat = 0.115) { self.weight = weight }
+    public func path(in rect: CGRect) -> Path {
+        let s = min(rect.width, rect.height)
+        let ox = rect.midX - s / 2, oy = rect.midY - s / 2
+        let c = CGPoint(x: 0.5, y: 0.54), r: CGFloat = 0.32, w = weight, head = Angle.degrees(300)
+        let hx = c.x + r * CGFloat(cos(head.radians)), hy = c.y + r * CGFloat(sin(head.radians))
+        let fw = w * 2.2, fh = w * 3.3
+        var f = Path()
+        f.move(to: CGPoint(x: 0.66, y: 0))
+        f.addCurve(to: CGPoint(x: 1, y: 0.64), control1: CGPoint(x: 0.86, y: 0.22), control2: CGPoint(x: 1, y: 0.44))
+        f.addCurve(to: CGPoint(x: 0.5, y: 1), control1: CGPoint(x: 1, y: 0.86), control2: CGPoint(x: 0.78, y: 1))
+        f.addCurve(to: CGPoint(x: 0, y: 0.64), control1: CGPoint(x: 0.22, y: 1), control2: CGPoint(x: 0, y: 0.86))
+        f.addCurve(to: CGPoint(x: 0.66, y: 0), control1: CGPoint(x: 0, y: 0.34), control2: CGPoint(x: 0.42, y: 0.3))
+        f.closeSubpath()
+        let flameRect = CGRect(x: ox + (hx - fw / 2) * s, y: oy + (hy - fh * 0.7) * s, width: fw * s, height: fh * s)
+        let t = CGAffineTransform(translationX: flameRect.minX, y: flameRect.minY).scaledBy(x: flameRect.width, y: flameRect.height)
+        let rot = CGAffineTransform(translationX: flameRect.midX, y: flameRect.midY).rotated(by: .pi / 180 * -6)
+            .translatedBy(x: -flameRect.midX, y: -flameRect.midY)
+        return f.applying(t).applying(rot)
+    }
+}
+
+/// The mark drawing itself: the loop strokes tail → head (`progress` 0…0.8), then the
+/// flame lights (0.75…1). At `progress == 1` it is pixel-identical to `LooplMark()`.
+public struct LooplMarkDrawing: View, @preconcurrency Animatable {
+    public var progress: Double
+    public init(progress: Double) { self.progress = progress }
+    /// Animatable at the view level so the staged timing (loop, then flame) survives interpolation.
+    public nonisolated var animatableData: Double { get { progress } set { progress = newValue } }
+    public var body: some View {
+        GeometryReader { g in
+            let side = min(g.size.width, g.size.height)
+            let loop = min(1, progress / 0.8)
+            let flame = max(0, min(1, (progress - 0.75) / 0.25))
+            ZStack {
+                LooplLoopStroke().trim(from: 0, to: loop)
+                    .stroke(LooplDesign.flame, style: StrokeStyle(lineWidth: 0.115 * side, lineCap: .round))
+                LooplFlameShape().fill(LooplDesign.flame)
+                    .opacity(flame)
+                    .scaleEffect(0.6 + 0.4 * flame, anchor: UnitPoint(x: 0.66, y: 0.9))
+            }
+            .frame(width: side, height: side)
+            .frame(width: g.size.width, height: g.size.height)
+        }
+        .aspectRatio(1, contentMode: .fit)
+        .accessibilityLabel("loopl")
+        .accessibilityAddTraits(.isImage)
+    }
+}
+
+/// `LooplMark` that draws itself the FIRST time it appears in this process (~0.7 s), then
+/// is the plain mark. Skipped under Reduce Motion and on every later appearance.
+public struct LooplMarkIntro: View {
+    @State private var progress: Double
+    @State private var settled: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @MainActor private static var played = false
+    public init() { _progress = State(initialValue: Self.played ? 1 : 0); _settled = State(initialValue: Self.played) }
+    public var body: some View {
+        ZStack {
+            // `settled` flips only when the draw has finished — switching on `progress` itself would swap
+            // to the filled mark the instant the target is set and cross-fade instead of drawing.
+            if settled { LooplMark() } else { LooplMarkDrawing(progress: progress) }
+        }
+        .task {
+            guard !settled else { return }
+            Self.played = true
+            if reduceMotion { progress = 1; settled = true; return }
+            try? await Task.sleep(for: .seconds(LooplDesign.Motion.drawDelay))
+            withAnimation(LooplDesign.Motion.draw) { progress = 1 } completion: { settled = true }
+        }
+    }
+}
+
 /// The mark filled with the flame gradient; `tone` picks the canvas it sits on.
 public struct LooplMark: View {
     public enum Tone { case plain, dark, light }
@@ -71,6 +162,14 @@ public struct LooplMark: View {
         .accessibilityLabel("loopl")
         .accessibilityAddTraits(.isImage)
     }
+}
+
+#Preview("Drawing") {
+    HStack(spacing: 24) {
+        LooplMarkDrawing(progress: 0.3).frame(width: 96)
+        LooplMarkDrawing(progress: 0.8).frame(width: 96)
+        LooplMarkDrawing(progress: 1).frame(width: 96)
+    }.padding()
 }
 
 #Preview("LooplMark") {

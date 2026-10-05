@@ -61,6 +61,9 @@ public final class Engine {
     public var transcript = Transcript()
     public var readiness: Readiness = .idle
     public var lastError: String?
+    /// Every haptic the engine wants felt (send, tool start/finish, model loaded, download done,
+    /// error) goes through this bus; `RootView` plays it with `.sensoryFeedback`, ≤ 1 per 250 ms.
+    public let haptics = HapticBus()
     let archive = ConversationArchive()
     private(set) var currentId = UUID()
     private var model: (any Model)?
@@ -112,8 +115,8 @@ public final class Engine {
                 if Task.isCancelled { readiness = .idle; return }
                 switch store.states[spec.id] ?? .notDownloaded {
                 case .downloading(let done, let total, _, _): readiness = .downloading(spec, done: done, total: total); continue
-                case .downloaded: break
-                case .failed(let msg): readiness = .failed(spec, msg); return
+                case .downloaded: haptics.emit(.downloadFinished); break
+                case .failed(let msg): readiness = .failed(spec, msg); haptics.emit(.error); return
                 case .paused, .notDownloaded: readiness = .failed(spec, "download stopped"); return
                 }
                 break
@@ -143,11 +146,11 @@ public final class Engine {
             readiness = .ready(spec)
             settings.lastModelId = spec.id
             if previous != nil || !transcript.items.isEmpty { transcript.note("Switched to \(spec.name)") }
-            LooplDesign.success()
+            haptics.emit(.modelLoaded)
         } catch {
             readiness = previous.map { .ready($0) } ?? .failed(spec, error.localizedDescription)
             lastError = error.localizedDescription
-            LooplDesign.failure()
+            haptics.emit(.error)
         }
     }
 
@@ -193,10 +196,11 @@ public final class Engine {
 
     public func send(_ text: String) {
         guard !isGenerating else { return }
-        guard let model, loadedModel != nil else { lastError = "the model is still loading"; return }
+        guard let model, loadedModel != nil else { lastError = "the model is still loading"; haptics.emit(.error); return }
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         lastError = nil
+        haptics.emit(.send)
         // Generation params are the model's own maxed defaults (spec.defaultParams, set at load): no caps here.
         let agent = self.agent ?? Agent(model: model, tools: activeTools, systemPrompt: settings.systemPrompt)
         self.agent = agent
@@ -208,9 +212,14 @@ public final class Engine {
                 for try await event in agent.stream(text) {
                     guard let self else { return }
                     if self.transcript.apply(event) { self.archiveCurrent() }
-                    if case .toolResult(let r) = event { if r.isError { LooplDesign.failure() } else { LooplDesign.haptic() } }
+                    switch event {
+                    case .toolStarted: self.haptics.emit(.toolStart)
+                    case .toolResult(let r): self.haptics.emit(r.isError ? .error : .toolFinish)
+                    default: break
+                    }
                 }
             } catch {
+                self?.haptics.emit(.error)
                 self?.lastError = error.localizedDescription
                 self?.transcript.note("error: \(error.localizedDescription)")
                 self?.transcript.isRunning = false

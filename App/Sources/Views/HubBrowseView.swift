@@ -20,6 +20,7 @@ struct HubBrowseView: View {
     @State private var selected: HubCatalog.Hit?
     @State private var pastedRepo: String?
     @State private var searchTask: Task<Void, Never>?
+    @Namespace private var zoom
     private let hub = HubCatalog()
 
     /// "mlx-community/Qwen3-1.7B-4bit" or a full huggingface.co URL pasted into the search field.
@@ -79,6 +80,7 @@ struct HubBrowseView: View {
                     ForEach(hits) { hit in
                         Button { LooplDesign.haptic(); selected = hit } label: { HubHitRow(hit: hit, added: isAdded(hit)) }
                             .buttonStyle(.plain)
+                            .matchedTransitionSource(id: hit.id, in: zoom)
                             .accessibilityIdentifier("hub-hit-\(hit.id)")
                     }
                 } header: {
@@ -100,6 +102,8 @@ struct HubBrowseView: View {
         .task { if hits.isEmpty { search(immediate: true) } }
         .sheet(item: $selected) { hit in
             HubRepoSheet(repoId: hit.id, hint: hit, engine: engine, store: store, settings: settings) { dismiss() }
+                // iOS 18 zoom: the details grow out of the tapped row and shrink back into it.
+                .navigationTransition(.zoom(sourceID: hit.id, in: zoom))
         }
         .sheet(item: Binding(get: { pastedRepo.map(RepoId.init) }, set: { pastedRepo = $0?.id })) { r in
             HubRepoSheet(repoId: r.id, hint: nil, engine: engine, store: store, settings: settings) { dismiss() }
@@ -123,7 +127,7 @@ struct HubBrowseView: View {
             do {
                 let rows = try await hub.search(q, kind: k).filter(\.isTextGeneration)
                 if Task.isCancelled { return }
-                withAnimation(reduceMotion ? nil : LooplDesign.spring) { hits = rows }
+                withAnimation(LooplDesign.Motion.faded(LooplDesign.Motion.spring, reduceMotion)) { hits = rows }
             } catch {
                 if Task.isCancelled { return }
                 self.error = error.localizedDescription
@@ -183,16 +187,17 @@ struct FitBadge: View {
 /// Loading placeholder rows (no spinners).
 struct SkeletonRow: View {
     @State private var on = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             RoundedRectangle(cornerRadius: 4).fill(.quaternary).frame(width: 220, height: 14)
             RoundedRectangle(cornerRadius: 4).fill(.quaternary).frame(width: 140, height: 10)
         }
         .padding(.vertical, 6)
-        .opacity(on ? 0.45 : 1)
+        .opacity(on && !reduceMotion ? 0.45 : 1)
         // Scoped to `on` only — a `withAnimation(.repeatForever)` in onAppear leaks into the enclosing
         // transaction and leaves the sheet's list animating forever (buttons stop receiving taps).
-        .animation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true), value: on)
+        .animation(reduceMotion ? nil : LooplDesign.Motion.pulse, value: on)
         .onAppear { on = true }
         .accessibilityHidden(true)
     }
@@ -214,6 +219,8 @@ struct HubRepoSheet: View {
     @State private var error: String?
     @State private var quant: HubCatalog.File?
     @State private var showAllFiles = false
+    /// Finger-following offset of the whole sheet while its header is dragged (interactive spring).
+    @State private var drag: CGFloat = 0
     private let hub = HubCatalog()
 
     private var spec: ModelSpec? {
@@ -242,6 +249,21 @@ struct HubRepoSheet: View {
                         }
                         .padding(.vertical, 4)
                         .listRowSeparator(.hidden)
+                        .contentShape(Rectangle())
+                        // Interruptible drag-to-dismiss from the header: follows the finger, dismisses on
+                        // distance or velocity, otherwise springs back. Reduce Motion: plain tap-to-close only.
+                        .gesture(
+                            DragGesture(minimumDistance: 8)
+                                .onChanged { v in
+                                    guard !reduceMotion else { return }
+                                    withAnimation(LooplDesign.Motion.interactive) { drag = max(0, v.translation.height) }
+                                }
+                                .onEnded { v in
+                                    let dy = v.translation.height, vy = v.predictedEndTranslation.height - dy
+                                    if dy > 120 || vy > LooplDesign.Motion.dismissVelocity { dismiss() }
+                                    else { withAnimation(LooplDesign.Motion.reduced(LooplDesign.Motion.snappy, reduceMotion)) { drag = 0 } }
+                                }
+                        )
                     }
                     Section {
                         LabeledContent("Download", value: spec.sizeLabel)
@@ -257,7 +279,7 @@ struct HubRepoSheet: View {
                         Section("Quant") {
                             ForEach(repo.ggufFiles, id: \.path) { f in
                                 Button {
-                                    LooplDesign.haptic(); withAnimation(reduceMotion ? nil : LooplDesign.spring) { quant = f }
+                                    LooplDesign.haptic(); withAnimation(LooplDesign.Motion.faded(LooplDesign.Motion.snappy, reduceMotion)) { quant = f }
                                 } label: {
                                     HStack {
                                         Text(f.quant ?? f.path).font(.body.monospaced())
@@ -282,7 +304,7 @@ struct HubRepoSheet: View {
                             }
                             if repo.files.count > repo.mlxFiles.count {
                                 Button(showAllFiles ? "Show downloaded files only" : "Show all \(repo.files.count) files") {
-                                    withAnimation(reduceMotion ? nil : LooplDesign.spring) { showAllFiles.toggle() }
+                                    withAnimation(LooplDesign.Motion.faded(LooplDesign.Motion.spring, reduceMotion)) { showAllFiles.toggle() }
                                 }.font(.footnote)
                             }
                         } header: { Text("Files") } footer: { Text("Weights, tokenizer and configs are downloaded; README and git files are not.") }
@@ -321,6 +343,7 @@ struct HubRepoSheet: View {
                 }
             }
         }
+        .offset(y: drag)
         .presentationDragIndicator(.visible)
         .task { await load() }
     }
@@ -351,7 +374,7 @@ struct HubRepoSheet: View {
             let r = try await hub.repo(repoId)
             if r.gated { throw HubCatalog.HubError.gated(repoId) }
             let c: HubCatalog.Config? = r.kind == .mlx || r.files.contains(where: { $0.path == "config.json" }) ? try await hub.config(repoId) : nil
-            withAnimation(reduceMotion ? nil : LooplDesign.spring) {
+            withAnimation(LooplDesign.Motion.faded(LooplDesign.Motion.spring, reduceMotion)) {
                 repo = r; config = c
                 if r.kind == .gguf { quant = r.preferredGGUF }
             }

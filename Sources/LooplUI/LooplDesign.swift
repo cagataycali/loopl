@@ -33,8 +33,45 @@ public enum LooplDesign {
 
     /// Horizontal padding of the document column (brief: 20 pt).
     public static let gutter: CGFloat = 20
-    /// The one spring every entering row uses.
-    public static let spring: Animation = .spring(response: 0.42, dampingFraction: 0.82)
+    /// The one spring every entering row uses (= `Motion.spring`).
+    public static let spring: Animation = Motion.spring
+
+    /// Every duration and spring in loopl, in one place (mirror of docs/DESIGN.md "Motion").
+    /// Views never write a duration inline; under Reduce Motion they pass each of
+    /// these through `reduced(_:_:)`, which turns them into nil (no motion) or a plain cross-fade.
+    public enum Motion {
+        /// Entering rows, expanding cards, layout changes.
+        public static let spring: Animation = .spring(response: 0.42, dampingFraction: 0.82)
+        /// Small chrome: toggles, chevrons, send/stop swap.
+        public static let snappy: Animation = .spring(response: 0.28, dampingFraction: 0.86)
+        /// Finger-driven: composer drag, sheet drag — retargets without a hitch.
+        public static let interactive: Animation = .interactiveSpring(response: 0.3, dampingFraction: 0.86, blendDuration: 0.2)
+        /// A streamed chunk fading in (~180 ms, critically damped so it never overshoots).
+        public static let chunk: Animation = .spring(duration: 0.18, bounce: 0)
+        /// Numbers and short labels changing in place.
+        public static let value: Animation = .easeInOut(duration: 0.2)
+        /// Opacity-only fade — the one animation still allowed under Reduce Motion.
+        public static let crossfade: Animation = .easeInOut(duration: 0.22)
+        /// Breathing of the mark / caret while something is in flight.
+        public static let pulse: Animation = .easeInOut(duration: 0.9).repeatForever(autoreverses: true)
+        /// Indeterminate progress sweep.
+        public static let sweep: Animation = .linear(duration: 1.4).repeatForever(autoreverses: false)
+        /// The mark drawing itself once at launch.
+        public static let draw: Animation = .easeInOut(duration: 0.7)
+        public static let drawSeconds: Double = 0.7
+        /// Wait for the system's launch cross-fade to finish, so the stroke is seen being drawn.
+        public static let drawDelay: Double = 0.3
+        /// Minimum spacing between two haptics.
+        public static let hapticGap: TimeInterval = 0.25
+        /// Composer: how far the finger must travel / how fast to count as "dismiss the keyboard".
+        public static let dismissDistance: CGFloat = 36
+        public static let dismissVelocity: CGFloat = 600
+
+        /// `a` normally; nil under Reduce Motion (the change applies instantly).
+        public static func reduced(_ a: Animation, _ reduceMotion: Bool) -> Animation? { reduceMotion ? nil : a }
+        /// `a` normally; an opacity-only cross-fade under Reduce Motion.
+        public static func faded(_ a: Animation, _ reduceMotion: Bool) -> Animation { reduceMotion ? crossfade : a }
+    }
 
     @MainActor public static func haptic(_ strength: Int = 0) {
         #if canImport(UIKit) && !os(watchOS)
@@ -87,5 +124,106 @@ public struct Pill: View {
     public var body: some View {
         Text(text).font(.caption2.weight(.semibold)).padding(.horizontal, 7).padding(.vertical, 3)
             .background(tint.opacity(0.18), in: Capsule()).foregroundStyle(tint)
+    }
+}
+
+
+// MARK: - Haptics
+
+/// What the app wants the hand to feel. Mapped to `SensoryFeedback` in `HapticBus`.
+public enum HapticEvent: Hashable, Sendable {
+    case send, toolStart, toolFinish, modelLoaded, downloadFinished, error, tap
+    var feedback: SensoryFeedback {
+        switch self {
+        case .send: .impact(flexibility: .soft)
+        case .toolStart: .selection
+        case .toolFinish: .impact(weight: .light)
+        case .modelLoaded, .downloadFinished: .success
+        case .error: .error
+        case .tap: .impact(flexibility: .soft)
+        }
+    }
+}
+
+/// One haptic channel for the whole app: anything may `emit`, the root view plays it with
+/// `.sensoryFeedback`, and two events closer than `Motion.hapticGap` collapse into one
+/// (the later wins, so a tool-finish arriving right after a tool-start is still felt).
+@MainActor @Observable public final class HapticBus {
+    public private(set) var seq = 0
+    public private(set) var last: HapticEvent?
+    private var lastAt: TimeInterval = 0
+    private var pending: Task<Void, Never>?
+    public init() {}
+
+    public func emit(_ e: HapticEvent) {
+        let now = Date().timeIntervalSinceReferenceDate
+        if now - lastAt >= LooplDesign.Motion.hapticGap {
+            pending?.cancel(); pending = nil
+            fire(e, at: now)
+        } else {
+            // Too soon: queue it for the end of the gap, replacing whatever was queued.
+            pending?.cancel()
+            let wait = LooplDesign.Motion.hapticGap - (now - lastAt)
+            pending = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(wait))
+                guard !Task.isCancelled, let self else { return }
+                self.fire(e, at: Date().timeIntervalSinceReferenceDate)
+            }
+        }
+    }
+    private func fire(_ e: HapticEvent, at t: TimeInterval) { lastAt = t; last = e; seq &+= 1 }
+}
+
+private struct HapticPlayer: ViewModifier {
+    var bus: HapticBus
+    func body(content: Content) -> some View {
+        content.sensoryFeedback(trigger: bus.seq) { _, _ in bus.last?.feedback }
+    }
+}
+public extension View {
+    /// Plays every `HapticBus.emit` through `.sensoryFeedback`. Attach once, at the root.
+    func looplHaptics(_ bus: HapticBus) -> some View { modifier(HapticPlayer(bus: bus)) }
+}
+
+// MARK: - Indeterminate progress (never a spinner)
+
+/// A 2 pt track with a short accent segment sweeping left→right; under Reduce Motion a
+/// still, half-tinted track. Replaces `ProgressView()` wherever a thing is in flight.
+public struct IndeterminateBar: View {
+    @State private var on = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    public init() {}
+    public var body: some View {
+        GeometryReader { g in
+            let w = g.size.width, seg = max(24, w * 0.3)
+            ZStack(alignment: .leading) {
+                Capsule().fill(LooplDesign.tertiaryFill)
+                if reduceMotion {
+                    Capsule().fill(LooplDesign.accent.opacity(0.5))
+                } else {
+                    Capsule().fill(LooplDesign.accent).frame(width: seg)
+                        .offset(x: on ? w : -seg)
+                        .animation(LooplDesign.Motion.sweep, value: on)
+                }
+            }
+            .clipShape(Capsule())
+        }
+        .frame(height: 2)
+        .onAppear { on = true }
+        .accessibilityLabel("in progress")
+    }
+}
+
+/// The mark breathing (opacity 1 ↔ 0.45) while something is in flight; still under Reduce Motion.
+public struct PulsingMark: View {
+    @State private var on = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    public init() {}
+    public var body: some View {
+        LooplMark()
+            .opacity(on && !reduceMotion ? 0.45 : 1)
+            .animation(reduceMotion ? nil : LooplDesign.Motion.pulse, value: on)
+            .onAppear { on = true }
+            .accessibilityLabel("in progress")
     }
 }

@@ -10,6 +10,7 @@ struct ChatView: View {
     @State private var draft = ""
     @State private var showHistory = false
     @FocusState private var focused: Bool
+    @Namespace private var zoom
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -32,14 +33,22 @@ struct ChatView: View {
                          generating: engine.isGenerating, canSend: engine.loadedModel != nil,
                          send: send, stop: engine.stop)
             }
-            .animation(reduceMotion ? nil : LooplDesign.spring, value: engine.lastError)
+            .animation(LooplDesign.Motion.faded(LooplDesign.Motion.spring, reduceMotion), value: engine.lastError)
             .navigationTitle(engine.loadedModel?.name ?? "loopl")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                // The active model's name changes in place (interpolated, spring) instead of cutting.
+                ToolbarItem(placement: .principal) {
+                    Text(engine.loadedModel?.name ?? "loopl").font(.headline)
+                        .contentTransition(reduceMotion ? .opacity : .interpolate)
+                        .animation(LooplDesign.Motion.faded(LooplDesign.Motion.snappy, reduceMotion), value: engine.loadedModel?.id)
+                        .accessibilityAddTraits(.isHeader)
+                }
                 if !inSplit {
                     ToolbarItem(placement: .topBarLeading) {
-                        Button { showHistory = true } label: { Image(systemName: LooplDesign.iconHistory) }
+                        Button { LooplDesign.haptic(); showHistory = true } label: { Image(systemName: LooplDesign.iconHistory) }
                             .accessibilityLabel("History")
+                            .matchedTransitionSource(id: "history", in: zoom)
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -58,6 +67,8 @@ struct ChatView: View {
                 }
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
+                // iOS 18 zoom: the sheet grows out of the History button and shrinks back into it.
+                .navigationTransition(.zoom(sourceID: "history", in: zoom))
             }
         }
     }
@@ -91,9 +102,9 @@ struct ChatView: View {
     }
 
     private func send() {
-        let t = draft; draft = ""
-        LooplDesign.haptic()
-        engine.send(t)
+        let t = draft
+        withAnimation(LooplDesign.Motion.reduced(LooplDesign.Motion.snappy, reduceMotion)) { draft = "" }
+        engine.send(t)   // the engine emits the .send haptic
     }
 }
 
@@ -105,13 +116,21 @@ struct ReadinessRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
-                if progress == nil { ProgressView().controlSize(.mini) }
-                Text(title).font(.footnote.weight(.medium))
+                if progress == nil { PulsingMark().frame(width: 14, height: 14) }
+                Text(title).font(.footnote.weight(.medium)).contentTransition(.interpolate)
             }
-            if let progress { ProgressView(value: progress).tint(LooplDesign.accent) }
+            if let progress {
+                ProgressView(value: progress).tint(LooplDesign.accent)
+                    .animation(LooplDesign.Motion.value, value: progress)
+            } else {
+                IndeterminateBar()
+            }
             Text(detail).font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                .contentTransition(.numericText())
+                .animation(LooplDesign.Motion.value, value: detail)
         }
         .padding(.vertical, 6)
+        .animation(LooplDesign.Motion.crossfade, value: progress == nil)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(title), \(detail)")
     }
@@ -128,6 +147,8 @@ struct Composer: View {
     var send: () -> Void
     var stop: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Finger-following offset while the composer is dragged down (rubber-banded).
+    @State private var drag: CGFloat = 0
 
     private var sendable: Bool { canSend && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
@@ -162,11 +183,26 @@ struct Composer: View {
                     .transition(.scale.combined(with: .opacity))
                 }
             }
-            .animation(reduceMotion ? nil : LooplDesign.spring, value: generating)
-            .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: sendable)
+            .animation(LooplDesign.Motion.faded(LooplDesign.Motion.snappy, reduceMotion), value: generating)
+            .animation(LooplDesign.Motion.faded(LooplDesign.Motion.value, reduceMotion), value: sendable)
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
         .background(.bar)
-        .gesture(DragGesture(minimumDistance: 24).onEnded { v in if v.translation.height > 24 { focused.wrappedValue = false } })
+        .offset(y: drag)
+        // Interruptible: the bar follows the finger (rubber-banded, interactive spring), and on release
+        // either the keyboard goes (distance or velocity) or the bar springs back. Reduce Motion: no offset.
+        .gesture(
+            DragGesture(minimumDistance: 12)
+                .onChanged { v in
+                    guard focused.wrappedValue, !reduceMotion else { return }
+                    let dy = max(0, v.translation.height)
+                    withAnimation(LooplDesign.Motion.interactive) { drag = dy / (1 + dy / 80) }
+                }
+                .onEnded { v in
+                    let dy = v.translation.height, vy = v.predictedEndTranslation.height - dy
+                    if dy > LooplDesign.Motion.dismissDistance || vy > LooplDesign.Motion.dismissVelocity { focused.wrappedValue = false }
+                    withAnimation(LooplDesign.Motion.reduced(LooplDesign.Motion.snappy, reduceMotion)) { drag = 0 }
+                }
+        )
     }
 }

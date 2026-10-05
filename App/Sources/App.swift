@@ -15,6 +15,7 @@ struct LooplApp: App {
                     SelfTestView(settings: settings, store: store)
                 } else if let engine {
                     RootView(engine: engine, settings: settings, store: store)
+                        .looplHaptics(engine.haptics)
                 } else {
                     LaunchView().task {
                         let e = Engine(settings: settings, store: store)
