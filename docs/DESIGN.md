@@ -18,10 +18,11 @@ One system for loopl.dev and the app. Warm **paper & ink** in light, **deep char
 | `--l-ink` | `#1A1714` | `#ECE8E1` | text |
 | `--l-ink-2` | `#6B645C` | `#9A948B` | secondary text |
 | `--l-line` | `#E6DFD4` | `#2B2E35` | borders, rules |
-| `--l-flame` | `#FF6A1A` | `#FF7A2E` | the one accent: CTA, links, focus |
-| `--l-flame-ink` | `#FFFFFF` | `#15161A` | text on flame |
+| `--l-flame` | `#B8420A` | `#FF7A2E` | the one accent as **text**: links, kicker, focus (≥ 4.5:1 on both papers) |
+| `--l-flame-fill` | `#FF6A1A` | `#FF7A2E` | the same accent as a **fill**: primary button, caret |
+| `--l-flame-ink` | `#1A1714` | `#15161A` | text on a flame fill (6.2:1) |
 
-Accent on ≤ 5 % of any screen. Links are ink with a flame underline; buttons are flame **or** outlined ink — never both on one row.
+Accent on ≤ 5 % of any screen. Every text/background pair in this table meets WCAG AA (4.5:1). Links are ink with a flame underline; buttons are flame **or** outlined ink — never both on one row.
 
 ## Type
 
@@ -49,4 +50,4 @@ Headings sentence-case. One `h1` per page. Max line length 68 ch.
 
 Only opacity/transform, 160–240 ms, `cubic-bezier(.2,.7,.2,1)`. Everything respects `prefers-reduced-motion: reduce` (animations off, final state shown).
 
-Stylesheet: `docs/stylesheets/loopl.v5.css` · Swift mirror: `LooplDesign` tokens in `LooplUI`.
+Stylesheet: `docs/stylesheets/loopl.v6.css` · Swift mirror: `LooplDesign` tokens in `LooplUI`.
