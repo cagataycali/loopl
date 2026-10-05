@@ -236,8 +236,8 @@ body, .md-typeset { font-family: var(--l-body); -webkit-font-smoothing: antialia
 .loopl-loop .l-f { stroke: var(--l-flame); fill: var(--l-flame); }
 .loopl-loop text.l-f { fill: var(--l-flame); stroke: none; }
 .loopl-steps { display: grid; gap: var(--s4); }
-.loopl-grid--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-@media (max-width: 960px) { .loopl-how { grid-template-columns: minmax(0, 1fr); } .loopl-grid--4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.loopl-grid.loopl-grid--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 960px) { .loopl-how { grid-template-columns: minmax(0, 1fr); } .loopl-grid.loopl-grid--4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .loopl-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s3); }
 .loopl-grid--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .loopl-card { background: var(--l-surface); border: 1px solid var(--l-line); border-radius: var(--r); padding: var(--s3); font-size: .8rem; }
@@ -260,7 +260,7 @@ body, .md-typeset { font-family: var(--l-body); -webkit-font-smoothing: antialia
 .loopl-stat b { display: block; font-family: var(--l-display); font-weight: 700; font-size: 2rem; letter-spacing: -.03em; color: var(--l-ink); line-height: 1; }
 .loopl-stat span { display: block; margin-top: var(--s1); font-size: .74rem; color: var(--l-ink-2); }
 .loopl-models { display: flex; flex-wrap: wrap; gap: var(--s1); }
-.loopl-models span { border: 1px solid var(--l-line); border-radius: var(--r-pill); padding: 6px 12px; font-family: var(--l-mono); font-size: .68rem; color: var(--l-ink); background: var(--l-surface); }
+.loopl-models span { white-space: nowrap; border: 1px solid var(--l-line); border-radius: var(--r-pill); padding: 6px 12px; font-family: var(--l-mono); font-size: .68rem; color: var(--l-ink); background: var(--l-surface); }
 .loopl-models span.more { border-style: dashed; color: var(--l-ink-2); }
 .loopl-footer { padding: var(--s6) 0; margin-top: var(--s12); border-top: 1px solid var(--l-line); font-size: .74rem; color: var(--l-ink-2); }
 .loopl-footer nav { display: flex; flex-wrap: wrap; gap: var(--s1) var(--s3); margin-bottom: var(--s2); }

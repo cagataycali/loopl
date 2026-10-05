@@ -20,7 +20,7 @@ hide:
 <h1 class="loopl-hero__title">Agents that run<br><em>on the phone</em>.</h1>
 
 <p class="loopl-hero__lead">
-<strong>loopl</strong> is a Swift agent SDK for on-device models, and a free iOS app built on it. The Strands event loop with no iteration cap. Any public Hugging Face model. No cloud, no account.
+<strong>loopl</strong> is a Swift agent SDK for on-device models, and the free iOS app built on it. Strands event loop, no iteration cap, any public Hugging Face model. Nothing leaves the phone.
 </p>
 
 <div class="loopl-cta">
@@ -28,7 +28,7 @@ hide:
 <a class="loopl-btn loopl-btn--ghost" href="start/">Add the Swift package</a>
 </div>
 
-<p class="loopl-hero__meta">Free, no account · TestFlight now, App Store listing pending · iOS 18+ · <a href="https://github.com/cagataycali/loopl">Open source on GitHub ↗</a></p>
+<p class="loopl-hero__meta">Free · TestFlight now, App Store listing pending · iOS 18+ · <a href="https://github.com/cagataycali/loopl">Open source on GitHub ↗</a></p>
 
 </div>
 
@@ -98,7 +98,7 @@ While the stop reason is `toolUse`, call the model again. `endTurn` yields the `
 
 <section class="loopl-sec" markdown>
 <span class="loopl-kicker">SDK</span>
-## Twelve lines to an agent
+## Write an agent in twelve lines
 `Agent`, `Tool`, `Model`, `Message`, `AgentEvent` — a small typed surface. Actors and async streams all the way down.
 
 === "Agent"
@@ -155,18 +155,18 @@ While the stop reason is `toolUse`, call the model again. `endTurn` yields the `
 
 <section class="loopl-sec" markdown>
 <span class="loopl-kicker">Runs offline</span>
-## Three runtimes, one protocol
-Measured on real hardware with the app's self-test — single runs, not averages.
+## Swap runtimes, keep your code
+One `Model` protocol, three engines. Numbers from the app's self-test on real hardware — single runs, not averages.
 
 <div class="loopl-grid loopl-grid--4" markdown>
 <div class="loopl-stat" markdown><b>41 tok/s</b><span>Qwen3-1.7B 4-bit · MLX Swift · iPhone 16 Pro</span></div>
-<div class="loopl-stat" markdown><b>33 tok/s</b><span>Qwen3-1.7B Q4_K_M · llama.cpp (GGUF) · iPhone 16 Pro</span></div>
-<div class="loopl-stat" markdown><b>0 MB</b><span>Apple Foundation Models · iOS 26 · nothing to download</span></div>
-<div class="loopl-stat" markdown><b>4 tools</b><span>in one turn, concurrently — the run above, 1 tool round</span></div>
+<div class="loopl-stat" markdown><b>33 tok/s</b><span>Qwen3-1.7B Q4_K_M · llama.cpp GGUF · iPhone 16 Pro</span></div>
+<div class="loopl-stat" markdown><b>0 MB</b><span>Apple Foundation Models · iOS 26 · no download</span></div>
+<div class="loopl-stat" markdown><b>4 tools</b><span>one turn, concurrent · the run above · 1 tool round</span></div>
 </div>
 
 <div class="loopl-models" markdown>
-<span>Qwen3 0.6B · 1.7B · 4B</span><span>Llama 3.2 1B · 3B</span><span>Gemma 3 1B · 4B</span><span>Phi-4-mini</span><span>SmolLM3</span><span>DeepSeek-R1 1.5B</span><span class="more">+ any public Hugging Face repo</span>
+<span>Qwen3 0.6B · 1.7B · 4B</span><span>Llama 3.2 1B · 3B</span><span>Gemma 3 1B · 4B</span><span>Phi-4-mini</span><span>SmolLM3</span><span>DeepSeek-R1 1.5B</span><span class="more">+ any public repo, through the SDK</span>
 </div>
 
 [Models & runtimes →](sdk/models.md){ .loopl-btn .loopl-btn--ghost }
@@ -174,14 +174,14 @@ Measured on real hardware with the app's self-test — single runs, not averages
 
 <section class="loopl-sec" markdown>
 <span class="loopl-kicker">The app</span>
-## Free. No login. Nothing collected.
+## Free. Nothing collected.
 
 <div class="loopl-grid--2 loopl-grid" markdown>
 <div class="loopl-phone"><img src="assets/app/02-streaming.png" alt="The loopl app streaming an answer with a Swift code block" width="300" height="651" loading="lazy"></div>
 <div markdown>
-First launch fetches Qwen3-0.6B (335 MB) by itself. Then: a document-style transcript, tool rows you can expand, a Models tab that browses Hugging Face, and an offline switch that refuses every network call.
+First launch fetches Qwen3-0.6B (335 MB) by itself. Then a document-style transcript, tool rows you can expand, a Models tab with 21 public models — any Hugging Face repo is next — and an offline switch that refuses every network call.
 
-- **No account, no token** — public models, anonymous download.
+- **No sign-in, no token** — public models, anonymous download.
 - **No analytics, no servers** — App Store label: *Data Not Collected*.
 - **Open source** — the app is the SDK's worked example.
 
