@@ -83,6 +83,7 @@ jobs:
 
   deploy:
     needs: build
+    if: ${{ always() && needs.build.result == 'success' }}   # success() alone would also require the optional Swift job
     runs-on: ubuntu-latest
     environment:
       name: github-pages
