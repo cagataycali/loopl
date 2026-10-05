@@ -26,12 +26,12 @@ jobs:
           path: |
             DerivedData/SourcePackages
             ~/Library/Caches/org.swift.swiftpm
-          key: spm-${{ runner.os }}-${{ hashFiles('project.yml', 'Package.swift', 'Package.resolved', '**/Package.resolved') }}
+          key: spm-${{ runner.os }}-${{ hashFiles('App/project.yml', 'Package.swift', 'Package.resolved', '**/Package.resolved') }}
           restore-keys: spm-${{ runner.os }}-
       - name: xcodegen
         run: |
           brew install xcodegen >/dev/null 2>&1 || brew upgrade xcodegen >/dev/null 2>&1 || true
-          xcodegen generate
+          xcodegen generate -s App/project.yml
       - name: Pick a simulator
         id: sim
         run: |
@@ -40,13 +40,13 @@ jobs:
       - name: Build (Debug, simulator)
         run: |
           set -o pipefail
-          xcodebuild -project loopl.xcodeproj -scheme loopl -configuration Debug \
+          xcodebuild -project App/LooplApp.xcodeproj -scheme loopl -configuration Debug \
             -destination "id=${{ steps.sim.outputs.udid }}" -derivedDataPath DerivedData \
             CODE_SIGNING_ALLOWED=NO -skipPackagePluginValidation -skipMacroValidation build 2>&1 | tail -n 80
       - name: Test (LooplTests on simulator)
         run: |
           set -o pipefail
-          xcodebuild -project loopl.xcodeproj -scheme loopl -configuration Debug \
+          xcodebuild -project App/LooplApp.xcodeproj -scheme loopl -configuration Debug \
             -destination "id=${{ steps.sim.outputs.udid }}" -derivedDataPath DerivedData \
             CODE_SIGNING_ALLOWED=NO -skipPackagePluginValidation -skipMacroValidation test 2>&1 | tail -n 120
   package:
@@ -66,4 +66,4 @@ jobs:
         run: swift build --product Loopl 2>&1 | tail -n 60
       - name: swift test
         if: steps.pkg.outputs.present == 'true'
-        run: swift test --filter LooplTests 2>&1 | tail -n 120
+        run: swift test 2>&1 | tail -n 120
