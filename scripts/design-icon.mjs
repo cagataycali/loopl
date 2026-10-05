@@ -106,6 +106,23 @@ for (const [src, dst] of outputs) await render(join(brand, src), dst);
   else execFileSync("rsvg-convert", ["-w", "512", "-h", "512", "-o", dst, src]);
 }
 
+// launch-screen image set (UILaunchScreen → UIImageName LaunchMark): 88 pt mark at 1x/2x/3x
+{
+  const set = join(root, "App/Assets.xcassets/LaunchMark.imageset");
+  mkdirSync(set, { recursive: true });
+  let sharp; try { sharp = createRequire(join(homedir(), ".tiny/npm/package.json"))("sharp"); } catch {}
+  const src = join(brand, "loopl-mark.svg");
+  for (const scale of [1, 2, 3]) {
+    const px = 88 * scale, dst = join(set, `launch-mark@${scale}x.png`);
+    if (sharp) await sharp(src, { density: 300 }).resize(px, px).png().toFile(dst);
+    else execFileSync("rsvg-convert", ["-w", String(px), "-h", String(px), "-o", dst, src]);
+  }
+  writeFileSync(join(set, "Contents.json"), JSON.stringify({
+    images: [1, 2, 3].map((s) => ({ filename: `launch-mark@${s}x.png`, idiom: "universal", scale: `${s}x` })),
+    info: { author: "xcode", version: 1 },
+  }, null, 2) + "\n");
+}
+
 writeFileSync(join(iconset, "Contents.json"), JSON.stringify({
   images: [
     { filename: "icon.png", idiom: "universal", platform: "ios", size: "1024x1024" },

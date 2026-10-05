@@ -48,7 +48,9 @@ targets:
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         CFBundleShortVersionString: $(MARKETING_VERSION)
         ITSAppUsesNonExemptEncryption: false
-        UILaunchScreen: {}
+        UILaunchScreen:
+          UIImageName: LaunchMark
+          UIImageRespectsSafeAreaInsets: true
         UISupportedInterfaceOrientations:
         - UIInterfaceOrientationPortrait
         UISupportedInterfaceOrientations~ipad:
