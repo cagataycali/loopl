@@ -4,6 +4,7 @@ description: A native Swift agent SDK for on-device LLMs — the Strands event l
 hide:
   - navigation
   - toc
+  - footer
 ---
 
 <div class="loopl-home" markdown>
@@ -22,12 +23,12 @@ hide:
 <strong>loopl</strong> is a Swift agent SDK for on-device models, and a free iOS app built on it. The Strands event loop with no iteration cap. Any public Hugging Face model. No cloud, no account.
 </p>
 
-<div class="loopl-cta" markdown>
+<div class="loopl-cta">
 <a class="loopl-btn loopl-btn--primary" href="app/">Get the app</a>
-<a class="loopl-btn loopl-btn--ghost" href="https://github.com/cagataycali/loopl">GitHub</a>
+<a class="loopl-btn loopl-btn--ghost" href="start/">Add the Swift package</a>
 </div>
 
-<p class="loopl-hero__meta">Free · on TestFlight now, App Store listing pending · iOS 18+ · Swift 6, SwiftPM · MLX, Apple Foundation Models, llama.cpp</p>
+<p class="loopl-hero__meta">Free, no account · TestFlight now, App Store listing pending · iOS 18+ · <a href="https://github.com/cagataycali/loopl">Open source on GitHub ↗</a></p>
 
 </div>
 
@@ -190,10 +191,17 @@ First launch fetches Qwen3-0.6B (335 MB) by itself. Then: a document-style trans
 </div>
 </section>
 
-<footer class="loopl-footer" markdown>
-<span>© 2026 Çağatay Çalı</span>
-<a href="start/">Get started</a> <a href="sdk/agent/">SDK</a> <a href="models/">Models</a> <a href="app/">App</a> <a href="privacy/">Privacy</a> <a href="faq/">FAQ</a> <a href="changelog/">Changelog</a> <a href="api/">API</a> <a href="https://github.com/cagataycali/loopl">GitHub</a>
-<span>Built on the <a href="https://github.com/strands-agents">Strands</a> event loop · <a href="DESIGN/">Design tokens</a></span>
+<section class="loopl-sec loopl-final" markdown>
+## Build an agent that works in airplane mode.
+<div class="loopl-cta">
+<a class="loopl-btn loopl-btn--primary" href="start/">Get started</a>
+<a class="loopl-btn loopl-btn--ghost" href="https://github.com/cagataycali/loopl">GitHub</a>
+</div>
+</section>
+
+<footer class="loopl-footer">
+<nav aria-label="Footer"><a href="start/">Get started</a><a href="sdk/agent/">SDK</a><a href="models/">Models</a><a href="app/">App</a><a href="privacy/">Privacy</a><a href="faq/">FAQ</a><a href="changelog/">Changelog</a><a href="api/">API</a><a href="https://github.com/cagataycali/loopl">GitHub</a></nav>
+<p>© 2026 Çağatay Çalı · loopl is open source · no data collected · built on the <a href="https://github.com/strands-agents">Strands</a> event loop · <a href="DESIGN/">design tokens</a></p>
 </footer>
 
 </div>

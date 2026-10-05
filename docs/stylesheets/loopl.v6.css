@@ -177,6 +177,10 @@ body, .md-typeset { font-family: var(--l-body); -webkit-font-smoothing: antialia
 .loopl-btn--ghost:hover { background: var(--l-surface); }
 .loopl-btn svg, .loopl-btn .twemoji { width: 1.05em; height: 1.05em; }
 .loopl-hero__meta { margin: var(--s2) 0 0; font-size: .74rem; line-height: 1.6; color: var(--l-ink-2); max-width: 46ch; }
+.loopl-hero__meta a { color: var(--l-ink-2); }
+.loopl-final { text-align: center; }
+.loopl-home .loopl-final > h2 { font-size: 1.8rem; margin-bottom: var(--s3); }
+.loopl-final .loopl-cta { justify-content: center; }
 
 /* transcript demo (real captured run) */
 .loopl-demo { background: var(--l-surface); border: 1px solid var(--l-line); border-radius: var(--r); padding: var(--s3); font-size: .8rem; line-height: 1.55; min-height: 320px; position: relative; }
@@ -258,8 +262,13 @@ body, .md-typeset { font-family: var(--l-body); -webkit-font-smoothing: antialia
 .loopl-models { display: flex; flex-wrap: wrap; gap: var(--s1); }
 .loopl-models span { border: 1px solid var(--l-line); border-radius: var(--r-pill); padding: 6px 12px; font-family: var(--l-mono); font-size: .68rem; color: var(--l-ink); background: var(--l-surface); }
 .loopl-models span.more { border-style: dashed; color: var(--l-ink-2); }
-.loopl-footer { padding: var(--s8) 0 var(--s6); margin-top: var(--s12); border-top: 1px solid var(--l-line); display: flex; flex-wrap: wrap; gap: var(--s2) var(--s4); font-size: .74rem; color: var(--l-ink-2); }
-.loopl-footer a { color: var(--l-ink); }
+.loopl-footer { padding: var(--s6) 0; margin-top: var(--s12); border-top: 1px solid var(--l-line); font-size: .74rem; color: var(--l-ink-2); }
+.loopl-footer nav { display: flex; flex-wrap: wrap; gap: var(--s1) var(--s3); margin-bottom: var(--s2); }
+.loopl-footer nav a { color: var(--l-ink); text-decoration: none; font-family: var(--l-display); font-weight: 600; }
+.loopl-footer nav a:hover { color: var(--l-flame); }
+.loopl-footer p { margin: 0; }
+.loopl-footer p a { color: var(--l-ink-2); }
+body:has(.loopl-home) .md-footer { display: none; }   /* the landing has its own footer */
 
 @media (max-width: 960px) {
   .loopl-hero { grid-template-columns: minmax(0, 1fr); gap: var(--s4); padding-top: var(--s4); }
