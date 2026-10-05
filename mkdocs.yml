@@ -5,6 +5,7 @@ repo_url: https://github.com/cagataycali/loopl
 repo_name: cagataycali/loopl
 edit_uri: ""
 exclude_docs: |
+  hooks/
   gen_models.py
   check_snippets.sh
   build_docc.sh
@@ -19,20 +20,16 @@ theme:
   language: en
   logo: assets/loopl-mark.svg
   favicon: assets/loopl-mark.svg
-  font:
-    text: Inter
-    code: JetBrains Mono
+  font: false   # self-hosted Inter Tight + system stacks (docs/DESIGN.md); no Google Fonts request
   features:
     - navigation.instant
     - navigation.instant.progress
     - navigation.tracking
     - navigation.tabs
     - navigation.tabs.sticky
-    - navigation.sections
     - navigation.path
     - navigation.top
     - navigation.footer
-    - navigation.indexes
     - search.suggest
     - search.highlight
     - search.share
@@ -60,13 +57,31 @@ theme:
 
 extra_css:
   # bump the suffix on every CSS change: Cloudflare caches assets for 4 h (HTML is DYNAMIC)
-  - stylesheets/loopl.v4.css
+  - stylesheets/loopl.v5.css
+
+hooks:
+  - docs/hooks/strip_snippet_tags.py
 
 plugins:
   - redirects:
       redirect_maps:
-        sdk/budget.md: sdk/event-loop.md
+        sdk/budget.md: sdk/agent.md
         app/hf-token.md: privacy.md
+        getting-started/index.md: start.md
+        getting-started/install.md: start.md
+        getting-started/first-agent.md: start.md
+        getting-started/run-on-device.md: start.md
+        sdk/index.md: sdk/agent.md
+        sdk/event-loop.md: sdk/agent.md
+        sdk/messages-events.md: sdk/agent.md
+        sdk/strands-mapping.md: sdk/agent.md
+        sdk/conversation-managers.md: sdk/hooks.md
+        runtimes/index.md: sdk/models.md
+        runtimes/mlx.md: sdk/models.md
+        runtimes/apple-foundation-models.md: sdk/models.md
+        runtimes/gguf.md: sdk/models.md
+        app/downloads.md: app/index.md
+        app/offline.md: app/index.md
   - search:
       separator: '[\s\-,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
   # Social cards (og:image per page). Needs cairo + pillow — the docs workflow installs them;
@@ -74,9 +89,9 @@ plugins:
   - social:
       enabled: !ENV [LOOPL_SOCIAL_CARDS, true]
       cards_layout_options:
-        background_color: "#0f0f12"
-        color: "#ffffff"
-        font_family: Inter
+        background_color: "#15161A"
+        color: "#ECE8E1"
+        font_family: Inter Tight
 
 extra:
   social:
@@ -125,32 +140,15 @@ markdown_extensions:
 
 nav:
   - Home: index.md
-  - Getting started:
-      - getting-started/index.md
-      - Install (SwiftPM): getting-started/install.md
-      - Your first agent: getting-started/first-agent.md
-      - Run on a device: getting-started/run-on-device.md
+  - Start: start.md
   - SDK:
-      - sdk/index.md
-      - Agent: sdk/agent.md
-      - The event loop: sdk/event-loop.md
-      - Hooks: sdk/hooks.md
-      - Messages & events: sdk/messages-events.md
-      - Tools & JSON schema: sdk/tools.md
-      - Model protocol: sdk/models.md
-      - Conversation managers: sdk/conversation-managers.md
-      - Strands mapping: sdk/strands-mapping.md
-      - API reference (DocC): https://loopl.dev/api/
-  - Runtimes:
-      - runtimes/index.md
-      - MLX Swift: runtimes/mlx.md
-      - Apple Foundation Models: runtimes/apple-foundation-models.md
-      - GGUF / llama.cpp: runtimes/gguf.md
+      - Agent & event loop: sdk/agent.md
+      - Tools: sdk/tools.md
+      - Models & runtimes: sdk/models.md
+      - Hooks & conversation: sdk/hooks.md
   - Models: models.md
-  - App:
-      - app/index.md
-      - Download flow: app/downloads.md
-      - Offline mode: app/offline.md
+  - App: app/index.md
   - Privacy: privacy.md
   - FAQ: faq.md
   - Changelog: changelog.md
+  - API: https://loopl.dev/api/

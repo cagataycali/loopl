@@ -1,31 +1,13 @@
 ---
-description: loopl hooks — observe or alter every step of the agent loop with typed, Sendable events, exactly like Strands' HookRegistry.
+title: Hooks & conversation
+description: Observe or veto every step with typed hooks; keep a long session inside the context window with a conversation manager.
 ---
 
-# Hooks
+# Hooks & conversation
 
-Hooks are how you look inside the loop without forking it — Strands' `HookRegistry` / `HookProvider` /
-`HookEvent` trio, in Swift. Every `Agent` owns a registry (`agent.hooks`); the conversation manager and the
-retry strategy are themselves hook providers, which is why they can live outside the loop's core.
+## Hooks
 
-## Events
-
-| Event                    | When                                                   | You can…                                              |
-|--------------------------|--------------------------------------------------------|-------------------------------------------------------|
-| `BeforeInvocationEvent`  | `agent(…)` / `agent.stream(…)` begins                   | read `messages`; set `cancel` to abort with a reason   |
-| `MessageAddedEvent`      | a user, assistant or tool-result message is appended    | log, persist, mirror to a UI                          |
-| `BeforeModelCallEvent`   | just before `model.stream`                              | inspect `projectedInputTokens` vs `contextWindow`, edit `systemPrompt`, `cancel` |
-| `AfterModelCallEvent`    | after the assistant message is assembled (or the call failed) | read `stopResponse` / `error`; set `retry = true` to call the model again |
-| `BeforeToolsEvent`       | before the message's tool uses are executed             | read the assistant `message`; `cancel`                 |
-| `BeforeToolCallEvent`    | before **one** tool runs                                | swap `selectedTool` (mock/deny/route), `cancelTool` with a message the model will read |
-| `AfterToolCallEvent`     | after one tool ran                                      | rewrite `result`, inspect `error`                      |
-| `AfterToolsEvent`        | after all tool results are appended                     | metrics, haptics                                       |
-| `AfterInvocationEvent`   | the invocation ends — with a `result` or an `error`     | clean-up                                               |
-
-`After…` events run their callbacks in **reverse registration order** (`shouldReverseCallbacks`), so a provider that
-wraps a step unwinds in the right order — same rule as Strands.
-
-## Registering a callback
+Typed callbacks at every step of the loop. Register on `agent.hooks` or ship a `HookProvider`.
 
 ```swift
 // snippet: compile
@@ -42,10 +24,6 @@ func observe(_ agent: Agent) async {
     }
 }
 ```
-
-Callbacks are `@Sendable (inout Event) async throws -> Void`: mutate the event to influence the loop, throw to abort it.
-
-## A reusable provider
 
 ```swift
 // snippet: compile
@@ -67,9 +45,53 @@ func make(_ model: any Model) -> Agent {
 }
 ```
 
-Pass providers at init (`Agent(model:…, hooks: [...])`) or later with `agent.hooks.addHook(provider)`. Registration order
-is: conversation manager → retry strategy → your providers — identical to Strands' `Agent.__init__`.
+| `HookEvent` | fires | mutable |
+|---|---|---|
+| `BeforeInvocationEvent` / `AfterInvocationEvent` | once per `agent(…)` | — |
+| `BeforeModelCallEvent` / `AfterModelCallEvent` | each model call | `stopResponse` |
+| `BeforeToolsEvent` / `AfterToolsEvent` | each tool round | — |
+| `BeforeToolCallEvent` / `AfterToolCallEvent` | each tool | `cancelTool`, `selectedTool`, `result` |
+| `MessageAddedEvent` | every message appended | — |
 
-!!! tip "Hooks are the extension point, not subclassing"
-    `Agent` is an actor, not a class to subclass. Anything Strands does with a plugin — token budgets, tool allow-lists,
-    persistence, tracing — is a `HookProvider` here. The loop itself stays untouched.
+After-events run in reverse registration order, as in Strands.
+
+## Conversation managers
+
+A `ConversationManager` keeps the history inside the context window — `applyManagement` after each turn and `reduceContext` when the model throws `ContextWindowOverflowError`.
+
+```swift
+// snippet: compile
+import Loopl
+
+func longRunning(_ model: any Model) -> Agent {
+    Agent(model: model,
+          systemPrompt: "You are a research assistant. Keep going until the question is fully answered.",
+          conversationManager: SlidingWindowConversationManager(windowSize: 60,
+                                                                compressionThreshold: 0.6,
+                                                                pinFirst: 2))   // keep the user's brief
+}
+```
+
+- `SlidingWindowConversationManager` (default, 40 messages) drops the oldest turns, never splits a tool call from its result, and can pin the first *n* messages.
+- `NullConversationManager` does nothing — you own the history.
+- Overflow is silent to the user: the agent trims and retries the same cycle.
+
+This replaces the iteration cap other SDKs use. A long agentic session is bounded by what fits, not by a counter.
+
+## Transcript for UIs
+
+`Transcript` folds `AgentEvent`s into `TranscriptItem`s (text, reasoning, tool rows with timing, metrics); `LooplUI` draws them.
+
+```swift
+// snippet: compile
+import Loopl
+
+@MainActor
+func drive(_ agent: Agent, _ prompt: String, into transcript: inout Transcript) async throws {
+    transcript.user(prompt)
+    for try await event in agent.stream(prompt) {
+        _ = transcript.apply(event)            // returns true when the visible list changed
+    }
+    print(transcript.items.count, transcript.lastResult?.stopReason as Any)
+}
+```

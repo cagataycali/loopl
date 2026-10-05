@@ -1,61 +1,45 @@
+---
+title: FAQ
+description: Short answers — price, phones, context size, the no-cap loop, MLX vs GGUF, simulator, tool-calling models, tokens, Strands.
+---
+
 # FAQ
 
 ??? question "Is it really free? What's the catch?"
-    Yes. The app is free, has no in-app purchases, no account and no analytics. The SDK is open source
-    in the same repository. The catch is physics: a phone runs 0.6–4B-parameter models, not GPT-class ones.
+    Free, no account, no in-app purchase, no analytics. The models are public Hugging Face weights; inference is your phone's. The SDK is open source under the repository licence.
 
 ??? question "Which iPhone do I need?"
-    Anything with ≥ 6 GB RAM runs the small models (Qwen3-0.6B/1.7B). An iPhone 15 Pro / 16 / 16 Pro
-    (8 GB) is the sweet spot for the default. Apple Foundation Models needs an Apple-Intelligence device
-    on iOS 26 with it enabled.
+    iOS 18+. 8 GB RAM (iPhone 15 Pro, 16, 16 Pro) runs ≤ 4B-parameter models at 4-bit with 8k context comfortably; Qwen3-1.7B is the sweet spot. iPhone 17 Pro (12 GB) fits 7–8B. Apple Intelligence needs iOS 26 on an eligible device.
 
 ??? question "Why does the context say 8,192 when the model supports 40,960?"
-    The KV cache costs ~112 KiB per token for Qwen3-1.7B; 40k tokens is ~4.4 GB on top of the weights.
-    The usable default is `min(memoryBound / 2, 8192, model max)` so the model, the cache *and* the UI fit
-    in an 8 GB phone's per-app limit. Raise it in *Agent → Context* if you have headroom.
+    The KV cache grows with context. `ModelSpec.ctxUsable8GB` is the budget that keeps a 4-bit model inside an 8 GB phone's memory limit; raise `GenerationParams.contextLength` if you have the RAM.
 
 ??? question "Does the agent really loop forever?"
-    It loops until the model stops calling tools, the context window is exhausted, or you stop it. There is no
-    iteration cap and no loop detector — on purpose: a phone has no API bill to protect, and the Stop button is
-    always one tap away. The `SlidingWindowConversationManager` keeps the history inside the model's context so a
-    long task cannot overflow. [How the loop ends →](sdk/event-loop.md)
+    It loops until the model stops calling tools, the context is exhausted, or you stop it. No iteration cap, no loop detector — a phone has no API bill to protect and Stop is one tap away. [How the loop ends →](sdk/agent.md)
 
-??? question "MLX or GGUF — which should I pick?"
-    MLX repos (`mlx-community/*-4bit`) are the fastest on Apple GPUs and the catalog's default. GGUF files run on
-    llama.cpp's Metal backend and give you the enormous GGUF ecosystem (Q4_K_M quantisations, more families). Same
-    `Agent`, same tools — switch in the Model list. [Runtimes →](runtimes/index.md)
+??? question "MLX or GGUF?"
+    MLX: fastest on Metal, exact tokens, 4-bit Hugging Face repos — device only. GGUF via llama.cpp: the widest quantised ecosystem and the only one that runs on the simulator (CPU). [Measured speeds →](sdk/models.md#speed-measured-not-quoted)
 
 ??? question "Can I use it on the simulator?"
-    For UI, yes. For inference, no: MLX compiles Metal kernels at runtime and the simulator has no Metal
-    JIT. Use `FakeModel(scripts:)` in previews and tests; use a device for real tokens.
+    The simulator has no Metal JIT, so `MLXModel` is unavailable there; `GGUFModel` runs on CPU. `availability()` tells you which.
 
 ??? question "Which models do tool calls well?"
-    Qwen3 (any size) and Qwen2.5 with the Hermes `<tool_call>` format, Llama-3.2 1B/3B, Phi-4-mini and
-    Apple's model. Gemma 3 and SmolLM fall back to bare-JSON parsing — fine for one tool, flaky for many.
-    The [models table](models.md) has a column for it.
+    Qwen3 and Qwen2.5 (Hermes `<tool_call>` format), Llama-3.2 1B/3B, Phi-4-mini and Apple's model. Gemma 3 and SmolLM fall back to bare-JSON parsing — fine for one tool, flaky for many. The [models table](models.md) has a column.
 
-??? question "Qwen3 answers with a long `<think>` block first. Can I turn it off?"
-    The catalog entry's `chatTemplateKwargs` sets `enable_thinking: false`, and `MLXModel` passes it to the chat
-    template. Remove it from the spec if you want the monologue; it costs tokens and context.
+??? question "Qwen3 answers with a long `<think>` block. Can I turn it off?"
+    The catalog sets `enable_thinking: false` in `chatTemplateKwargs`; remove it if you want the monologue. It costs tokens.
 
-??? question "Do I need a Hugging Face token or account?"
-    No. loopl downloads **public** repositories anonymously and lists only non-gated models; there is no place to
-    enter a token, nothing is stored in the Keychain, and the app never asks you to sign in to anything.
-    [Privacy →](privacy.md)
+??? question "Do I need a Hugging Face token?"
+    No. The downloader is anonymous and public repos only; gated repos are not offered.
 
-??? question "Where do the model files go, and are they backed up?"
-    `Application Support/loopl/models/`, excluded from iCloud backup. Not `Library/Caches` (iOS purges it)
-    and not `Documents` (shows in Files).
+??? question "Where do model files go?"
+    Application Support, excluded from iCloud backup. Delete a model from the Models tab.
 
 ??? question "How is this different from Strands?"
-    Same event loop, same `Message`/`ContentBlock`/`ToolSpec` vocabulary — running on a phone, in Swift,
-    with no iteration cap and memory as a first-class error. [Mapping table →](sdk/strands-mapping.md)
+    It *is* the Strands event loop, in Swift, for on-device models — same events, hooks, executors and retry policy. Differences are listed in [Agent & event loop](sdk/agent.md#strands-loopl).
 
-??? question "Can I use the SwiftUI components without the whole app?"
-    Yes — add the `LooplUI` product: `AgentTranscriptView`, `ToolCallCard`, `TokenMeter`, `ModelPickerRow`,
-    `DownloadProgressRow` on the `LooplDesign` tokens; feed them a `Transcript` built from `FakeModel` scripts in previews.
+??? question "Can I use the SwiftUI components alone?"
+    Yes — `LooplUI` is a separate product: transcript, tool rows, token meter, model picker, download rows.
 
-??? question "Why Metal and not the Neural Engine?"
-    The ANE is only reachable via Core ML, which wants static shapes/fp16 and handles the dynamic int4
-    KV-cache pattern badly. Apple's own Foundation Models runtime is the one path that uses the ANE for an
-    LLM, and it is closed — that is why it is one of the runtimes. [Runtimes →](runtimes/index.md)
+??? question "Why Metal, not the Neural Engine?"
+    The ANE is only reachable through Core ML, which handles the dynamic int4 KV-cache pattern badly. Apple's own Foundation Models runtime is the one ANE path for an LLM — which is why it is one of the three runtimes.

@@ -1,153 +1,69 @@
 ---
-description: The Model protocol every loopl runtime implements — load, stream Bedrock-shaped events, unload — plus ModelSpec, the catalog, anonymous downloads and GenerationParams.
+title: Models & runtimes
+description: One Model protocol, three on-device runtimes — MLX Swift, Apple Foundation Models, GGUF via llama.cpp — plus the catalog, the downloader and honest speed numbers.
 ---
 
-# Model protocol
+# Models & runtimes
 
-Everything the agent needs from an LLM. A `Model` is an **actor** that owns loaded weights and turns a conversation into a
-stream of `StreamEvent`s. It does not download — that is `HFDownloader`'s job — and it does not know about tools beyond
-their specs: parsing calls out of raw text is done for it by `ToolCallStreamGate` when the runtime has no native tool API.
+`Model` is an actor protocol: `load`, `stream`, `unload`, `updateConfig`. Three runtimes ship in `LooplRuntimes`; swap them at runtime.
 
-```swift
-public protocol Model: Actor {
-    nonisolated var kind: RuntimeKind { get }                  // .mlx · .appleFM · .gguf
-    var loadedModelId: String? { get }                         // ModelSpec.id while loaded
-    var params: GenerationParams { get }                       // Strands get_config
-    func updateConfig(_ params: GenerationParams)              // Strands update_config
+| | `MLXModel` | `AppleFoundationModel` | `GGUFModel` |
+|---|---|---|---|
+| Weights | Hugging Face 4-bit safetensors | Apple's, on the device | any `.gguf` |
+| iOS | 18+, device only (Metal) | 26+, Apple Intelligence on | 18+ (device: Metal · simulator: CPU) |
+| Download | 0.3–2.3 GB | none | 0.4–2.5 GB |
+| Context | 8k usable on 8 GB RAM | 4,096 hard | `n_ctx` = `GenerationParams.contextLength` |
+| Tokens | exact | estimated (no tokenizer) | exact |
+| Tools | chat template | prompted (manual) | chat template |
 
-    /// Load weights from `directory` (nil for runtimes that have none, e.g. Apple Foundation Models).
-    func load(_ spec: ModelSpec, from directory: URL?, progress: @Sendable @escaping (Double) -> Void) async throws
-    func unload() async
+Call `availability()` first — it returns `RuntimeAvailability` with the reason when a runtime cannot run here (simulator, iOS < 26, Apple Intelligence off).
 
-    /// One model turn, as the Bedrock-shaped stream Strands uses: messageStart → contentBlock* → messageStop(stopReason) → metadata.
-    nonisolated func stream(_ messages: [Message], toolSpecs: [ToolSpec], systemPrompt: String?)
-        -> AsyncThrowingStream<StreamEvent, Error>
-
-    /// Can this runtime run at all on this build/device (Metal, OS version, Apple Intelligence)?
-    nonisolated static func availability() -> RuntimeAvailability
-}
-```
-
-This is Strands' `Model` interface (`stream(messages, tool_specs, system_prompt)`, `get_config`/`update_config`) with the
-on-device additions `load`/`unload`/`availability`. The three shipped runtimes are on [Runtimes](../runtimes/index.md).
-
-## Errors the loop understands
-
-| Error                         | Thrown by the model when…                              | What the loop does                                           |
-|-------------------------------|--------------------------------------------------------|--------------------------------------------------------------|
-| `ContextWindowOverflowError`  | the prompt does not fit `params.contextLength`         | `conversationManager.reduceContext` → retry the cycle        |
-| `ModelThrottledError`         | a transient failure (GPU busy, warming up)             | retry with backoff, `AgentEvent.throttle(delay:)`            |
-| `MaxTokensReachedError`       | *(not thrown by models — they emit `messageStop(.maxTokens)`)* | append the recovered partial message, throw it to the caller (`agent()` continues) |
-| `ModelError`                  | anything else (not loaded, bad weights)                | `EventLoopError` → `.forceStop`, then `.result`              |
-
-## GenerationParams
+## Load
 
 ```swift
-public struct GenerationParams: Sendable, Hashable, Codable {
-    public var temperature: Float = 0.6
-    public var topP: Float = 0.95
-    public var minP: Float = 0
-    public var maxTokens: Int? = nil          // nil = until the model stops (or the context is full)
-    public var contextLength: Int = 8192      // the KV budget; the catalog's ctxUsable8GB per model
-    public var seed: UInt64? = nil
-}
-```
-
-Defaults are "max out": no output cap, context from the catalog. `temperature` is overridden per model when the catalog
-row carries one (`ModelSpec.temperature`).
-
-## ModelSpec & Catalog
-
-The catalog is a bundled `models.json` — the same file the [Models](../models.md) table is generated from:
-
-```swift
-public struct ModelSpec: Sendable, Codable, Hashable, Identifiable {
-    public var id: String              // "qwen3-1.7b-4bit"
-    public var name: String
-    public var repo: String            // Hugging Face repo id ("" for Apple FM)
-    public var runtime: RuntimeKind
-    public var family: ToolFamily      // tool-call dialect: hermes · llama3 · generic
-    public var paramsB: Double
-    public var sizeBytes: Int64        // weights on disk
-    public var ctxNominal: Int         // max_position_embeddings
-    public var ctxUsable8GB: Int       // what fits beside the weights on an 8 GB iPhone
-    public var minRAMGB: Double
-    public var gated: Bool             // always false in the shipped catalog — loopl lists public repos only
-    public var notes: String?
-    public var revision: String?
-    public var file: String?           // single-file runtimes (GGUF): the one file to download
-    public var temperature: Float?
-    public var chatTemplateKwargs: [String: JSONValue]?   // e.g. enable_thinking: false for Qwen3
-}
-
-public struct Catalog: Sendable, Codable {
-    public var version: Int
-    public var updated: String
-    public var models: [ModelSpec]
-    public var defaultModelId: String?                     // "qwen3-0.6b-4bit" — downloaded on first launch
-    public static func loadBundled(_ bundle: Bundle = .main) -> Catalog
-}
-```
-
-## Downloads — anonymous, resumable, offline-aware
-
-```swift
-public struct HFDownloader: Sendable {
-    public init()                                                 // no token: public repositories only
-    public func files(for spec: ModelSpec) async throws -> [RemoteFile]            // the files a runtime needs
-    public func listFiles(repo: String, revision: String = "main", filter: Bool = true) async throws -> [RemoteFile]
-    public func download(repo: String, revision: String = "main", file: RemoteFile, to dest: URL,
-                         onBytes: @Sendable @escaping (Int64) -> Void) async throws       // cumulative bytes
-}
-```
-
-`download` writes to a `.part` file and resumes with `Range` requests, skips files already complete on disk, and throws `DLError.offline` before opening a socket when
-`NetworkPolicy.isOffline` is set. A gated repository is refused with a readable `DLError.gated` — there is no token to
-paste anywhere. `files(for:)` knows that an MLX repo needs `*.safetensors` + `config.json` + tokenizer files while a GGUF
-spec is one file.
-
-## Implementing a Model
-
-A runtime has three jobs: load weights, produce tokens, report when it stops. Everything else is shared code:
-
-```swift
-// snippet: compile
+// snippet: compile(runtimes)
 import Loopl
+import LooplRuntimes
 import Foundation
 
-actor EchoModel: Model {
-    nonisolated let kind: RuntimeKind = .gguf
-    private(set) var loadedModelId: String?
-    private(set) var params = GenerationParams()
+func loadMLX(_ spec: ModelSpec, at dir: URL) async throws -> MLXModel {
+    let model = MLXModel()
+    try await model.load(spec, from: dir) { p in print("loading \(Int(p * 100)) %") }
+    var params = GenerationParams()
+    params.contextLength = spec.ctxUsable8GB                     // the KV budget for this device class
+    if let t = spec.temperature { params.temperature = t }
+    await model.updateConfig(params)
+    return model
+}
 
-    func updateConfig(_ p: GenerationParams) { params = p }
-    func load(_ spec: ModelSpec, from directory: URL?, progress: @Sendable @escaping (Double) -> Void) async throws {
-        loadedModelId = spec.id; progress(1)
-    }
-    func unload() async { loadedModelId = nil }
-
-    nonisolated func stream(_ messages: [Message], toolSpecs: [ToolSpec], systemPrompt: String?)
-        -> AsyncThrowingStream<StreamEvent, Error> {
-        AsyncThrowingStream { c in
-            c.yield(.messageStart(role: .assistant))
-            c.yield(.contentBlockStart(.text))
-            c.yield(.contentBlockDelta(.text("You said: \(messages.last?.text ?? "")")))
-            c.yield(.contentBlockStop)
-            c.yield(.messageStop(.endTurn))
-            c.finish()
-        }
-    }
-
-    nonisolated static func availability() -> RuntimeAvailability { .ok }
+func loadGGUF(_ spec: ModelSpec, dir: URL) async throws -> GGUFModel {
+    let model = GGUFModel()
+    print(GGUFModel.availability().reason)                    // "" on device; "simulator: CPU only…" in the simulator
+    try await model.load(spec, from: dir) { p in print("\(Int(p * 100)) %") }   // dir contains spec.file (one .gguf)
+    return model
 }
 ```
 
-For a token-producing runtime, pipe each decoded token through a `ToolCallStreamGate(family:)`: it buffers text that
-*might* be the start of a tool call, emits plain text immediately, and converts a complete call into the
-`contentBlockStart(.toolUse)` / `contentBlockDelta(.toolUse(input:))` pair. `MLXModel` and `GGUFModel` do exactly this.
+`AppleFoundationModel().load(spec, from: nil)` loads nothing — the model is already on the phone.
 
-!!! info "Testing without weights"
-    The package's tests use a `FakeModel` actor whose `Turn`s script the stream — `.text`, `.toolUse`, `.markup`
-    (raw `<tool_call>` text through the gate), `.maxTokens`, `.failure`, `.hang` — which is how the 25-deep tool chain,
-    concurrency, recovery, retry and cancellation tests run on a Mac in milliseconds. It lives in `Tests/`, not in the
-    products, so your app never ships a scripted model. Copy it into your own test target.
+## Catalog & download
+
+`Catalog.loadBundled()` is the app's `models.json` — 21 public models, see the [table](../models.md). `HFDownloader` fetches any public repo anonymously, file by file, resumable; a complete file is skipped, so `load(spec, from:)` works offline afterwards. `ModelSpec.minRAMGB` and `ctxUsable8GB` are the numbers the app checks before downloading and when sizing the KV cache.
+
+## Speed — measured, not quoted
+
+| Where | Model | tok/s |
+|---|---|---|
+| iPhone 16 Pro (A18 Pro) | Qwen3-1.7B · MLX 4-bit | 41 |
+| iPhone 16 Pro | Qwen3-1.7B · GGUF Q4_K_M, llama.cpp Metal | 33 (TTFT 1.6 s) |
+| Mac mini M-series | Qwen3-0.6B · GGUF Q4_K_M | 165 |
+
+Single runs from the app's `--selftest` harness, 2 cycles / 1 tool round each. Smaller models are faster; your mileage depends on thermal state.
+
+## Your own runtime
+
+Conform to `Model` and emit `StreamEvent`s in the Bedrock shape Strands consumes — `messageStart · contentBlockStart · contentBlockDelta · contentBlockStop · messageStop · metadata`. `StreamAssembler` turns them into messages; `TokenEstimator` fills in counts when a runtime has no tokenizer.
+
+## Pins
+
+`mlx-swift-lm 3.32.3` (link `MLXLLM` + `MLXLMCommon` only — `MLXHuggingFace` needs iOS 27 types) · `swift-transformers 1.3.4` · llama.cpp `b11401` via `scripts/fetch-llama-xcframework.sh`.

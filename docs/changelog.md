@@ -12,6 +12,12 @@ breaking change is called out under **Changed** with the old → new symbol.
     loopl is in its first week. The SDK surface is settling around the Strands event loop; until `0.2.0`
     ships, treat the pages under *SDK* as the direction, and the changelog as the contract.
 
+## 0.3.0 — 2026-10-05 · docs & identity
+
+- **Docs compacted**: 25 pages → 10 (Home · Start · SDK ×4 · Models · App · Privacy · FAQ · Changelog · API). Every old URL redirects.
+- **Re-imagined visual system** ([design tokens](DESIGN.md)): warm paper & ink light, deep charcoal dark, one flame accent, self-hosted Inter Tight, 8-pt scale. No Google Fonts request, no gradients, no glass.
+- Landing page rebuilt around a real captured agent run (iPhone 16 Pro, Qwen3-1.7B, 2 cycles / 4 concurrent tools).
+
 ## 0.2.0 — in progress (main, 2026-10-05)
 
 Phase 2, driven by the first hands-on review of the app on an iPhone 16 Pro. Everything below is on `main`;

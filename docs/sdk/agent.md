@@ -1,55 +1,11 @@
 ---
-description: Agent — the Strands-style entry point of the loopl SDK. Build it with a model and tools, call it or stream it, read the result.
+title: Agent & event loop
+description: Agent — call it, stream it, persist it. The Strands event loop in Swift: stream → tools → recurse, no iteration cap.
 ---
 
-# Agent
+# Agent & event loop
 
-`Agent` is the one object you talk to. It owns the conversation, the tools, the hooks and the
-[event loop](event-loop.md); you give it a `Model` and ask questions. It is a Swift **actor**, so the
-conversation state is safe to touch from any task.
-
-```swift
-public actor Agent {
-    public let model: any Model
-    public private(set) var tools: [any Tool]
-    public private(set) var systemPrompt: String?
-    public private(set) var messages: [Message]          // Strands agent.messages
-    public let hooks: HookRegistry
-    public let conversationManager: any ConversationManager
-    public let toolExecutor: any ToolExecutor
-    public let retryStrategy: ModelRetryStrategy?
-    public private(set) var eventLoopMetrics: EventLoopMetrics
-
-    public init(model: any Model,
-                tools: [any Tool] = [],
-                systemPrompt: String? = nil,
-                messages: [Message] = [],
-                conversationManager: any ConversationManager = SlidingWindowConversationManager(),
-                hooks: [any HookProvider] = [],
-                toolExecutor: any ToolExecutor = ConcurrentToolExecutor(),
-                retryStrategy: ModelRetryStrategy? = ModelRetryStrategy())
-
-    // run to completion
-    public func callAsFunction(_ prompt: String) async throws -> AgentResult
-    public func callAsFunction(_ messages: [Message]) async throws -> AgentResult
-    public func callAsFunction() async throws -> AgentResult          // continue (e.g. after maxTokens)
-
-    // stream every step
-    public nonisolated func stream(_ prompt: String) -> AsyncThrowingStream<AgentEvent, Error>
-    public nonisolated func stream(_ messages: [Message]) -> AsyncThrowingStream<AgentEvent, Error>
-
-    public func setTools(_ tools: [any Tool])
-    public func setSystemPrompt(_ prompt: String?)
-    public func setMessages(_ messages: [Message])
-    public func reset()
-}
-```
-
-The initializer mirrors Strands' `Agent(model=…, tools=…, system_prompt=…, messages=…, conversation_manager=…,
-hooks=…, tool_executor=…)` argument for argument. There is **no** `max_iterations`, no budget, no loop detector —
-see [why](event-loop.md#6-the-context-window-is-the-only-limit).
-
-## Call it
+`Agent` is an actor. Give it a `Model` and some tools; call it for the answer or stream every event.
 
 ```swift
 // snippet: compile
@@ -69,29 +25,36 @@ func ask(_ model: any Model) async throws {
 }
 ```
 
-`agent("…")` is `callAsFunction` — the same `agent("…")` you write in Strands Python. It appends the user turn,
-runs the loop until the model stops calling tools, and returns an `AgentResult`:
+## The loop
+
+```mermaid
+flowchart LR
+  P[prompt] --> M[model.stream]
+  M -->|text| T[transcript]
+  M -->|tool_use| X[run tools<br/>concurrently]
+  X -->|tool_result| M
+  M -->|end_turn| R[AgentResult]
+```
+
+1. **Stream** the model. Text deltas are yielded as they arrive; tool-use blocks are assembled.
+2. **Run tools** — all calls in the turn, concurrently (`ConcurrentToolExecutor`). Results are appended as a user message.
+3. **Recurse** while the stop reason is `toolUse`. The only bounds are the context window and cancellation. No `maxIterations`, no loop detector — same as Strands.
+
+Also ported: throttle retries (`ModelRetryStrategy`, 6 attempts, 4 → 240 s backoff), context-overflow trimming via the [conversation manager](hooks.md), and `maxTokens` recovery — the partial turn is kept and `MaxTokensReachedError` is thrown so you can simply call again:
 
 ```swift
-public struct AgentResult: Sendable, Hashable {
-    public var stopReason: StopReason        // endTurn · stopSequence · contentFiltered · cancelled (maxTokens throws instead)
-    public var message: Message              // the last assistant message
-    public var metrics: EventLoopMetrics
-    public var text: String { message.text }
-}
+// snippet: compile
+import Loopl
 
-public struct EventLoopMetrics: Sendable, Hashable, Codable {
-    public var cycleCount: Int               // Strands EventLoopMetrics.cycle_count
-    public var toolCallCount: Int
-    public var accumulatedUsage: Usage       // inputTokens · outputTokens · totalTokens
-    public var accumulatedLatencyMs: Double
-    public var last: Metrics                 // the last model call: ttft, tok/s, context used/max
+func askResilient(_ agent: Agent, _ prompt: String) async throws -> AgentResult {
+    do { return try await agent(prompt) }
+    catch is MaxTokensReachedError { return try await agent() }      // the partial turn is already in history
 }
 ```
 
-## Stream it
+## Stream
 
-For a UI you want every token and every tool call as it happens:
+`agent.stream(_:)` yields `AgentEvent`s — the same names as Strands' typed events, as a Swift enum.
 
 ```swift
 // snippet: compile
@@ -113,14 +76,21 @@ func show(_ agent: Agent, _ prompt: String) async throws {
 }
 ```
 
-`stream` is `nonisolated` and returns immediately; the loop runs inside the stream's task. Leaving the `for` loop
-(or cancelling the surrounding `Task`) cancels the model and any running tools — that is the app's Stop button.
-The full event vocabulary is on [Messages & stream events](messages-events.md).
+| `AgentEvent` | when |
+|---|---|
+| `.startEventLoop(cycle:)` | each model call |
+| `.text` / `.reasoning` | content deltas |
+| `.toolUseStream` → `.toolStarted` → `.toolResult` | a tool call's life |
+| `.modelMessage` / `.toolResultMessage` | messages appended to history |
+| `.throttle(delay:)` / `.forceStop` | retry · unrecoverable stop |
+| `.metrics` | tok/s, TTFT, context used (loopl addition) |
+| `.result` | last event on success |
 
-## Conversation state
+For SwiftUI, `Transcript` folds events into rows — `LooplUI` renders it.
 
-`agent.messages` is the whole history as `Message` values (user / assistant / tool-result turns; the system prompt
-is kept beside it). It persists across calls, so the second `agent("…")` sees the first. Store it to resume later:
+## Persist
+
+`Message` is `Codable`; the history is the whole state.
 
 ```swift
 // snippet: compile
@@ -128,7 +98,7 @@ import Loopl
 import Foundation
 
 func save(_ agent: Agent, to url: URL) async throws {
-    let data = try JSONEncoder().encode(await agent.messages)      // Message is Codable
+    let data = try JSONEncoder().encode(await agent.messages)
     try data.write(to: url)
 }
 
@@ -138,35 +108,14 @@ func restore(_ model: any Model, from url: URL) throws -> Agent {
 }
 ```
 
-`reset()` clears the history and the metrics but keeps model, tools and system prompt.
+## Strands → loopl
 
-### Continue after `maxTokens`
+| Strands | loopl |
+|---|---|
+| `agent("…")` / `agent.stream_async` | `try await agent("…")` / `agent.stream` |
+| `event_loop_cycle` / `recurse_event_loop` | `Agent.eventLoopCycle` (private, recursive) |
+| `ModelThrottledException` · `ContextWindowOverflowException` · `MaxTokensReachedException` | `ModelThrottledError` · `ContextWindowOverflowError` · `MaxTokensReachedError` |
+| `StopReason` strings | `StopReason` enum (+ `.cancelled`) |
+| `TypedEvent` classes | `AgentEvent` cases |
 
-When the model hits its output cap, the loop recovers the partial message (a truncated tool call becomes a text
-block that says so), appends it to `agent.messages` and throws `MaxTokensReachedError` — exactly Strands'
-`MaxTokensReachedException` ([details](event-loop.md#4-maxtokens-recovery)). Catch it and call `try await agent()` with
-no argument to continue from the history, like `agent(prompt=None)` in Strands:
-
-```swift
-// snippet: compile
-import Loopl
-
-func askResilient(_ agent: Agent, _ prompt: String) async throws -> AgentResult {
-    do { return try await agent(prompt) }
-    catch is MaxTokensReachedError { return try await agent() }      // the partial turn is already in history
-}
-```
-
-## Pieces you can swap
-
-| Parameter             | Default                             | Why you would change it                                           |
-|-----------------------|-------------------------------------|-------------------------------------------------------------------|
-| `conversationManager` | `SlidingWindowConversationManager()` | Pin more turns, change the 0.7 trim threshold, or `NullConversationManager()` for tests. [→](conversation-managers.md) |
-| `toolExecutor`        | `ConcurrentToolExecutor()`          | `SequentialToolExecutor()` when tools share one resource (camera, BLE). |
-| `retryStrategy`       | `ModelRetryStrategy()` 6 × 4 s→240 s | `nil` to fail fast, or your own delays.                           |
-| `hooks`               | `[]`                                 | Telemetry, allow-lists, persistence — see [Hooks](hooks.md).      |
-
-!!! strands "Strands → loopl"
-    `Agent(model=…, tools=[…], system_prompt=…)` → `Agent(model:tools:systemPrompt:)` · `agent("hi")` → `try await agent("hi")` ·
-    `agent.stream_async("hi")` → `agent.stream("hi")` · `result.stop_reason` → `result.stopReason` · `agent.messages` → `agent.messages`.
-    Full table on the [Strands mapping](strands-mapping.md) page.
+Deliberate differences: `maxTokens` throws after recovering the message; cancellation keeps partial text; roles are `user` / `assistant` only.

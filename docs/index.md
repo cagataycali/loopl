@@ -1,5 +1,6 @@
 ---
 title: loopl — agents that run on the phone
+description: A native Swift agent SDK for on-device LLMs — the Strands event loop, no iteration cap — plus a free iOS app. Any public Hugging Face model. No cloud, no account.
 hide:
   - navigation
   - toc
@@ -9,150 +10,171 @@ hide:
 
 # loopl
 
-<div class="loopl-hero" markdown>
+<section class="loopl-hero" markdown>
 
 <div markdown>
 
-<span class="loopl-hero__eyebrow">:material-fire: native swift · edge inference</span>
+<span class="loopl-kicker">Swift · on-device · open source</span>
 
-<h1 class="loopl-hero__title">Agents that run <em>on the phone</em>.<br>No cloud, no login.</h1>
+<h1 class="loopl-hero__title">Agents that run <em>on the phone</em>.</h1>
 
 <p class="loopl-hero__lead">
-<strong>loopl</strong> is a Swift agent SDK built for on-device inference — the Strands agent loop,
-rewritten for Metal and the Neural Engine. Pick a public model from Hugging Face — no account, no token — hand the agent a few tools,
-and let it run until the job is done. The same loop powers the free <strong>loopl</strong> iOS app.
+<strong>loopl</strong> is a Swift agent SDK for on-device models and a free iOS app built on it. The Strands event loop, no iteration cap, any public Hugging Face model — no cloud, no account.
 </p>
 
-<div class="loopl-hero__cta" markdown>
-[Get started](getting-started/index.md){ .loopl-btn .loopl-btn--primary }
-[:fontawesome-brands-github: GitHub](https://github.com/cagataycali/loopl){ .loopl-btn .loopl-btn--ghost }
-<a class="loopl-badge" href="app/" title="App Store listing — coming soon (TestFlight first)">
-<span>:fontawesome-brands-apple:</span><span><small>Free · coming soon on the</small><b>App Store</b></span>
-</a>
+<div class="loopl-cta" markdown>
+<a class="loopl-btn loopl-btn--primary" href="app/">Get the app <small>· TestFlight, App Store pending</small></a>
+<a class="loopl-btn loopl-btn--ghost" href="https://github.com/cagataycali/loopl">GitHub</a>
 </div>
 
-<p style="margin-top:1rem;font-size:.8rem;opacity:.7">
-Coming from Strands Agents? <a href="sdk/strands-mapping/">See how loopl compares →</a>
-</p>
+<p class="loopl-hero__meta"><span>iOS 18+</span><span>Swift 6 · SwiftPM</span><span>MLX · Apple Foundation Models · llama.cpp</span></p>
 
 </div>
 
-<div class="loopl-hero__code" markdown>
-
-```swift
-// snippet: compile(wrap,runtimes)
-import Loopl
-import LooplRuntimes
-
-// Qwen3-1.7B at 4-bit: 968 MB on disk, runs on Metal (the app ships 21 public models)
-let spec = Catalog.loadBundled().models.first { $0.id == "qwen3-1.7b-4bit" }!
-let dir = URL.documentsDirectory.appending(path: "models/\(spec.id)")   // where HFDownloader put it
-let model = MLXModel()
-try await model.load(spec, from: dir) { _ in }
-
-let agent = Agent(model: model,
-                  tools: [CurrentTimeTool(), CalculatorTool()],
-                  systemPrompt: "You are a concise assistant.")
-
-let q = "What time is it in Istanbul, and what's 23*47?"
-for try await event in agent.stream(q) {
-    switch event {
-    case .text(let t):           print(t, terminator: "")
-    case .toolStarted(let call): print("→ \(call.name)")
-    case .toolResult(let r):     print("← \(r.content)")
-    default: break
-    }
-}
-```
-
+<div class="loopl-demo" data-play aria-label="A real agent run captured on an iPhone 16 Pro">
+<div class="loopl-demo__bar"><b>Qwen3-1.7B · 4-bit · MLX</b><span>iPhone 16 Pro · offline-capable</span></div>
+<p class="loopl-demo__you loopl-demo__step">you</p>
+<p class="loopl-demo__q loopl-demo__step">what time is it in Istanbul and what is 23*47? then remember the answer under the key 'proof' and recall it</p>
+<div class="loopl-demo__tool loopl-demo__step" style="animation-delay:.5s"><b>current_time</b> Europe/Istanbul <i>Mon 5 Oct 13:50 <span class="ok">✓</span></i></div>
+<div class="loopl-demo__tool loopl-demo__step" style="animation-delay:.7s"><b>calculator</b> 23*47 <i>1081 <span class="ok">✓</span></i></div>
+<div class="loopl-demo__tool loopl-demo__step" style="animation-delay:.9s"><b>remember</b> proof <i>remembered <span class="ok">✓</span></i></div>
+<div class="loopl-demo__tool loopl-demo__step" style="animation-delay:1.1s"><b>recall</b> proof <i>proof: 1081 <span class="ok">✓</span></i></div>
+<div class="loopl-demo__a loopl-demo__step" style="animation-delay:1.6s"><p>1081<span class="loopl-caret" aria-hidden="true"></span></p></div>
+<p class="loopl-demo__foot loopl-demo__step" style="animation-delay:2s">2 cycles · 4 tools, concurrent · 41 tok/s · TTFT 2.3 s · ctx 787 / 8192 — the app's <code>--selftest</code> run, 2026-10-05</p>
 </div>
 
-</div>
+</section>
 
 <div class="loopl-strip" markdown>
-<span>:material-apple: iOS 18+ · iPhone 15 Pro+ recommended</span>
 <span>:material-wifi-off: works in airplane mode</span>
 <span>:material-account-off: no account, ever</span>
 <span>:material-chart-line-variant: zero analytics</span>
-<span>:material-language-swift: Swift 6 · SwiftPM</span>
+<span>:material-all-inclusive: no iteration cap</span>
+<span>:material-source-branch: open source</span>
 </div>
 
-<div class="loopl-cards" markdown>
+<section class="loopl-sec" markdown>
+<span class="loopl-kicker">How it works</span>
+## One loop, until the job is done
+A faithful Swift port of the Strands event loop. The context window and your Stop button are the only bounds.
 
-<div class="loopl-card" markdown>
-:material-language-swift:
-### Swift SDK
-`Agent`, `Tool`, `Model`, `Message`, `AgentEvent` — a small, typed surface that mirrors Strands
-naming where it is natural, and feels like Swift everywhere else. Actors, async streams,
-`Sendable` all the way down.
-
-[SDK reference →](sdk/index.md)
+<div class="loopl-grid" markdown>
+<div class="loopl-step" markdown>
+<span class="loopl-step__n">1</span>
+### Stream
+The model streams text and tool-use blocks; `Transcript` renders each delta as it lands.
 </div>
-
-<div class="loopl-card" markdown>
-:material-chip:
-### On-device runtimes
-**MLX Swift** for 4-bit Hugging Face models on the GPU, **Apple Foundation Models** on iOS 26 with
-zero download, and **GGUF on llama.cpp** for the wider quantised ecosystem. One `Model` protocol, swap at runtime.
-
-[Runtimes →](runtimes/index.md)
+<div class="loopl-step" markdown>
+<span class="loopl-step__n">2</span>
+### Run tools
+Every call in the turn runs concurrently; results go back as one message.
 </div>
-
-<div class="loopl-card" markdown>
-:material-all-inclusive:
-### The Strands loop, unlimited
-A faithful Swift port of the Strands event loop — stream, run tools concurrently, recurse — with **no
-iteration cap**. The context window (kept in check by a sliding-window conversation manager) and your
-Stop button are the only bounds. Hooks, retries and `maxTokens` recovery included.
-
-[The event loop →](sdk/event-loop.md)
+<div class="loopl-step" markdown>
+<span class="loopl-step__n">3</span>
+### Recurse
+While the stop reason is `toolUse`, call the model again. `endTurn` yields the `AgentResult`.
 </div>
-
 </div>
+</section>
 
-## Why on-device? { .loopl-section-title }
+<section class="loopl-sec" markdown>
+<span class="loopl-kicker">SDK</span>
+## Twelve lines to an agent
+`Agent`, `Tool`, `Model`, `Message`, `AgentEvent` — a small typed surface. Actors and async streams all the way down.
 
-<div class="loopl-compare" markdown>
+=== "Agent"
 
-<div class="loopl-card" markdown>
-### What you get
-- **Privacy by construction** — prompts, tool results and notes never leave the phone.
-- **Latency you can feel** — first token in well under a second on an A18 Pro with a 1.7B model.
-- **Works offline** — a model already on disk answers in airplane mode.
-- **Free to run** — no API key, no metered tokens, no vendor bill.
-</div>
+    ```swift
+    // snippet: compile
+    import Loopl
 
-<div class="loopl-card" markdown>
-### What to expect
-- Models are **0.6B–4B** parameters at 4-bit; 7B+ is a warning, not a default.
-- Context is RAM-bound: **8k tokens** is the sweet spot on an 8 GB iPhone.
-- Tool calling quality varies by family — Qwen3 and Llama 3.2 are the reliable ones.
-- See the [models table](models.md) for size, context and tool-call support per model.
-</div>
-
-</div>
-
-## One struct to a tool { .loopl-section-title }
-
-```swift
-// snippet: compile
-struct Clock: Tool {
-    let name = "current_time"
-    let description = "Current date & time, optionally for an IANA time zone"
-    let parameters = ToolSchema.object(["timezone": ToolSchema.string("e.g. Europe/Istanbul")])
-    func call(_ args: [String: JSONValue]) async throws -> String {
-        let tz = TimeZone(identifier: args["timezone"]?.stringValue ?? "") ?? .current
-        return Date().formatted(Date.FormatStyle(date: .abbreviated, time: .shortened, timeZone: tz))
+    func ask(_ model: any Model) async throws -> String {
+        let agent = Agent(model: model,
+                          tools: [CurrentTimeTool(), CalculatorTool()],
+                          systemPrompt: "You are a concise assistant.")
+        let result = try await agent("What time is it in Istanbul, and what is 23 × 47?")
+        return result.text                                // 2 cycles: one tool round, then the answer
     }
-}
-```
+    ```
 
-The schema is handed to the model's own chat template (Qwen/Hermes `<tool_call>`, Llama 3.x) or listed in the
-instructions for Apple Foundation Models and Gemma-class models; `ToolCallParser` normalises all three dialects —
-you write the tool once.
+=== "Tool"
 
-[Tools & JSON schema →](sdk/tools.md){ .loopl-btn .loopl-btn--ghost }
-[Browse the models →](models.md){ .loopl-btn .loopl-btn--ghost }
-[Read the privacy policy →](privacy.md){ .loopl-btn .loopl-btn--ghost }
+    ```swift
+    // snippet: compile
+    import Loopl
+    import Foundation
+
+    struct Battery: Tool {
+        let name = "battery_level"
+        let description = "The device's battery level in percent."
+        let parameters = ToolSchema.object([:])
+        func call(_ args: [String: JSONValue]) async throws -> String { "87 %" }
+    }
+    ```
+
+=== "Stream"
+
+    ```swift
+    // snippet: compile
+    import Loopl
+
+    func show(_ agent: Agent, _ prompt: String) async throws {
+        for try await event in agent.stream(prompt) {
+            switch event {
+            case .text(let delta):        print(delta, terminator: "")
+            case .toolStarted(let use):   print("→ \(use.name)")
+            case .toolResult(let r):      print("← \(r.content)")
+            default: break
+            }
+        }
+    }
+    ```
+
+[Start →](start.md){ .loopl-btn .loopl-btn--ghost }
+
+</section>
+
+<section class="loopl-sec" markdown>
+<span class="loopl-kicker">Runs offline</span>
+## Three runtimes, one protocol
+Measured on real hardware with the app's self-test — single runs, not averages.
+
+<div class="loopl-grid" markdown>
+<div class="loopl-stat" markdown><b>41 tok/s</b><span>Qwen3-1.7B 4-bit · MLX Swift · iPhone 16 Pro</span></div>
+<div class="loopl-stat" markdown><b>33 tok/s</b><span>Qwen3-1.7B Q4_K_M · llama.cpp (GGUF) · iPhone 16 Pro</span></div>
+<div class="loopl-stat" markdown><b>0 MB</b><span>Apple Foundation Models · iOS 26 · nothing to download</span></div>
+</div>
+
+<div class="loopl-models" markdown>
+<span>Qwen3 0.6B · 1.7B · 4B</span><span>Llama 3.2 1B · 3B</span><span>Gemma 3 1B · 4B</span><span>Phi-4-mini</span><span>SmolLM3</span><span>DeepSeek-R1 1.5B</span><span class="more">+ any public Hugging Face repo</span>
+</div>
+
+[Models & runtimes →](sdk/models.md){ .loopl-btn .loopl-btn--ghost }
+</section>
+
+<section class="loopl-sec" markdown>
+<span class="loopl-kicker">The app</span>
+## Free. No login. Nothing collected.
+
+<div class="loopl-grid--2 loopl-grid" markdown>
+<div class="loopl-phone"><img src="assets/app/02-streaming.png" alt="The loopl app streaming an answer with a Swift code block" width="300" height="651" loading="lazy"></div>
+<div markdown>
+First launch fetches Qwen3-0.6B (335 MB) by itself. Then: a document-style transcript, tool rows you can expand, a Models tab that browses Hugging Face, and an offline switch that refuses every network call.
+
+- **No account, no token** — public models, anonymous download.
+- **No analytics, no servers** — App Store label: *Data Not Collected*.
+- **Open source** — the app is the SDK's worked example.
+
+[About the app →](app/index.md){ .loopl-btn .loopl-btn--primary }
+[Privacy →](privacy.md){ .loopl-btn .loopl-btn--ghost }
+</div>
+</div>
+</section>
+
+<footer class="loopl-footer" markdown>
+<span>© 2026 Çağatay Çalı</span>
+<a href="start/">Start</a> <a href="sdk/agent/">SDK</a> <a href="models/">Models</a> <a href="app/">App</a> <a href="privacy/">Privacy</a> <a href="faq/">FAQ</a> <a href="changelog/">Changelog</a> <a href="api/">API</a> <a href="https://github.com/cagataycali/loopl">GitHub</a>
+<span>Built on the <a href="https://github.com/strands-agents">Strands</a> event loop · <a href="DESIGN/">Design tokens</a></span>
+</footer>
 
 </div>

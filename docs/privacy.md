@@ -1,44 +1,36 @@
-# Privacy policy
+---
+title: Privacy
+description: loopl collects no data. No account, no analytics, no servers. The only network call is an anonymous model download from Hugging Face that you start.
+---
 
-*Effective 2026-10-05 · applies to the loopl iOS app and the loopl SDK.*
+# Privacy
 
-**loopl collects no data.** There are no accounts, no analytics, no crash reporting, no advertising
-identifiers and no servers operated by us. We cannot see your prompts because they never leave your device.
+*Effective 2026-10-05 · the loopl iOS app and SDK.*
 
-## What the app does on the network
+**loopl collects no data.** No accounts, no analytics, no crash reporting, no advertising identifiers, no servers of ours. Your prompts never leave the phone, so we cannot see them.
+
+## Network
 
 | Connection | When | What is sent |
 |---|---|---|
-| `https://huggingface.co` | on first launch (the default Qwen3-0.6B model) and when **you** pick another model | an **anonymous** request for that public repository's files — no token, no account, no identifier |
-| nothing else | — | — |
+| `https://huggingface.co` | first launch (default model) and when **you** pick a model | an anonymous request for a public repository's files — no token, no account |
+| the URL the model asks for | only if you enable the `http_get` tool and are online | the request itself; the URL is shown in the tool row |
+| anything else | never | — |
 
-Running a model, chatting, tool calls (`current_time`, `calculator`, `device_info`, `remember`/`recall`)
-and reading the catalog happen entirely on the device. The optional `http_get` tool fetches the URL the
-model asks for, only while you are online, and shows you the URL in the tool card.
+Inference, chat, tools and the catalog run entirely on the device. **Offline mode** in Settings refuses every network call.
 
-## What stays on the device
+## On the device
 
-There is no account and no token: the app has nothing that could identify you to anyone, including us.
-
-- **Conversations** — stored in the app's Application Support folder, deleted when you delete them or the app.
+- **Conversations** — Application Support; deleted when you delete them or the app.
 - **Model weights** — Application Support, excluded from iCloud backup.
-- **Notes** written by the `remember` tool — Application Support, never synced.
+- **Notes** from the `remember` tool — Application Support, never synced.
 
 ## Apple Foundation Models
 
-On iOS 26 the app can use Apple's on-device model. That runs under Apple's own on-device privacy model
-and guardrails; loopl adds nothing to it and receives nothing from it beyond the generated text.
+On iOS 26 the app can use Apple's on-device model under Apple's own privacy model and guardrails; loopl receives only the generated text.
 
-## Children
+## App Store label
 
-loopl does not knowingly collect any information from anyone, including children, because it collects
-no information.
+**Data Not Collected.** loopl does not knowingly collect information from anyone, including children — it collects none.
 
-## App Store nutrition label
-
-**Data Not Collected.** No data is collected from this app.
-
-## Changes
-
-This page is the policy. Changes are committed to the public repository with a dated changelog entry.
-Contact: open an issue at [github.com/cagataycali/loopl](https://github.com/cagataycali/loopl/issues).
+Changes to this page are committed to the public repository with a dated [changelog](changelog.md) entry. Contact: [open an issue](https://github.com/cagataycali/loopl/issues).
