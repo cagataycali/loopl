@@ -1,88 +1,104 @@
 # Agent
 
 ```swift
-public final class Agent: Sendable {
-    public init(model: any Model,
-                tools: [any Tool] = [],
-                systemPrompt: String? = nil,
-                budget: Budget = .unlimited,
-                loopDetector: LoopDetector = .default,
-                params: GenerationParams = .init())
+public actor Agent {
+    public let model: any Model
+    public var tools: [any Tool]
+    public var config: AgentConfig
+    /// The conversation so far (system prompt first). Mutable so a host can trim/condense it.
+    public var messages: [Message]
 
-    /// One-shot: run the loop to completion and return the final assistant message.
+    public init(model: any Model, tools: [any Tool] = [], systemPrompt: String? = nil,
+                config: AgentConfig = AgentConfig())
+
+    /// Strands-style call: run to completion, return the final text + what happened.
     public func callAsFunction(_ prompt: String) async throws -> AgentResult
 
-    /// Streaming: every event the loop produces, in order.
-    public func stream(_ prompt: String) -> AsyncThrowingStream<AgentEvent, Error>
-    public func stream(messages: [Message]) -> AsyncThrowingStream<AgentEvent, Error>
+    /// Append a user turn and run the loop, streaming every step.
+    public nonisolated func stream(_ prompt: String) -> AsyncThrowingStream<AgentEvent, Error>
 
-    public var messages: [Message] { get }   // conversation so far
-    public func reset()                      // forget the conversation (keeps model + tools)
+    public func reset(systemPrompt: String? = nil)   // forget the conversation (keeps model + tools)
 }
 
 public struct AgentResult: Sendable {
-    public let message: Message      // the final assistant turn
-    public var text: String          // its text blocks joined
-    public let iterations: Int
-    public let metrics: Metrics
-    public let stopReason: StopReason
+    public var text: String
+    public var iterations: Int
+    public var toolResults: [ToolResult]
+    public var metrics: Metrics
+    public var reason: FinishReason
 }
 
-public enum StopReason: Sendable, Equatable {
-    case answered            // model returned no tool call
-    case cancelled           // the Task was cancelled
-    case budget(Budget.Limit) // a cap you opted into was reached
+public enum FinishReason: String, Sendable { case answered, budget, cancelled }
+
+public struct AgentConfig: Sendable {
+    public var budget: Budget = .unlimited
+    public var loopDetector: LoopDetector? = LoopDetector()   // nil turns it off
+    public var family: ToolFamily = .hermes                    // tool-call dialect for manual prompting
+    public var params = GenerationParams()
+}
+```
+
+## Usage
+
+```swift
+let agent = Agent(model: model, tools: [CurrentTimeTool(), CalculatorTool()],
+                  systemPrompt: "You are a concise assistant.")
+
+let result = try await agent("what time is it in Istanbul and what is 23*47?")
+print(result.text, result.iterations, result.toolResults.map(\.name))
+
+for try await event in agent.stream("Plan my morning in three 25-minute blocks.") {
+    switch event {
+    case .iterationStarted(let n):      print("[\(n)]")
+    case .text(let t):                  print(t, terminator: "")
+    case .toolStarted(let call):        print("→ \(call.name) \(call.arguments)")
+    case .toolFinished(let r):          print("← \(r.name): \(r.content.prefix(80)) (\(Int(r.durationMs)) ms)")
+    case .warning(let w):               print("⚠️ \(w)")
+    case .metrics(let m):               print("\(m.tokensPerSecond) tok/s · ttft \(m.ttftMs) ms")
+    case .assistantMessage, .finished:  break
+    }
 }
 ```
 
 ## The loop, precisely
 
-```swift
-messages.append(.user(prompt))
-var iteration = 0
-while true {
-    iteration += 1; yield .iteration(iteration)
-    let (assistant, events) = try await model.stream(messages, tools: tools, params: params)   // → textDelta / toolUse*
-    messages.append(assistant)
-    let calls = assistant.toolUses
-    if calls.isEmpty { yield .done(.answered); return }
-    for call in calls {                                                                          // sequential, in order
-        yield .toolUseStart(call)
-        let result = await run(call)                                                             // never throws
-        messages.append(.toolResult(result))
-        yield .toolResult(result)
-    }
-    if let warning = loopDetector.observe(calls) { yield .warning(warning) }                     // warns only
-    if let limit = budget.exceeded(iteration:, metrics:) { yield .done(.budget(limit)); return }
-}
+```
+messages += .user(prompt)
+iteration = 0
+loop:
+    iteration += 1                                  → .iterationStarted(n)
+    for try await ev in model.stream(messages, tools, params)
+        .text(t)      → accumulate, yield .text(t)
+        .toolCall(c)  → native call (runtime parsed it)
+        .metrics(m)   → yield .metrics(m)
+    calls = native + ToolCallParser(family).parse(text).calls
+    messages += .assistant(text:, toolCalls: calls)   → .assistantMessage
+    if calls.isEmpty                                   → .finished(iterations, .answered); return
+    for call in calls (sequential, in order)
+        → .toolStarted(call)
+        result = try await tool.call(call.arguments)   // thrown error → ToolResult(isError: true)
+        messages += .tool(result:callId:name:)         → .toolFinished(result)
+        loopDetector.observe(call)                     → .warning(text) if identical ×threshold
+    budget.exceeded(iterations, toolCalls, elapsed, generated) → .finished(n, .budget); return
 ```
 
-- **Tool calls run sequentially** in the order the model emitted them. Parallel tool execution is a
-  future `Agent.Options`, not the default — on-device tools are usually cheap and ordering matters.
-- **An unknown tool name** is answered with `ToolResult.error("unknown tool 'x'. Available: a, b, c")` so
-  the model can self-correct.
-- **Cancellation** is cooperative: cancel the `Task` iterating the stream; the current token stream and
-  tool call see `Task.checkCancellation()` and the loop yields `.done(.cancelled)`.
-
-## Concurrency
-
-`Agent` is `Sendable` and serialises its own state; call it from any actor. Running two prompts on the
-same agent concurrently is a programmer error and throws `AgentError.busy`. Create one agent per
-conversation.
+- **Tool calls run sequentially** in the order the model emitted them.
+- **An unknown tool name** is answered with `error: unknown tool 'x'. Available: …` so the model can self-correct.
+- **Cancellation** is cooperative: stop iterating the stream (or cancel the `Task`); the model stream and the current tool
+  see `Task.checkCancellation()` and the loop yields `.finished(n, .cancelled)`.
+- **Default is unlimited.** `AgentConfig.budget = .unlimited` means the loop ends only when the model answers without a
+  tool call or you cancel. See [Budget & the unlimited loop](budget.md).
 
 ## Parameters
 
 ```swift
-public struct GenerationParams: Sendable {
-    public var maxTokens: Int? = nil          // nil = until EOS or context
+public struct GenerationParams: Sendable, Hashable {
     public var temperature: Float = 0.6
     public var topP: Float = 0.95
-    public var repetitionPenalty: Float? = nil
-    public var stop: [String] = []
-    public var contextLength: Int? = nil      // nil = the model's usable default for this device
-    public var templateKwargs: [String: JSONValue] = [:]   // e.g. ["enable_thinking": false] for Qwen3
+    public var maxTokens: Int = 1024         // per model turn
+    public var contextLength: Int = 4096     // KV-cache cap handed to the runtime (maxKVSize)
 }
 ```
 
-Qwen3 ships with *thinking* on; the catalog entry sets `enable_thinking: false` for the agent loop so
-tool calls come out as `<tool_call>` blocks, not inside a `<think>` monologue.
+The app sets `contextLength` from the catalog's `ctxUsable8GB` (8,192 for every MLX model on an 8 GB iPhone). Qwen3's
+*thinking* is turned off per model via `ModelSpec.chatTemplateKwargs` (`enable_thinking: false`), not here.

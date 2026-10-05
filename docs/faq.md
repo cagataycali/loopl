@@ -17,7 +17,7 @@
 ??? question "Does the agent really loop forever?"
     It loops until the model stops calling tools or you stop it. In practice tasks end in 1–6 iterations;
     pathological ones hit the loop detector, which warns you and lights the Stop button. If you want a
-    hard cap, set a `Budget` — it is off by default on purpose. [Why →](sdk/budget.md)
+    hard cap, set `AgentConfig.budget` — it is `.unlimited` by default on purpose. [Why →](sdk/budget.md)
 
 ??? question "Why is `GGUFModel` a stub?"
     llama.cpp's chat-template and tool-call code lives in C++ `common/` and is not exported through the
@@ -26,7 +26,7 @@
 
 ??? question "Can I use it on the simulator?"
     For UI, yes. For inference, no: MLX compiles Metal kernels at runtime and the simulator has no Metal
-    JIT. Use `FakeModel` in previews and tests; use a device for real tokens.
+    JIT. Use `FakeModel(scripts:)` in previews and tests; use a device for real tokens.
 
 ??? question "Which models do tool calls well?"
     Qwen3 (any size) and Qwen2.5 with the Hermes `<tool_call>` format, Llama-3.2 1B/3B, Phi-4-mini and
@@ -34,8 +34,8 @@
     The [models table](models.md) has a column for it.
 
 ??? question "Qwen3 answers with a long `<think>` block first. Can I turn it off?"
-    The catalog already sets `enable_thinking: false` for agent runs. Flip *Agent → Thinking* to see the
-    monologue; it costs tokens and context.
+    The catalog entry's `chatTemplateKwargs` sets `enable_thinking: false`, and `MLXModel` passes it to the chat
+    template. Remove it from the spec if you want the monologue; it costs tokens and context.
 
 ??? question "Do I need a Hugging Face token?"
     No — nothing in the default catalog is gated. A token is only for gated repos you have access to, and
@@ -50,7 +50,8 @@
     with no iteration cap and memory as a first-class error. [Mapping table →](sdk/strands-mapping.md)
 
 ??? question "Can I use the SwiftUI components without the whole app?"
-    Yes — add the `LooplUI` product. Every component has a `#Preview` fed by `FakeModel` fixture events.
+    Yes — add the `LooplUI` product: `AgentTranscriptView`, `ToolCallCard`, `TokenMeter`, `ModelPickerRow`,
+    `DownloadProgressRow` on the `LooplDesign` tokens; feed them a `Transcript` built from `FakeModel` scripts in previews.
 
 ??? question "Why Metal and not the Neural Engine?"
     The ANE is only reachable via Core ML, which wants static shapes/fp16 and handles the dynamic int4

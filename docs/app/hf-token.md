@@ -22,7 +22,7 @@ access to.
 ## In the SDK
 
 ```swift
-let model = MLXModel("meta-llama/Llama-3.2-1B-Instruct", hfToken: token)
+let hub = HFDownloader(token: token)      // nil → anonymous; the token is only sent to huggingface.co
 ```
 
-or hand `MLXModel` a `TokenProvider` closure if you keep the token in your own Keychain item.
+`Keychain` in `Loopl` is the tiny wrapper the app uses to store it (`kSecAttrAccessibleWhenUnlockedThisDeviceOnly`).

@@ -7,7 +7,10 @@ inference on a real phone.
 
 1. Select your iPhone as the run destination (USB or paired Wi-Fi).
 2. Set your team in **Signing & Capabilities**; keep the **Increased Memory Limit** capability on.
-3. **⌘R**. First launch downloads the model you picked (Qwen3-1.7B-4bit is 968 MB).
+3. **⌘R**. In the app: Models → Qwen3-1.7B (4-bit) → Download (968 MB) → Load → Chat.
+
+The repo's `scripts/build-on-device.sh` does the same from the terminal (`DEVELOPMENT_TEAM=<team> scripts/build-on-device.sh`):
+xcodegen → `xcodebuild -destination id=<udid>` → `devicectl device install app` → `process launch`.
 
 ## Command line
 
@@ -24,8 +27,8 @@ xcrun devicectl device process launch --device "$UDID" com.example.MyApp
 
 ## Memory
 
-Before the first `load()` the runtime calls `GPU.set(cacheLimit: 32 * 1024 * 1024)` and reads
-`os_proc_available_memory()`; `MemoryBudget.current` is what the app shows as the headroom meter.
+Before the first `load()` the runtime calls `MLX.GPU.set(cacheLimit: 32 * 1024 * 1024)`; the app reads
+`os_proc_available_memory()` (its `MemoryBudget`) for the headroom meter and the pre-download warning.
 
 | Phone | RAM | safe per-app | fits comfortably |
 |---|---|---|---|
@@ -33,11 +36,11 @@ Before the first `load()` the runtime calls `GPU.set(cacheLimit: 32 * 1024 * 102
 | iPhone 17 Pro | 12 GB | ~8–9 GB | 7B/8B at 4-bit, 8k–16k context |
 | iPad Pro (M4) | 8–16 GB | ~6–12 GB | same as above by RAM |
 
-`MLXModel.load()` throws `ModelError.insufficientMemory(needed:available:)` instead of letting the kernel
-jetsam you. The app surfaces that as a warning sheet before download.
+The app refuses a download that cannot fit (`ModelSpec.minRAMGB` vs the device) and warns before loading; the SDK
+itself keeps `GenerationParams.contextLength` as the KV-cache cap so a long chat degrades instead of jetsamming.
 
 ## Airplane-mode proof
 
-A model already on disk answers with Wi-Fi and cellular off. `HubApi` is never touched after the files
-are present; only tools that explicitly need the network (`http_get`, `weather`) check reachability
-themselves. See [Offline mode](../app/offline.md).
+A model already on disk answers with Wi-Fi and cellular off: `MLXModel.load(spec, from: dir)` reads the directory and
+makes no network call. `HFDownloader` and `HttpGetTool` both check `NetworkPolicy.isOffline` and fail fast with a clear
+message instead of waiting for a timeout. See [Offline mode](../app/offline.md).

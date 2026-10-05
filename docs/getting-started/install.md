@@ -41,8 +41,9 @@
 
 `Loopl` is pure Swift (Foundation only) and builds everywhere — macOS, Linux, the simulator — which is
 what makes the agent loop unit-testable with `FakeModel`. `LooplRuntimes` pulls in
-[`mlx-swift-lm`](https://github.com/ml-explore/mlx-swift-lm) and
-[`swift-transformers`](https://github.com/huggingface/swift-transformers) and links only on Apple platforms.
+[`mlx-swift-lm`](https://github.com/ml-explore/mlx-swift-lm) `3.32.3` (products `MLXLLM` + `MLXLMCommon` only) and
+[`swift-transformers`](https://github.com/huggingface/swift-transformers) `1.3.4` (`Tokenizers` + `Hub`), pinned `exact:` in
+`Package.swift`. Platforms: iOS 18, macOS 14.
 
 ## Entitlement: Increased Memory Limit
 
@@ -62,8 +63,8 @@ nothing because the model is already on the device.
 
 | Dependency | Pin | Why |
 |---|---|---|
-| `mlx-swift-lm` | ≥ 3.32.3, trait `FoundationModelsIntegration` **disabled** | the trait needs the iOS 27 SDK |
-| `mlx-swift` | ≥ 0.30.6 | #462: gibberish output on iPhone 16 Pro before that |
-| `swift-transformers` | ≥ 1.0 | `HubApi(hfToken:)`, chat templates with `tools:` |
+| `mlx-swift-lm` | `3.32.3` exact; link only `MLXLLM` + `MLXLMCommon`, **never `MLXHuggingFace`** | its macros pull `MLXFoundationModels`, which needs iOS 27 types under the default trait |
+| `mlx-swift` | ≥ 0.30.6 (transitive) | #462: gibberish output on iPhone 16 Pro before that |
+| `swift-transformers` | `1.3.4` exact | `applyChatTemplate(messages:tools:additionalContext:)` for tool specs + `enable_thinking` |
 
-`LooplRuntimes` pins these for you; the table is here so you know what to expect if you override them.
+`Package.swift` pins these; the table is here so you know what to expect if you override them.

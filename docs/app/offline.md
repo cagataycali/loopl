@@ -13,14 +13,14 @@ downloaded keeps answering.
 | `current_time`, `calculator`, `device_info`, `remember/recall` | work | work |
 | `http_get` | works | returns `error: offline` to the model, which explains it to you |
 
-The MLX runtime resolves the snapshot folder locally and never asks the Hub for the file list when the
-files are present — so there is no spinner waiting for a timeout.
+`MLXModel.load(spec, from: dir)` reads the directory and never touches the Hub; a complete file is skipped by the
+downloader without a request — so there is no spinner waiting for a timeout.
 
 ## Offline simulation
 
-**Settings → Offline simulation** swaps the downloader for one that fails every request and marks
-`Reachability.isOnline = false`, so you can test the branch without touching the Control Centre. The
-Chat tab shows an *offline* pill while it is on.
+**Settings → Offline mode** sets `NetworkPolicy.isOffline`: `HFDownloader` throws `DLError.offline` before opening a
+connection and `http_get` answers `offline mode is on — network refused`, so you can test the branch without touching
+the Control Centre. The Chat tab shows an *offline* pill while it is on.
 
 ## Memory, not network, is the risk
 

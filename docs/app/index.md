@@ -22,8 +22,8 @@ the easiest way to feel what on-device agents are like.
 |---|---|
 | **Chat** | Streaming bubbles · tok/s, TTFT and a context meter (used / max) · **Stop** · tool-call cards that expand to show arguments and result · warnings from the loop detector |
 | **Models** | The catalog (runtime, repo, size, context, min RAM) · Download with progress + resume · Delete · *Loaded* indicator · memory headroom warning before a big download |
-| **Agent** | Toggle each built-in tool · system prompt · optional budget (iterations / tokens / time — all off by default) · context length · thinking on/off for Qwen3 |
-| **Settings** | Hugging Face token (Keychain) · runtime preference · offline simulation toggle · clear cache · privacy & about |
+| **Agent** | Toggle each built-in tool · system prompt · optional `Budget` (iterations / tool calls / time / tokens — all off by default) · context length |
+| **Settings** | Hugging Face token (Keychain) · runtime preference (with the availability reason) · offline mode · Demo (scripted) model · clear cache · privacy & about |
 
 ## Identity
 
@@ -46,5 +46,5 @@ the easiest way to feel what on-device agents are like.
 ## Design
 
 Flame-orange accent, SF Symbols, Dynamic Type, VoiceOver labels on every control, iPad layout.
-The components are the same `LooplUI` ones you can use in your own app: `AgentTranscriptView`,
-`ToolCallCard`, `TokenMeter`, `ModelPickerRow`, `DownloadProgressRow`.
+The components are the same `LooplUI` ones you can use in your own app: `AgentTranscriptView`, `ToolCallCard`,
+`TokenMeter`, `ModelPickerRow`, `DownloadProgressRow`, on the `LooplDesign` tokens.

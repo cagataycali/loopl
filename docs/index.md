@@ -43,18 +43,20 @@ Coming from Strands Agents? <a href="sdk/strands-mapping/">See how loopl compare
 import Loopl
 import LooplRuntimes
 
-let agent = Agent(
-    model: MLXModel("mlx-community/Qwen3-1.7B-4bit"),
-    tools: [Clock(), Calculator()],
-    systemPrompt: "You are a concise assistant."
-)
+let model = MLXModel()                                   // Metal, on the phone
+try await model.load(spec, from: modelDir) { _ in }      // mlx-community/Qwen3-1.7B-4bit, 968 MB on disk
 
-for try await event in agent.stream("What time is it in Tokyo, and what's 17% of 240?") {
+let agent = Agent(model: model,
+                  tools: [CurrentTimeTool(), CalculatorTool()],
+                  systemPrompt: "You are a concise assistant.")
+
+for try await event in agent.stream("What time is it in Istanbul, and what's 23*47?") {
     switch event {
-    case .textDelta(let text):        print(text, terminator: "")
-    case .toolUseStart(let call):     print("→ \(call.name)")
-    case .toolResult(let result):     print("← \(result.content)")
-    case .turnEnd(let metrics):       print("\n\(metrics.tokensPerSecond) tok/s")
+    case .text(let t):              print(t, terminator: "")
+    case .toolStarted(let call):    print("→ \(call.name)")
+    case .toolFinished(let r):      print("← \(r.content)")
+    case .metrics(let m) where m.finished: print("
+\(Int(m.tokensPerSecond)) tok/s")
     default: break
     }
 }
@@ -78,8 +80,8 @@ for try await event in agent.stream("What time is it in Tokyo, and what's 17% of
 :material-language-swift:
 ### Swift SDK
 `Agent`, `Tool`, `Model`, `Message`, `AgentEvent` — a small, typed surface that mirrors Strands
-naming where it is natural, and feels like Swift everywhere else. Async streams, structured
-concurrency, `Sendable` all the way down.
+naming where it is natural, and feels like Swift everywhere else. Actors, async streams,
+`Sendable` all the way down.
 
 [SDK reference →](sdk/index.md)
 </div>
@@ -97,8 +99,8 @@ zero download, and **GGUF / llama.cpp** on the roadmap. One `Model` protocol, sw
 :material-all-inclusive:
 ### Unlimited agent loop
 No `max_iterations = 8`. The loop runs until the model stops calling tools or *you* cancel.
-Optional `Budget` caps for tokens, wall time and iterations, plus a loop detector that **warns**
-on identical repeated calls — and never silently stops.
+Optional `Budget` caps for iterations, tool calls, wall time and tokens, plus a `LoopDetector` that
+**warns** on identical repeated calls — and never silently stops.
 
 [Budget & the loop →](sdk/budget.md)
 </div>
@@ -127,23 +129,23 @@ on identical repeated calls — and never silently stops.
 
 </div>
 
-## Three lines to a tool { .loopl-section-title }
+## One struct to a tool { .loopl-section-title }
 
 ```swift
 struct Clock: Tool {
-    static let spec = ToolSpec(name: "current_time",
-                               description: "Current date & time, optionally for an IANA time zone",
-                               parameters: .object(["timezone": .string(description: "e.g. Asia/Tokyo")]))
-    func call(_ input: ToolInput) async throws -> ToolResult {
-        let tz = TimeZone(identifier: input["timezone"]?.stringValue ?? "") ?? .current
-        return .text(Date().formatted(.dateTime.timeZone(tz)))
+    let name = "current_time"
+    let description = "Current date & time, optionally for an IANA time zone"
+    let parameters = ToolSchema.object(["timezone": ToolSchema.string("e.g. Europe/Istanbul")])
+    func call(_ args: [String: JSONValue]) async throws -> String {
+        let tz = TimeZone(identifier: args["timezone"]?.stringValue ?? "") ?? .current
+        return Date().formatted(.dateTime.timeZone(tz))
     }
 }
 ```
 
-The tool's JSON schema is rendered into the model's own chat template (Hermes/Qwen `<tool_call>`,
-Llama 3.x, Gemma plain-JSON) or bridged natively to Apple's `Tool` protocol on iOS 26 — you write
-it once.
+The schema is handed to the model's own chat template (Qwen/Hermes `<tool_call>`, Llama 3.x) or listed in the
+instructions for Apple Foundation Models and Gemma-class models; `ToolCallParser` normalises all three dialects —
+you write the tool once.
 
 [Tools & JSON schema →](sdk/tools.md){ .loopl-btn .loopl-btn--ghost }
 [Browse the models →](models.md){ .loopl-btn .loopl-btn--ghost }
