@@ -51,9 +51,4 @@ DEVICE_ID=<udid> DEVELOPMENT_TEAM=<team> scripts/build-on-device.sh    # install
 ```
 First build resolves mlx-swift (large). Real llama.cpp tests on macOS: `LOOPL_GGUF_DIR=<dir with a .gguf> swift test --filter GGUFModelTests`.
 
-## Honest notes
-- Numbers above are from one phone and one prompt (`core2/device-proof`); the app shows *your* measured values, never ours.
-- Tool-call grammars are verified on Qwen, Llama 3, Gemma, Phi, SmolLM, DeepSeek; other families run with the generic
-  parser and are tagged "tool calls unverified".
-- Apple Intelligence exposes no tokenizer, so its token counts are `chars/4` estimates (labelled).
 Made by [@cagataycali](https://github.com/cagataycali).
