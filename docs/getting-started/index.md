@@ -1,3 +1,7 @@
+---
+description: Start with loopl — add the Swift package, run your first on-device agent, put it on an iPhone.
+---
+
 # Getting started
 
 loopl is two things that share one agent loop:
@@ -28,6 +32,6 @@ loopl is two things that share one agent loop:
 | Network | only for the first download of a model | — |
 
 !!! note "Simulator"
-    MLX compiles Metal kernels at runtime, which the iOS simulator cannot do. `MLXModel` throws
-    `ModelError.unsupportedEnvironment` on the simulator; use `FakeModel` (ships in `Loopl`) for UI work
-    and previews, and a real device for inference.
+    MLX compiles Metal kernels at runtime, which the iOS simulator cannot do — run `MLXModel` on a device.
+    `GGUFModel` does run in the simulator (CPU only, `availability().reason` says so) and `Loopl`'s tests drive the
+    whole loop with a scripted `FakeModel` (in `Tests/`) on a Mac, so UI work and previews never need weights.

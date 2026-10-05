@@ -1,3 +1,7 @@
+---
+description: loopl works in airplane mode — what happens to models, tools and downloads when the phone is offline, and the in-app offline switch.
+---
+
 # Offline mode
 
 The point of loopl is that the model is *on the phone*. Turn on airplane mode and a model that is already
@@ -20,10 +24,10 @@ downloader without a request — so there is no spinner waiting for a timeout.
 
 **Settings → Offline mode** sets `NetworkPolicy.isOffline`: `HFDownloader` throws `DLError.offline` before opening a
 connection and `http_get` answers `offline mode is on — network refused`, so you can test the branch without touching
-the Control Centre. The Chat tab shows an *offline* pill while it is on.
+the Control Centre. The Chat toolbar shows an airplane badge while it is on.
 
 ## Memory, not network, is the risk
 
 Offline or not, the only way a running generation stops unexpectedly is the OS evicting the app under
-memory pressure. The headroom check before download and the usable-context default exist for that;
-the Chat meter shows live available memory so you can see it coming.
+memory pressure. The headroom check before download and the per-model context budget (`ctxUsable8GB`) exist for that;
+*Show performance details* adds a quiet footer line with context used / max so you can see it coming.
