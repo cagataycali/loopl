@@ -1,7 +1,7 @@
 {
  "version": 2,
  "updated": "2026-10-05",
- "default": "qwen3-1.7b-4bit",
+ "default": "qwen3-0.6b-4bit",
  "_note": "From ~/.tiny/loopl-20261005/models.catalog.json (RESEARCH.md §2.5: HF API ?blobs=true sizes, config.json ctx). ctx_usable_8gb = min(memory-bound/2, 8192, model max) — a RAM budget estimate until measured on device. GGUF rows omitted (llama.cpp is v2). Models whose weights alone exceed the 8 GB budget (Qwen3-8B, Qwen2.5-7B, Mistral-7B, gemma-3n-E4B) are not offered. Rows above 3.5 GB of weights (Qwen2.5-7B, Mistral-7B, gemma-3n-E2B) dropped per RESEARCH §6 \"do not fit comfortably\".",
  "models": [
   {

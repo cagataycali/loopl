@@ -74,6 +74,7 @@ targets:
         # The app module must not be `loopl`: on a case-insensitive disk its
         # loopl.swiftmodule collides with the SDK's Loopl.swiftmodule.
         PRODUCT_NAME: loopl
+        PRODUCT_MODULE_NAME: LooplApp
         TARGETED_DEVICE_FAMILY: '1,2'
         SWIFT_OBJC_INTEROP_MODE: objc
         ENABLE_USER_SCRIPT_SANDBOXING: false

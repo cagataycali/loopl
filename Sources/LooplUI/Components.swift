@@ -1,171 +1,435 @@
 import SwiftUI
 import Loopl
 
-// MARK: - ToolCallCard
+// MARK: - Markdown body (a tiny block renderer: paragraphs, headings, bullets, fenced code)
 
-/// Collapsed pill → expandable args + result, with status spinner / ✓ / ✗.
-public struct ToolCallCard: View {
+/// Readable Markdown for an assistant turn: 17 pt body, comfortable line
+/// spacing, monospaced code cards. Inline Markdown goes through
+/// `AttributedString(markdown:)`; blocks are split here so code fences and
+/// lists survive streaming (a half-open fence renders as code).
+public struct MarkdownBody: View {
+    public var text: String
+    public var streaming: Bool
+    public init(_ text: String, streaming: Bool = false) { self.text = text; self.streaming = streaming }
+
+    enum Block: Hashable { case paragraph(String), heading(Int, String), bullet([String]), numbered([String]), code(String, lang: String) }
+
+    static func blocks(_ s: String) -> [Block] {
+        var out: [Block] = []
+        var para: [String] = []
+        var bullets: [String] = []
+        var numbers: [String] = []
+        var code: [String]? = nil
+        var lang = ""
+        func flushPara() { if !para.isEmpty { out.append(.paragraph(para.joined(separator: " "))); para.removeAll() } }
+        func flushLists() {
+            if !bullets.isEmpty { out.append(.bullet(bullets)); bullets.removeAll() }
+            if !numbers.isEmpty { out.append(.numbered(numbers)); numbers.removeAll() }
+        }
+        for raw in s.split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = String(raw)
+            if var c = code {
+                if line.trimmingCharacters(in: .whitespaces).hasPrefix("```") { out.append(.code(c.joined(separator: "\n"), lang: lang)); code = nil }
+                else { c.append(line); code = c }
+                continue
+            }
+            let t = line.trimmingCharacters(in: .whitespaces)
+            if t.hasPrefix("```") { flushPara(); flushLists(); code = []; lang = String(t.dropFirst(3)).trimmingCharacters(in: .whitespaces); continue }
+            if t.isEmpty { flushPara(); flushLists(); continue }
+            if let m = t.firstMatch(of: /^(#{1,4})\s+(.*)$/) { flushPara(); flushLists(); out.append(.heading(m.1.count, String(m.2))); continue }
+            if let m = t.firstMatch(of: /^[-*•]\s+(.*)$/) { flushPara(); if !numbers.isEmpty { flushLists() }; bullets.append(String(m.1)); continue }
+            if let m = t.firstMatch(of: /^\d+[.)]\s+(.*)$/) { flushPara(); if !bullets.isEmpty { flushLists() }; numbers.append(String(m.1)); continue }
+            flushLists(); para.append(t)
+        }
+        flushPara(); flushLists()
+        if let c = code { out.append(.code(c.joined(separator: "\n"), lang: lang)) }   // unterminated fence while streaming
+        return out
+    }
+
+    static func inline(_ s: String) -> AttributedString {
+        (try? AttributedString(markdown: s, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(s)
+    }
+
+    public var body: some View {
+        let blocks = Self.blocks(text)
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(Array(blocks.enumerated()), id: \.offset) { i, b in
+                let last = i == blocks.count - 1
+                switch b {
+                case .paragraph(let s):
+                    (Text(Self.inline(s)) + caret(last)).font(.body).lineSpacing(5)
+                case .heading(let level, let s):
+                    Text(Self.inline(s)).font(level == 1 ? .title2.weight(.semibold) : level == 2 ? .title3.weight(.semibold) : .headline).padding(.top, 4)
+                case .bullet(let items):
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(Array(items.enumerated()), id: \.offset) { j, it in
+                            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                                Text("•").foregroundStyle(.secondary)
+                                (Text(Self.inline(it)) + caret(last && j == items.count - 1)).lineSpacing(4)
+                            }
+                        }
+                    }.font(.body)
+                case .numbered(let items):
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(Array(items.enumerated()), id: \.offset) { j, it in
+                            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                                Text("\(j + 1).").foregroundStyle(.secondary).monospacedDigit()
+                                (Text(Self.inline(it)) + caret(last && j == items.count - 1)).lineSpacing(4)
+                            }
+                        }
+                    }.font(.body)
+                case .code(let s, let lang):
+                    CodeCard(code: s, language: lang)
+                }
+            }
+            if blocks.isEmpty, streaming { StreamingCaret() }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .textSelection(.enabled)
+    }
+
+    private func caret(_ show: Bool) -> Text {
+        show && streaming ? Text(" ▍").foregroundStyle(LooplDesign.accent) : Text("")
+    }
+}
+
+/// Monospaced code on a quiet card, horizontally scrollable, with a copy action.
+public struct CodeCard: View {
+    public var code: String
+    public var language: String
+    public init(code: String, language: String = "") { self.code = code; self.language = language }
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if !language.isEmpty {
+                Text(language).font(.caption2.weight(.medium)).foregroundStyle(.secondary).padding(.horizontal, 12).padding(.top, 8)
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                Text(code).font(.callout.monospaced()).textSelection(.enabled).padding(12)
+            }
+        }
+        .background(LooplDesign.secondaryBackground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .contextMenu { Button("Copy code", systemImage: "doc.on.doc") { copy(code) } }
+        .accessibilityLabel("code block\(language.isEmpty ? "" : ", \(language)")")
+    }
+}
+
+@MainActor func copy(_ s: String) {
+    #if canImport(UIKit)
+    UIPasteboard.general.string = s
+    #endif
+    LooplDesign.haptic()
+}
+
+/// A pulsing bar shown where the next token will land.
+public struct StreamingCaret: View {
+    @State private var on = true
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    public init() {}
+    public var body: some View {
+        RoundedRectangle(cornerRadius: 1.5).fill(LooplDesign.accent).frame(width: 3, height: 18)
+            .opacity(on ? 1 : 0.25)
+            .onAppear { if !reduceMotion { withAnimation(.easeInOut(duration: 0.6).repeatForever()) { on.toggle() } } }
+            .accessibilityHidden(true)
+    }
+}
+
+// MARK: - Turns
+
+/// The user's turn: a small secondary "You" label and the text, left-aligned.
+public struct UserTurn: View {
+    public var text: String
+    public init(_ text: String) { self.text = text }
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("You").font(.caption.weight(.semibold)).foregroundStyle(.secondary).textCase(.uppercase).kerning(0.6)
+            Text(text).font(.body).lineSpacing(4).foregroundStyle(.primary.opacity(0.85)).textSelection(.enabled)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contextMenu { Button("Copy", systemImage: "doc.on.doc") { copy(text) } }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("You said: \(text)")
+    }
+}
+
+/// Assistant text while it streams (kept for API compatibility — a `MarkdownBody`).
+public struct StreamingTextView: View {
+    public var text: String
+    public var streaming: Bool
+    public init(_ text: String, streaming: Bool) { self.text = text; self.streaming = streaming }
+    public var body: some View {
+        MarkdownBody(text, streaming: streaming)
+            .contextMenu { Button("Copy", systemImage: "doc.on.doc") { copy(text) } }
+            .accessibilityLabel(streaming ? "loopl is writing: \(text)" : "loopl: \(text)")
+    }
+}
+
+/// Legacy bubble kept so older call sites compile; the app uses `UserTurn`.
+public struct UserBubble: View {
+    public var text: String
+    public init(_ text: String) { self.text = text }
+    public var body: some View { UserTurn(text) }
+}
+
+// MARK: - Tool rows
+
+/// A quiet inline row — icon · tool name · spinner → ✓/✗ — that expands on tap
+/// to a monospaced card with the arguments and the result.
+public struct ToolRow: View {
     public var call: ToolCall
     public var result: ToolResult?
     @State private var expanded = false
-
+    @State private var spin = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     public init(call: ToolCall, result: ToolResult?) { self.call = call; self.result = result }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Button { withAnimation(.easeInOut(duration: 0.15)) { expanded.toggle() } } label: {
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                withAnimation(reduceMotion ? nil : LooplDesign.spring) { expanded.toggle() }
+            } label: {
                 HStack(spacing: 8) {
-                    status
-                    Text(call.name).font(.subheadline.weight(.semibold).monospaced()).lineLimit(1)
-                    Spacer()
-                    if let r = result { Text(String(format: "%.0f ms", r.durationMs)).font(.caption2.monospacedDigit()).foregroundStyle(.secondary) }
-                    Image(systemName: expanded ? "chevron.up" : "chevron.down").font(.caption2).foregroundStyle(.secondary)
+                    status.frame(width: 16, height: 16)
+                    Text(call.name).font(.callout.monospaced()).foregroundStyle(.primary.opacity(0.8))
+                    if let r = result, r.durationMs > 0 {
+                        Text(duration(r.durationMs)).font(.caption2.monospacedDigit()).foregroundStyle(.tertiary)
+                    }
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right").font(.caption2.weight(.semibold)).foregroundStyle(.tertiary)
+                        .rotationEffect(.degrees(expanded ? 90 : 0))
                 }
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("tool \(call.name), \(result == nil ? "running" : result!.isError ? "failed" : "done")")
-            Text(JSONValue.object(call.arguments).compact).font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(expanded ? nil : 1)
-            if let r = result, expanded || r.content.count < 120 {
-                Divider()
-                Text(r.content).font(.caption.monospaced()).foregroundStyle(r.isError ? .red : .primary).lineLimit(expanded ? nil : 4).textSelection(.enabled)
-            }
+            .accessibilityLabel(a11y)
+            .accessibilityHint(expanded ? "collapses the details" : "shows arguments and result")
+
+            if expanded { ToolCallCard(call: call, result: result).transition(.opacity.combined(with: .move(edge: .top))) }
         }
-        .looplCard()
+        .padding(.vertical, 2)
     }
 
     @ViewBuilder private var status: some View {
         if let r = result {
-            Image(systemName: r.isError ? "xmark.circle.fill" : "checkmark.circle.fill").foregroundStyle(r.isError ? .red : LooplDesign.accent)
+            Image(systemName: r.isError ? "xmark.circle.fill" : "checkmark.circle.fill")
+                .font(.footnote)
+                .foregroundStyle(r.isError ? Color.red : LooplDesign.accent)
+                .transition(.scale.combined(with: .opacity))
         } else {
-            ProgressView().controlSize(.mini)
+            Image(systemName: LooplDesign.iconTool).font(.caption2).foregroundStyle(.secondary)
+                .rotationEffect(.degrees(spin ? 360 : 0))
+                .onAppear { if !reduceMotion { withAnimation(.linear(duration: 1.6).repeatForever(autoreverses: false)) { spin = true } } }
+        }
+    }
+    private var a11y: String {
+        if let r = result { return "tool \(call.name) \(r.isError ? "failed" : "finished")" }
+        return "tool \(call.name) running"
+    }
+    private func duration(_ ms: Double) -> String { ms < 1 ? "<1 ms" : ms < 1000 ? "\(Int(ms.rounded())) ms" : String(format: "%.1f s", ms / 1000) }
+}
+
+/// The expanded details of a tool call: arguments in, result out, monospaced.
+public struct ToolCallCard: View {
+    public var call: ToolCall
+    public var result: ToolResult?
+    public init(call: ToolCall, result: ToolResult?) { self.call = call; self.result = result }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            labelled("arguments", argsText)
+            if let r = result {
+                labelled(r.isError ? "error" : "result", r.content)
+            } else {
+                HStack(spacing: 6) { ProgressView().controlSize(.mini); Text("running…").font(.caption).foregroundStyle(.secondary) }
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(LooplDesign.secondaryBackground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .contextMenu {
+            Button("Copy arguments", systemImage: "doc.on.doc") { copy(argsText) }
+            if let r = result { Button("Copy result", systemImage: "doc.on.doc.fill") { copy(r.content) } }
+        }
+    }
+
+    private var argsText: String {
+        let pairs = call.arguments.sorted { $0.key < $1.key }.map { "\($0.key): \($0.value.compactDescription)" }
+        return pairs.isEmpty ? "{}" : pairs.joined(separator: "\n")
+    }
+    private func labelled(_ k: String, _ v: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(k).font(.caption2.weight(.semibold)).foregroundStyle(.secondary).textCase(.uppercase).kerning(0.5)
+            Text(v).font(.footnote.monospaced()).textSelection(.enabled).lineLimit(12)
         }
     }
 }
 
-// MARK: - TokenMeter
+extension JSONValue {
+    var compactDescription: String {
+        switch self {
+        case .string(let s): return s
+        default: return (try? String(data: JSONEncoder().encode(self), encoding: .utf8)) ?? "\(self)"
+        }
+    }
+}
 
-/// TTFT · tok/s · prompt · gen · context used/max bar. Shows "≈" when a runtime can only estimate.
+// MARK: - Performance footer
+
+/// One quiet line of measured numbers; the app shows it only when
+/// Settings › Show performance details is on.
 public struct TokenMeter: View {
     public var metrics: Metrics
     public init(_ metrics: Metrics) { self.metrics = metrics }
     public var body: some View {
-        let max = Swift.max(1, metrics.contextMax)
-        let frac = min(1, Double(metrics.contextUsed) / Double(max))
-        HStack(spacing: 12) {
-            stat("TTFT", metrics.ttftMs > 0 ? String(format: "%.0f ms", metrics.ttftMs) : "—")
-            stat("tok/s", metrics.tokensPerSecond > 0 ? String(format: "%.1f", metrics.tokensPerSecond) : "—")
-            stat("prompt", (metrics.estimated ? "≈" : "") + "\(metrics.promptTokens)")
-            stat("gen", (metrics.estimated ? "≈" : "") + "\(metrics.generatedTokens)")
-            Spacer(minLength: 4)
-            HStack(spacing: 6) {
-                Text("ctx \(metrics.contextUsed)/\(metrics.contextMax)").foregroundStyle(.secondary)
-                Capsule().fill(LooplDesign.tertiaryFill).frame(width: 60, height: 6)
-                    .overlay(alignment: .leading) { Capsule().fill(frac > 0.9 ? Color.red : LooplDesign.accent).frame(width: 60 * frac) }
-            }
-            .accessibilityLabel("context \(metrics.contextUsed) of \(metrics.contextMax) tokens")
+        if metrics.generatedTokens > 0 || metrics.ttftMs > 0 {
+            Text(line).font(.caption2.monospacedDigit()).foregroundStyle(.tertiary).lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityLabel("performance: \(line)")
         }
-        .font(.caption2.monospacedDigit())
     }
-    private func stat(_ k: String, _ v: String) -> some View {
-        HStack(spacing: 3) { Text(k).foregroundStyle(.secondary); Text(v).fontWeight(.semibold) }
+    private var line: String {
+        var parts: [String] = []
+        if metrics.tokensPerSecond > 0 { parts.append(String(format: "%.1f tok/s", metrics.tokensPerSecond)) }
+        if metrics.ttftMs > 0 { parts.append(metrics.ttftMs < 1000 ? "\(Int(metrics.ttftMs)) ms to first token" : String(format: "%.1f s to first token", metrics.ttftMs / 1000)) }
+        if metrics.generatedTokens > 0 { parts.append("\(metrics.generatedTokens) generated") }
+        if metrics.contextMax > 0 { parts.append("ctx \(metrics.contextUsed)/\(metrics.contextMax)") }
+        return parts.joined(separator: " · ")
     }
 }
 
-// MARK: - StreamingTextView
+// MARK: - Transcript document
 
-/// Assistant bubble; shows a cursor while text is still arriving.
-public struct StreamingTextView: View {
-    public var text: String
-    public var streaming: Bool
-    public init(_ text: String, streaming: Bool = false) { self.text = text; self.streaming = streaming }
-    public var body: some View {
-        HStack {
-            (Text(text.isEmpty ? "…" : text) + (streaming ? Text(" ▍").foregroundStyle(LooplDesign.accent) : Text("")))
-                .textSelection(.enabled)
-                .padding(.horizontal, 14).padding(.vertical, 9)
-                .background(LooplDesign.secondaryBackground, in: RoundedRectangle(cornerRadius: 18))
-            Spacer(minLength: 48)
-        }
-    }
-}
-
-public struct UserBubble: View {
-    public var text: String
-    public init(_ text: String) { self.text = text }
-    public var body: some View {
-        HStack { Spacer(minLength: 48)
-            Text(text).textSelection(.enabled).padding(.horizontal, 14).padding(.vertical, 9)
-                .background(LooplDesign.accent.opacity(0.22), in: RoundedRectangle(cornerRadius: 18))
-        }
-    }
-}
-
-// MARK: - AgentTranscriptView
-
-/// Renders a `Transcript` (the fold of `AgentEvent`s): bubbles, tool cards, warnings, notes.
-public struct AgentTranscriptView: View {
+/// The conversation as a vertical document: left-aligned turns with a 20 pt
+/// gutter, tool calls as inline rows, a streaming caret, and a scroll that
+/// follows generation until the reader scrolls up (then a ↓ chip appears).
+public struct AgentTranscriptView<Empty: View, Banner: View>: View {
     public var transcript: Transcript
-    public var emptyHint: String
-    public init(_ transcript: Transcript, emptyHint: String = "Ask something.") { self.transcript = transcript; self.emptyHint = emptyHint }
+    public var showPerformance: Bool
+    private let empty: () -> Empty
+    private let banner: () -> Banner
+    @State private var pinned = true
+    @State private var lastCount = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    public init(_ transcript: Transcript, showPerformance: Bool = false,
+                @ViewBuilder banner: @escaping () -> Banner = { EmptyView() },
+                @ViewBuilder empty: @escaping () -> Empty) {
+        self.transcript = transcript; self.showPerformance = showPerformance; self.banner = banner; self.empty = empty
+    }
+
     public var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 10) {
+                LazyVStack(alignment: .leading, spacing: 18) {
+                    banner()
                     if transcript.items.isEmpty {
-                        VStack(spacing: 10) {
-                            Text("🔁").font(.system(size: 44))
-                            Text(.init(emptyHint)).multilineTextAlignment(.center).foregroundStyle(.secondary).font(.callout)
-                        }.frame(maxWidth: .infinity).padding(.top, 60).padding(.horizontal, 32)
+                        empty().frame(maxWidth: .infinity).padding(.top, 80)
                     }
                     ForEach(transcript.items) { item in
-                        row(item).id(item.id)
+                        row(item)
+                            .id(item.id)
+                            .transition(reduceMotion ? .opacity : .asymmetric(insertion: .move(edge: .bottom).combined(with: .opacity), removal: .opacity))
                     }
+                    if showPerformance, !transcript.items.isEmpty { TokenMeter(transcript.metrics).padding(.top, -6) }
+                    Color.clear.frame(height: 1).id("loopl.bottom")
                 }
-                .padding(.vertical, 12)
+                .padding(.horizontal, LooplDesign.gutter)
+                .padding(.top, 12).padding(.bottom, 16)
+                .animation(reduceMotion ? nil : LooplDesign.spring, value: transcript.items.count)
             }
-            .onChange(of: transcript.items.last?.kind) { _, _ in
-                if let last = transcript.items.last { withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(last.id, anchor: .bottom) } }
+            .scrollDismissesKeyboard(.interactively)
+            .onScrollGeometryChange(for: Bool.self) { g in
+                g.contentOffset.y + g.containerSize.height >= g.contentSize.height - 80
+            } action: { _, atBottom in
+                if atBottom { pinned = true } else if transcript.isRunning { pinned = false }
             }
+            .onChange(of: transcript.items.count) { _, n in
+                if n < lastCount { pinned = true }
+                lastCount = n
+                if pinned { scrollDown(proxy) }
+            }
+            .onChange(of: transcript.items.last?.kind) { _, _ in if pinned, transcript.isRunning { scrollDown(proxy, animated: false) } }
+            .overlay(alignment: .bottomTrailing) {
+                if !pinned, transcript.isRunning {
+                    Button { pinned = true; scrollDown(proxy) } label: {
+                        Image(systemName: "arrow.down").font(.footnote.weight(.semibold)).padding(10)
+                            .background(.regularMaterial, in: Circle())
+                    }
+                    .buttonStyle(.plain).padding(16)
+                    .transition(.scale.combined(with: .opacity))
+                    .accessibilityLabel("Scroll to the latest")
+                }
+            }
+            .animation(LooplDesign.spring, value: pinned)
         }
+    }
+
+    private func scrollDown(_ proxy: ScrollViewProxy, animated: Bool = true) {
+        if animated, !reduceMotion { withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo("loopl.bottom", anchor: .bottom) } }
+        else { proxy.scrollTo("loopl.bottom", anchor: .bottom) }
     }
 
     @ViewBuilder private func row(_ item: TranscriptItem) -> some View {
         switch item.kind {
-        case .user(let s): UserBubble(s).padding(.horizontal, 12)
-        case .assistant(let s): StreamingTextView(s, streaming: transcript.isRunning && item.id == transcript.items.last?.id).padding(.horizontal, 12)
-        case .toolCall(let c, let r): ToolCallCard(call: c, result: r).padding(.horizontal, 12)
-        case .warning(let w): Label(w, systemImage: LooplDesign.iconWarning).font(.caption).foregroundStyle(.orange).padding(.horizontal, 24)
-        case .note(let s): Text(s).font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity).multilineTextAlignment(.center).padding(.horizontal, 24)
+        case .user(let s): UserTurn(s).padding(.top, 8)
+        case .assistant(let s): StreamingTextView(s, streaming: transcript.isRunning && item.id == transcript.items.last?.id)
+        case .toolCall(let c, let r): ToolRow(call: c, result: r)
+        case .warning(let w): Label(w, systemImage: LooplDesign.iconWarning).font(.caption).foregroundStyle(.orange)
+        case .note(let s): Text(s).font(.caption).foregroundStyle(.tertiary)
         }
+    }
+}
+
+public extension AgentTranscriptView where Empty == AnyView, Banner == EmptyView {
+    /// Convenience: an empty state made of the mark and one line of Markdown.
+    init(_ transcript: Transcript, emptyHint: String, showPerformance: Bool = false) {
+        self.init(transcript, showPerformance: showPerformance, banner: { EmptyView() }) {
+            AnyView(EmptyState(hint: emptyHint))
+        }
+    }
+}
+
+/// The mark and one line — the whole empty state.
+public struct EmptyState: View {
+    public var hint: String
+    public init(hint: String) { self.hint = hint }
+    public var body: some View {
+        VStack(spacing: 18) {
+            LooplMark().frame(width: 72, height: 72).accessibilityHidden(true)
+            Text(MarkdownBody.inline(hint)).font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                .frame(maxWidth: 300)
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 
 // MARK: - ModelPickerRow / DownloadProgressRow
 
+/// One model in the list: name, size, dialect, with a ✓ when it is on disk and
+/// a bolt when it is the loaded one.
 public struct ModelPickerRow: View {
     public var spec: ModelSpec
     public var loaded: Bool
-    public init(spec: ModelSpec, loaded: Bool = false) { self.spec = spec; self.loaded = loaded }
+    public var downloaded: Bool
+    public init(spec: ModelSpec, loaded: Bool = false, downloaded: Bool = false) { self.spec = spec; self.loaded = loaded; self.downloaded = downloaded }
     public var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(spec.name).font(.headline)
-                Spacer()
-                if loaded { Pill("loaded") }
-                if spec.gated { Pill("gated", tint: .orange) }
-                Pill(spec.runtime.label)
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(spec.name).font(.body.weight(loaded ? .semibold : .regular))
+                HStack(spacing: 6) {
+                    if spec.isDownloadable { meta(spec.sizeLabel) } else { meta("built in") }
+                    meta("·"); meta("\(spec.paramsB.formatted(.number.precision(.fractionLength(0...1))))B")
+                    meta("·"); meta("ctx \(spec.ctxUsable8GB.formatted())")
+                    meta("·"); meta(spec.runtime.label)
+                }
             }
-            if !spec.repo.isEmpty { Text(spec.repo).font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(1) }
-            HStack(spacing: 10) {
-                if spec.isDownloadable { meta(spec.sizeLabel) }
-                meta("\(spec.paramsB.formatted(.number.precision(.fractionLength(0...1))))B")
-                meta("ctx \(spec.ctxNominal.formatted()) · use \(spec.ctxUsable8GB.formatted())")
-                meta(spec.family.rawValue)
-            }
-            if let n = spec.notes, !n.isEmpty { Text(n).font(.caption).foregroundStyle(.secondary) }
+            Spacer()
+            if loaded { Image(systemName: LooplDesign.iconLoaded).foregroundStyle(LooplDesign.accent).accessibilityLabel("loaded") }
+            else if downloaded || !spec.isDownloadable { Image(systemName: "checkmark").foregroundStyle(.secondary).font(.footnote.weight(.semibold)).accessibilityLabel("on this device") }
+            else { Image(systemName: LooplDesign.iconDownload).foregroundStyle(.tertiary).accessibilityLabel("not downloaded") }
         }
+        .contentShape(Rectangle())
     }
-    private func meta(_ s: String) -> some View { Text(s).font(.caption2).foregroundStyle(.secondary) }
+    private func meta(_ s: String) -> some View { Text(s).font(.caption).foregroundStyle(.secondary) }
 }
 
 public struct DownloadProgressRow: View {
@@ -181,7 +445,7 @@ public struct DownloadProgressRow: View {
         VStack(alignment: .leading, spacing: 4) {
             ProgressView(value: Double(done), total: Double(max(total, 1))).tint(LooplDesign.accent)
             HStack {
-                Text("\(ByteCountFormatter.string(fromByteCount: done, countStyle: .file)) / \(ByteCountFormatter.string(fromByteCount: total, countStyle: .file)) · file \(min(fileIndex + 1, max(fileCount, 1)))/\(fileCount)")
+                Text("\(ByteCountFormatter.string(fromByteCount: done, countStyle: .file)) of \(ByteCountFormatter.string(fromByteCount: total, countStyle: .file))")
                     .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
                 Spacer()
                 if let onPause { Button("Pause", action: onPause).font(.caption) }
@@ -204,34 +468,26 @@ enum PreviewFixtures {
         t.apply(.assistantMessage(.assistant(text: "Let me check both.", toolCalls: [call, ToolCall(id: "call_2", name: "current_time", arguments: ["timezone": "Europe/Istanbul"])])))
         t.apply(.toolStarted(call)); t.apply(.toolFinished(result))
         t.apply(.toolStarted(ToolCall(id: "call_2", name: "current_time", arguments: ["timezone": "Europe/Istanbul"])))
-        t.apply(.warning("tool 'calculator' called 3× in a row with identical arguments — the model may be stuck"))
         t.apply(.iterationStarted(2))
-        t.apply(.text("It is 05:41 in Istanbul and 23 × 47 = 1081."))
+        t.apply(.text("It is **05:41** in Istanbul and 23 × 47 = 1081.\n\n```swift\nlet agent = Agent(model: model)\n```"))
         var m = Metrics(); m.ttftMs = 412; m.tokensPerSecond = 38.4; m.promptTokens = 612; m.generatedTokens = 41; m.contextUsed = 653; m.contextMax = 8192
         t.apply(.metrics(m))
         return t
     }
 }
 
-#Preview("ToolCallCard") {
-    VStack(spacing: 12) {
-        ToolCallCard(call: PreviewFixtures.call, result: nil)
-        ToolCallCard(call: PreviewFixtures.call, result: PreviewFixtures.result)
-        ToolCallCard(call: PreviewFixtures.call, result: ToolResult(callId: "call_1", name: "calculator", content: "error: division by zero", isError: true, durationMs: 0.4))
+#Preview("Transcript document") {
+    AgentTranscriptView(PreviewFixtures.transcript, emptyHint: "Ask anything.", showPerformance: true)
+}
+
+#Preview("Empty") {
+    AgentTranscriptView(Transcript(), emptyHint: "Runs on this iPhone. Nothing leaves it.")
+}
+
+#Preview("ToolRow") {
+    VStack(alignment: .leading, spacing: 12) {
+        ToolRow(call: PreviewFixtures.call, result: nil)
+        ToolRow(call: PreviewFixtures.call, result: PreviewFixtures.result)
+        ToolRow(call: PreviewFixtures.call, result: ToolResult(callId: "call_1", name: "calculator", content: "error: division by zero", isError: true, durationMs: 0.4))
     }.padding()
-}
-
-#Preview("TokenMeter") {
-    TokenMeter(PreviewFixtures.transcript.metrics).padding()
-}
-
-#Preview("AgentTranscriptView") {
-    AgentTranscriptView(PreviewFixtures.transcript)
-}
-
-#Preview("ModelPickerRow + DownloadProgressRow") {
-    List {
-        ModelPickerRow(spec: Catalog.loadBundled().models.first ?? ModelSpec(id: "qwen3-1.7b-4bit", name: "Qwen3-1.7B (4-bit)", repo: "mlx-community/Qwen3-1.7B-4bit", runtime: .mlx, family: .hermes, paramsB: 1.7, sizeBytes: 968_080_210, ctxNominal: 40960, ctxUsable8GB: 8192, minRAMGB: 6, gated: false, notes: "Default pick."), loaded: true)
-        DownloadProgressRow(done: 412_000_000, total: 968_080_210, fileIndex: 0, fileCount: 7) {}
-    }
 }
