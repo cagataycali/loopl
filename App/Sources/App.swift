@@ -43,7 +43,7 @@ struct RootView: View {
     @Bindable var settings: AppSettings
     @Bindable var store: ModelStore
     @Environment(\.horizontalSizeClass) private var sizeClass
-    @State private var selection: Pane = .chat
+    @State private var selection: Pane = DesignFixture.initialPane
     enum Pane: Hashable { case chat, models, settings }
 
     var body: some View {

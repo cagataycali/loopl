@@ -76,9 +76,13 @@ struct ModelsView: View {
             case .failed(let msg):
                 Text(msg).font(.caption).foregroundStyle(.red)
             case .downloaded, .notDownloaded:
+                #if !targetEnvironment(simulator)
                 if !MemoryBudget.fits(spec) && spec.isDownloadable {
                     Label("Tight on memory right now (needs ≈1.3× the weights free)", systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange)
                 }
+                #else
+                EmptyView()
+                #endif
             }
         }
         .padding(.vertical, 2)

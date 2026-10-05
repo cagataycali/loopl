@@ -19,11 +19,21 @@ enum DesignFixture {
         return CommandLine.arguments[i + 1]
     }
 
+    /// `--design-tab chat|models|settings` picks the pane the fixture opens on.
+    static var initialPane: RootView.Pane {
+        #if DEBUG
+        guard let i = CommandLine.arguments.firstIndex(of: "--design-tab"), i + 1 < CommandLine.arguments.count else { return .chat }
+        switch CommandLine.arguments[i + 1] { case "models": return .models; case "settings": return .settings; default: return .chat }
+        #else
+        return .chat
+        #endif
+    }
+
     @MainActor static func apply(to engine: Engine, settings: AppSettings) {
         let spec = engine.store.catalog.models.first { $0.id == "qwen3-0.6b-4bit" } ?? engine.store.catalog.models.first!
         engine.readiness = .ready(spec)
         settings.showPerformance = CommandLine.arguments.contains("--design-perf")
-        if scene == "offline" { settings.offline = true }
+        settings.offline = scene == "offline"
         var t = Transcript()
         switch scene {
         case "empty":

@@ -338,7 +338,8 @@ public struct AgentTranscriptView<Empty: View, Banner: View>: View {
             }
             .scrollDismissesKeyboard(.interactively)
             .onScrollGeometryChange(for: Bool.self) { g in
-                g.contentOffset.y + g.containerSize.height >= g.contentSize.height - 80
+                // "at bottom" is also true while the document is shorter than the viewport
+                g.contentSize.height <= g.containerSize.height + 1 || g.contentOffset.y + g.containerSize.height >= g.contentSize.height - 80
             } action: { _, atBottom in
                 if atBottom { pinned = true } else if transcript.isRunning { pinned = false }
             }
