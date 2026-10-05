@@ -171,6 +171,19 @@ public struct HubCatalog: Sendable {
         return .init(family: .generic, verified: false, label: modelType?.isEmpty == false ? modelType! : "unknown")
     }
 
+    /// Quantization from the repo name when config.json does not say ("…-4bit", "…-8bit", "…-bf16" → 16).
+    public static func bitsFromName(_ name: String) -> Int? {
+        let n = name.lowercased()
+        if let r = n.range(of: #"(?<![0-9])([2-8])[-_]?bit"#, options: .regularExpression) {
+            return Int(String(n[r].first!))
+        }
+        if n.contains("bf16") || n.contains("fp16") || n.contains("-f16") { return 16 }
+        if n.contains("fp32") || n.contains("-f32") { return 32 }
+        if n.contains("mxfp4") || n.contains("nvfp4") || n.contains("-q4") { return 4 }
+        if n.contains("-q8") { return 8 }
+        return nil
+    }
+
     /// Billions of parameters from a repo name ("Qwen3-1.7B-4bit" → 1.7, "SmolLM2-360M" → 0.36).
     public static func paramsB(fromName name: String) -> Double? {
         let n = name.replacingOccurrences(of: "_", with: "-")
@@ -204,7 +217,7 @@ public struct HubCatalog: Sendable {
             let config = row["config"] as? [String: Any] ?? [:]
             let gguf = row["gguf"] as? [String: Any]
             let st = row["safetensors"] as? [String: Any]
-            let bits = (config["quantization_config"] as? [String: Any])?["bits"] as? Int
+            let bits = ((config["quantization_config"] as? [String: Any])?["bits"] as? Int) ?? Self.bitsFromName(id)
             var size: Int64? = (gguf?["total"] as? NSNumber)?.int64Value
             var params: Double? = nil
             if let total = (st?["total"] as? NSNumber)?.doubleValue, total > 0 {
@@ -325,11 +338,17 @@ public struct HubCatalog: Sendable {
 
     public func searchURL(_ query: String, kind: Kind, limit: Int = 30) -> URL {
         var c = URLComponents(string: "\(host)/api/models")!
-        var q = [URLQueryItem(name: "search", value: query), URLQueryItem(name: "sort", value: "downloads"),
-                 URLQueryItem(name: "direction", value: "-1"), URLQueryItem(name: "limit", value: String(limit))]
+        var q: [URLQueryItem] = []
+        if !query.isEmpty { q.append(URLQueryItem(name: "search", value: query)) }
+        q += [URLQueryItem(name: "sort", value: "downloads"), URLQueryItem(name: "direction", value: "-1"), URLQueryItem(name: "limit", value: String(limit))]
         switch kind {
         case .mlx: q.append(URLQueryItem(name: "author", value: "mlx-community"))
         case .gguf: q.append(URLQueryItem(name: "filter", value: "gguf"))
+        }
+        // The plain listing is ids + downloads only; `expand[]` inlines config (model_type, bits),
+        // safetensors (param count → size estimate), gguf (ctx, total) and gated — one request per search.
+        for f in ["config", "safetensors", "gguf", "gated", "pipeline_tag", "lastModified", "likes", "downloads"] {
+            q.append(URLQueryItem(name: "expand[]", value: f))
         }
         c.queryItems = q
         return c.url!
@@ -361,16 +380,23 @@ public struct HubCatalog: Sendable {
     }
 }
 
-/// Tiny disk cache for Hub JSON (Caches/, purgeable). Key = SHA-free: the URL made file-safe.
+/// Tiny disk cache for Hub JSON (Caches/, purgeable). Key = a readable prefix of the URL + FNV-1a of the whole URL.
 public struct HubCache: Sendable {
     public var directory: URL
     public init(directory: URL? = nil) {
         let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
         self.directory = directory ?? base.appendingPathComponent("loopl-hub", isDirectory: true)
     }
-    func path(_ url: URL) -> URL {
-        let key = url.absoluteString.unicodeScalars.map { CharacterSet.alphanumerics.contains($0) ? Character($0) : "_" }
-        return directory.appendingPathComponent(String(key.suffix(180)) + ".json")
+    public func path(_ url: URL) -> URL {
+        let s = url.absoluteString
+        let readable = String(s.dropFirst("https://huggingface.co/".count).unicodeScalars.map { CharacterSet.alphanumerics.contains($0) ? Character($0) : "_" }.prefix(60))
+        return directory.appendingPathComponent(readable + "-" + Self.fnv1a(s) + ".json")
+    }
+    /// 64-bit FNV-1a, hex — stable across launches, no CryptoKit dependency.
+    static func fnv1a(_ s: String) -> String {
+        var h: UInt64 = 0xcbf29ce484222325
+        for b in s.utf8 { h ^= UInt64(b); h = h &* 0x100000001b3 }
+        return String(h, radix: 16)
     }
     public func read(_ url: URL, maxAge: TimeInterval) -> Data? {
         let p = path(url)

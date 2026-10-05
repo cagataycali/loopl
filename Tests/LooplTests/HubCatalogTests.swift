@@ -181,6 +181,27 @@ final class HubCatalogTests: XCTestCase {
         XCTAssertFalse(unknown.verified)
     }
 
+    func testBitsFromNames() {
+        XCTAssertEqual(HubCatalog.bitsFromName("mlx-community/Qwen2.5-Coder-7B-Instruct-4bit"), 4)
+        XCTAssertEqual(HubCatalog.bitsFromName("mlx-community/Qwen3-0.6B-8bit"), 8)
+        XCTAssertEqual(HubCatalog.bitsFromName("mlx-community/Qwen3.5-2B-6bit"), 6)
+        XCTAssertEqual(HubCatalog.bitsFromName("mlx-community/Qwen3.8-27B-bf16"), 16)
+        XCTAssertEqual(HubCatalog.bitsFromName("mlx-community/gpt-oss-20b-MXFP4-Q8"), 4)
+        XCTAssertNil(HubCatalog.bitsFromName("mlx-community/Kimi-K2.5"))
+        XCTAssertNil(HubCatalog.bitsFromName("bartowski/Qwen_Qwen3-1.7B-GGUF"))
+    }
+
+    func testMLXSizeEstimateFallsBackToTheName() throws {
+        // Older mlx-community conversions have no quantization_config; the "-4bit" suffix is the only hint.
+        let json = """
+        [{"id":"mlx-community/Qwen2.5-0.5B-Instruct-4bit","gated":false,"likes":1,"downloads":54000,"config":{"model_type":"qwen2"},
+          "safetensors":{"parameters":{"U32":494032768},"total":494032768},"pipeline_tag":"text-generation"}]
+        """
+        let hit = try XCTUnwrap(HubCatalog.parseSearch(Data(json.utf8), kind: .mlx).first)
+        XCTAssertEqual(hit.bits, 4)
+        XCTAssertEqual(Double(try XCTUnwrap(hit.sizeBytes)), 494_032_768 * 0.5 * 1.125, accuracy: 1)
+    }
+
     func testParamsFromNames() {
         XCTAssertEqual(HubCatalog.paramsB(fromName: "Qwen3-1.7B-4bit"), 1.7)
         XCTAssertEqual(HubCatalog.paramsB(fromName: "Llama-3.2-3B-Instruct-Q4_K_M"), 3)
@@ -201,10 +222,13 @@ final class HubCatalogTests: XCTestCase {
 
     func testSearchURLs() {
         let h = HubCatalog()
+        let expand = "&expand%5B%5D=config&expand%5B%5D=safetensors&expand%5B%5D=gguf&expand%5B%5D=gated&expand%5B%5D=pipeline_tag&expand%5B%5D=lastModified&expand%5B%5D=likes&expand%5B%5D=downloads"
         XCTAssertEqual(h.searchURL("qwen3", kind: .mlx).absoluteString,
-                       "https://huggingface.co/api/models?search=qwen3&sort=downloads&direction=-1&limit=30&author=mlx-community")
+                       "https://huggingface.co/api/models?search=qwen3&sort=downloads&direction=-1&limit=30&author=mlx-community" + expand)
         XCTAssertEqual(h.searchURL("qwen3", kind: .gguf).absoluteString,
-                       "https://huggingface.co/api/models?search=qwen3&sort=downloads&direction=-1&limit=30&filter=gguf")
+                       "https://huggingface.co/api/models?search=qwen3&sort=downloads&direction=-1&limit=30&filter=gguf" + expand)
+        XCTAssertEqual(h.searchURL("", kind: .mlx).absoluteString,
+                       "https://huggingface.co/api/models?sort=downloads&direction=-1&limit=30&author=mlx-community" + expand, "empty query = most downloaded")
     }
 
     func testCacheRoundTripAndAge() throws {
@@ -218,5 +242,14 @@ final class HubCatalogTests: XCTestCase {
         XCTAssertEqual(c.read(url, maxAge: .infinity), Data("[1]".utf8), "stale copies still serve offline")
         c.clear()
         XCTAssertNil(c.read(url, maxAge: .infinity))
+    }
+
+    func testCacheKeysDoNotCollideOnLongURLs() {
+        let c = HubCache(directory: FileManager.default.temporaryDirectory)
+        let h = HubCatalog()
+        let a = c.path(h.searchURL("qwen3", kind: .mlx)), b = c.path(h.searchURL("qwen2.5 1.5b", kind: .mlx)), d = c.path(h.searchURL("", kind: .mlx))
+        XCTAssertNotEqual(a, b); XCTAssertNotEqual(a, d); XCTAssertNotEqual(b, d)
+        XCTAssertEqual(c.path(h.searchURL("qwen3", kind: .mlx)), a, "deterministic")
+        XCTAssertLessThan(a.lastPathComponent.count, 100)
     }
 }

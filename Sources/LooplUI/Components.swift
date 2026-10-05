@@ -453,6 +453,11 @@ public struct ModelPickerRow: View {
                     meta("·"); meta("\(spec.paramsB.formatted(.number.precision(.fractionLength(0...1))))B")
                     meta("·"); meta("ctx \(spec.ctxUsable8GB.formatted())")
                     meta("·"); meta(spec.runtime.label)
+                    if spec.toolsUnverified == true {
+                        meta("·")
+                        Text("tools unverified").font(.caption2.weight(.semibold)).foregroundStyle(LooplDesign.amber)
+                            .accessibilityLabel("tool calls unverified for this model")
+                    }
                 }
             }
             Spacer()

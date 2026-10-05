@@ -12,24 +12,43 @@ struct ModelsView: View {
     @State private var confirmDelete: ModelSpec?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    /// On this device (loaded first) · From Hugging Face · Recommended · Recommended GGUF.
     private var sections: [(String, [ModelSpec])] {
         var out: [(String, [ModelSpec])] = []
         let available = store.catalog.models.filter { $0.runtime != .appleFM || AppleFoundationModel.availability().available }
-        let gguf = available.filter { $0.runtime == .gguf }
-        let others = available.filter { $0.runtime != .gguf }
-        if !others.isEmpty { out.append(("Models", others)) }
-        if !gguf.isEmpty { out.append(("GGUF · llama.cpp", gguf)) }
+        func onDevice(_ s: ModelSpec) -> Bool { !s.isDownloadable || (store.states[s.id]?.isDownloaded ?? false) || engine.loadedModel?.id == s.id }
+        let here = available.filter(onDevice).sorted { a, b in (engine.loadedModel?.id == a.id) && engine.loadedModel?.id != b.id }
+        let rest = available.filter { !onDevice($0) }
+        let hub = rest.filter(\.isFromHub)
+        let curated = rest.filter { !$0.isFromHub && $0.runtime != .gguf }
+        let gguf = rest.filter { !$0.isFromHub && $0.runtime == .gguf }
+        if !here.isEmpty { out.append(("On this device", here)) }
+        if !hub.isEmpty { out.append(("From Hugging Face", hub)) }
+        if !curated.isEmpty { out.append(("Recommended", curated)) }
+        if !gguf.isEmpty { out.append(("Recommended · GGUF", gguf)) }
         return out
     }
 
     var body: some View {
         NavigationStack {
             List {
+                Section {
+                    NavigationLink { HubBrowseView(engine: engine, store: store, settings: settings) } label: {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Browse Hugging Face").font(.body.weight(.medium))
+                                Text("Any public MLX or GGUF repo — no account").font(.caption).foregroundStyle(.secondary)
+                            }
+                        } icon: { Image(systemName: "magnifyingglass").foregroundStyle(LooplDesign.accent) }
+                    }
+                    .accessibilityIdentifier("models-browse-hub")
+                }
                 ForEach(sections, id: \.0) { title, rows in
                     Section {
                         ForEach(rows) { spec in row(spec) }
                     } header: { Text(title) } footer: {
-                        if title == "Models" { Text("Tap a model to use it — it downloads once, then runs offline. Context and output length are set to the model's recommended maximum automatically.") }
+                        if title == "Recommended" { Text("Tap a model to use it — it downloads once, then runs offline. Context and output length are set to the model's recommended maximum automatically.") }
+                        if title == "From Hugging Face" { Text("Added from Browse. Swipe left to remove a row and its weights.") }
                     }
                 }
                 Section {
@@ -38,11 +57,12 @@ struct ModelsView: View {
                     if settings.offline { Label("Offline mode is on — downloads are refused, models on the device still load.", systemImage: LooplDesign.iconOffline).font(.footnote).foregroundStyle(.orange) }
                 } footer: { Text("Catalog v\(store.catalog.version) · \(store.catalog.updated)") }
             }
+            .animation(reduceMotion ? nil : LooplDesign.spring, value: sections.map { $0.1.map(\.id) })
             .navigationTitle("Model")
             .refreshable { store.refresh() }
             .onAppear { store.refresh() }
-            .confirmationDialog("Delete \(confirmDelete?.name ?? "") from this device?", isPresented: Binding(get: { confirmDelete != nil }, set: { if !$0 { confirmDelete = nil } }), titleVisibility: .visible) {
-                Button("Delete", role: .destructive) { if let s = confirmDelete { delete(s) } }
+            .confirmationDialog("\(confirmDelete?.isFromHub == true ? "Remove" : "Delete") \(confirmDelete?.name ?? "") from this device?", isPresented: Binding(get: { confirmDelete != nil }, set: { if !$0 { confirmDelete = nil } }), titleVisibility: .visible) {
+                Button(confirmDelete?.isFromHub == true ? "Remove" : "Delete", role: .destructive) { if let s = confirmDelete { delete(s) } }
             }
         }
     }
@@ -87,7 +107,9 @@ struct ModelsView: View {
         }
         .padding(.vertical, 2)
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-            if spec.isDownloadable, state.isDownloaded || { if case .paused = state { return true }; return false }() {
+            if spec.isFromHub {
+                Button(role: .destructive) { confirmDelete = spec } label: { Label("Remove", systemImage: "trash") }
+            } else if spec.isDownloadable, state.isDownloaded || { if case .paused = state { return true }; return false }() {
                 Button(role: .destructive) { confirmDelete = spec } label: { Label("Delete", systemImage: "trash") }
             }
         }
@@ -97,14 +119,15 @@ struct ModelsView: View {
                 Button("Copy repo id", systemImage: "doc.on.doc") { copy(spec.repo) }
                 Link(destination: URL(string: "https://huggingface.co/\(spec.repo)")!) { Label("Open on Hugging Face", systemImage: "safari") }
             }
-            if spec.isDownloadable, state.isDownloaded { Button("Delete from device", systemImage: "trash", role: .destructive) { confirmDelete = spec } }
+            if spec.isFromHub { Button("Remove from loopl", systemImage: "trash", role: .destructive) { confirmDelete = spec } }
+            else if spec.isDownloadable, state.isDownloaded { Button("Delete from device", systemImage: "trash", role: .destructive) { confirmDelete = spec } }
         }
     }
 
     private func delete(_ spec: ModelSpec) {
         withAnimation(reduceMotion ? nil : LooplDesign.spring) {
             engine.didDelete(spec)
-            store.delete(spec)
+            if spec.isFromHub { store.remove(spec) } else { store.delete(spec) }
         }
         LooplDesign.haptic()
     }
