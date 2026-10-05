@@ -7,7 +7,8 @@ import FoundationModels
 
 /// Headless device proof. Launch with
 ///   xcrun devicectl device process launch --console --terminate-existing --device <udid> technology.tiny.loopl -- --selftest
-/// Options: --selftest-model <catalog id> (default qwen3-1.7b-4bit), --selftest-offline (flip the
+/// Options: --selftest-model <catalog id> (default qwen3-1.7b-4bit), --selftest-hub <owner/repo> (resolve ANY public
+/// Hugging Face repo through HubCatalog instead of the catalog — the "any model" proof), --selftest-offline (flip the
 /// offline guard before loading: proves inference needs no network), --selftest-prompt "<text>".
 /// Prints ONE line `LOOPL_SELFTEST {json}` to stdout, writes Documents/selftest.json, exits 0 (1 on failure).
 /// DEBUG builds only — a Release build ignores the argument.
@@ -50,11 +51,27 @@ enum SelfTest {
             exit(ok ? 0 : 1)
         }
         do {
-            let modelId = arg("--selftest-model") ?? "qwen3-1.7b-4bit"
             let offline = CommandLine.arguments.contains("--selftest-offline")
             let prompt = arg("--selftest-prompt") ?? "what time is it in Istanbul and what is 23*47? then remember the answer under the key 'proof' and recall it"
-            report["model"] = modelId; report["offline"] = offline; report["prompt"] = prompt
-            guard let spec = store.catalog.models.first(where: { $0.id == modelId }) else { throw ModelError("no catalog entry \(modelId)") }
+            report["offline"] = offline; report["prompt"] = prompt
+            let spec: ModelSpec
+            if let hubRepo = arg("--selftest-hub") {
+                // The "any model from Hugging Face" path: search-free resolve (repo ?blobs=true + config.json) → ModelSpec → store.add.
+                NetworkPolicy.setOffline(false)
+                let t0 = Date()
+                let resolved = try await HubCatalog().resolve(hubRepo)
+                spec = store.add(resolved)
+                report["model"] = spec.id; report["hub_repo"] = hubRepo; report["hub_resolve_s"] = Date().timeIntervalSince(t0)
+                report["hub_family"] = spec.family.rawValue; report["hub_tools_unverified"] = spec.toolsUnverified ?? false
+                report["hub_ctx_nominal"] = spec.ctxNominal; report["hub_ctx_usable"] = spec.ctxUsable8GB; report["hub_size_bytes"] = spec.sizeBytes
+                report["hub_fit"] = HubCatalog.Fit.verdict(bytes: spec.sizeBytes, available: MemoryBudget.budget).rawValue
+                emit("hub: \(hubRepo) → \(spec.id) · \(spec.runtime.label) · \(spec.sizeLabel) · ctx \(spec.ctxUsable8GB)/\(spec.ctxNominal) · family \(spec.family.rawValue)\(spec.toolsUnverified == true ? " (tools unverified)" : "") · fit \(report["hub_fit"]!) · \(String(format: "%.1f", Date().timeIntervalSince(t0))) s")
+            } else {
+                let modelId = arg("--selftest-model") ?? "qwen3-1.7b-4bit"
+                report["model"] = modelId
+                guard let s = store.catalog.models.first(where: { $0.id == modelId }) else { throw ModelError("no catalog entry \(modelId)") }
+                spec = s
+            }
 
             // 4) Foundation Models availability (iOS 26+), honest reason.
             let fm = AppleFoundationModel.availability()
