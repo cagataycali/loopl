@@ -168,11 +168,5 @@ struct Composer: View {
         .padding(.horizontal, 12).padding(.vertical, 8)
         .background(.bar)
         .gesture(DragGesture(minimumDistance: 24).onEnded { v in if v.translation.height > 24 { focused.wrappedValue = false } })
-        .toolbar {
-            ToolbarItemGroup(placement: .keyboard) {
-                Spacer()
-                Button("Done") { focused.wrappedValue = false }.font(.body.weight(.semibold))
-            }
-        }
     }
 }
