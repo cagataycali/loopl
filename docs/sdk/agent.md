@@ -74,7 +74,7 @@ runs the loop until the model stops calling tools, and returns an `AgentResult`:
 
 ```swift
 public struct AgentResult: Sendable, Hashable {
-    public var stopReason: StopReason        // endTurn · stopSequence · maxTokens · contentFiltered · cancelled
+    public var stopReason: StopReason        // endTurn · stopSequence · contentFiltered · cancelled (maxTokens throws instead)
     public var message: Message              // the last assistant message
     public var metrics: EventLoopMetrics
     public var text: String { message.text }
@@ -142,10 +142,20 @@ func restore(_ model: any Model, from url: URL) throws -> Agent {
 
 ### Continue after `maxTokens`
 
-When the model hits its output cap the loop recovers the partial message and keeps going by itself
-([details](event-loop.md#4-maxtokens-recovery)). If you ever stop a loop with `stopReason == .maxTokens` in the
-result — for example because you cancelled right then — `try await agent()` with no argument continues from the
-history, like calling `agent()` again in Strands.
+When the model hits its output cap, the loop recovers the partial message (a truncated tool call becomes a text
+block that says so), appends it to `agent.messages` and throws `MaxTokensReachedError` — exactly Strands'
+`MaxTokensReachedException` ([details](event-loop.md#4-maxtokens-recovery)). Catch it and call `try await agent()` with
+no argument to continue from the history, like `agent(prompt=None)` in Strands:
+
+```swift
+// snippet: compile
+import Loopl
+
+func askResilient(_ agent: Agent, _ prompt: String) async throws -> AgentResult {
+    do { return try await agent(prompt) }
+    catch is MaxTokensReachedError { return try await agent() }      // the partial turn is already in history
+}
+```
 
 ## Pieces you can swap
 

@@ -14,13 +14,13 @@ Two layers, both borrowed from Strands so the mental model transfers:
 ```swift
 public struct Message: Sendable, Hashable, Codable, Identifiable {
     public var id: UUID
-    public var role: Role                  // .system · .user · .assistant · .tool
+    public var role: Role                  // .user · .assistant — the system prompt is not a message (as in Strands)
     public var content: [ContentBlock]
 
     public static func user(_ text: String) -> Message
     public static func assistant(_ text: String) -> Message
     public static func assistant(text: String, toolUses: [ToolUse]) -> Message
-    public static func toolResults(_ results: [ToolResult]) -> Message     // role .user, like Strands
+    public static func toolResults(_ results: [ToolResult]) -> Message     // role .user, like Strands/Bedrock
 
     public var text: String                // all .text blocks joined
     public var reasoning: String
@@ -35,8 +35,9 @@ public enum ContentBlock: Sendable, Hashable, Codable {
 }
 ```
 
-This is Strands' `Message = {role, content: [ContentBlock]}` with the same four block kinds. Tool results travel in a
-`user` message, exactly as Bedrock and Strands expect, so a transcript round-trips to any Strands-shaped tool unchanged.
+This is Strands' `Message = {role, content: [ContentBlock]}` with the same four block kinds and the same two roles —
+the system prompt lives beside the history, not in it. Tool results travel in a `user` message, exactly as Bedrock and
+Strands expect, so a transcript round-trips to any Strands-shaped tool unchanged.
 
 ```swift
 public struct ToolUse: Sendable, Hashable, Codable, Identifiable {
@@ -102,7 +103,7 @@ public enum AgentEvent: Sendable {
     case toolResultMessage(Message)                     // the user message carrying all results (appended)
     case metrics(Metrics)                               // ttft, tok/s, context used/max — for a debug sheet
     case forceStop(String)                              // unrecoverable error or cancellation
-    case result(AgentResult)                            // ALWAYS the last event
+    case result(AgentResult)                            // last event of a finished stream (errors throw instead)
 }
 ```
 

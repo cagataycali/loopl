@@ -26,8 +26,8 @@ flowchart TD
     F --> G[StreamAssembler → assistant Message]
     G --> H[AfterModelCall hooks]
     H --> I{stopReason}
-    I -- maxTokens --> J[recover message · append · continue]
-    J --> D
+    I -- maxTokens --> J[recover message · append]
+    J --> J2(["throws MaxTokensReachedError · agent() continues"])
     I -- toolUse --> K[BeforeTools hooks]
     K --> L[ToolExecutor · tools run concurrently]
     L --> M[toolResult Message · MessageAdded]
@@ -67,10 +67,10 @@ inside its `Model` implementation — the loop never knows.
 
 | `StopReason`      | What the loop does                                                                              |
 |-------------------|-------------------------------------------------------------------------------------------------|
-| `.endTurn`        | Finish: `AfterInvocationEvent` hooks, then `AgentResult` (always the **last** event, `.result`).            |
+| `.endTurn`        | Finish: `AfterInvocationEvent` hooks, then `AgentResult` (`.result` is the last event of a successful stream). |
 | `.stopSequence`   | Same as `endTurn`.                                                                              |
 | `.toolUse`        | Run every tool use in the message (step 3), append the tool-result message, **recurse**.         |
-| `.maxTokens`      | Recover (step 4) and recurse.                                                                   |
+| `.maxTokens`      | Recover the partial message, append it, **throw `MaxTokensReachedError`** (step 4).               |
 | `.contentFiltered`| Finish with the message as-is.                                                                  |
 | `.cancelled`      | The task was cancelled mid-stream. The partial assistant message is kept in `agent.messages`.    |
 
@@ -86,10 +86,12 @@ it, route it elsewhere), and a tool that throws becomes a `ToolResult(status: .e
 
 ### 4 · `maxTokens` recovery
 
-When the model's output cap cuts a tool call in half, Strands does not raise: `recover_message_on_max_tokens_reached`
-replaces the truncated `toolUse` block with a text block that explains what happened, appends the message and lets the
-model continue in the next cycle. loopl mirrors that path exactly — and on a phone it matters more, because small
-contexts make `maxTokens` common. Nothing is lost: the partial message is in `agent.messages`, the next cycle picks up.
+When the model's output cap cuts a tool call in half, Strands' `recover_message_on_max_tokens_reached` replaces the
+truncated `toolUse` block with a text block that explains what happened, appends that message to the history and then
+raises `MaxTokensReachedException` — the caller decides whether to continue. loopl mirrors this exactly: the recovered
+message is appended, `MaxTokensReachedError` is thrown out of `agent(…)` / the stream, and `try await agent()` with no
+argument continues from the history (Strands' `agent(prompt=None)`). On a phone this matters more, because small
+contexts make `maxTokens` common — and nothing is lost: the partial message is in `agent.messages`.
 
 ### 5 · Retries
 
@@ -130,7 +132,9 @@ func run(_ model: any Model) async throws {
 }
 ```
 
-`.result` is always the last event; `.forceStop` precedes it when the loop ended on an unrecoverable error or cancellation.
+`.result` is the last event of a stream that finished. When the loop ends on an unrecoverable error, `.forceStop(reason)`
+is yielded and the stream **throws** (`EventLoopError`, `MaxTokensReachedError`, `ContextWindowOverflowError` when nothing
+could be trimmed); cancellation finishes with a `.result` whose `stopReason == .cancelled`.
 
 ## Hooks — the order of events in one invocation
 

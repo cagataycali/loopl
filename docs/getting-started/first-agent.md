@@ -106,7 +106,8 @@ func run(_ agent: Agent) async throws {
    `<tool_call>` the model writes is recognised by the family parser and becomes a native `toolUse` block.
 3. `stopReason == .toolUse` → the tool uses run **concurrently**, their results are appended as one message,
    and the loop recurses to step 2. `stopReason == .endTurn` → `.result` and you are done.
-4. If the model hits `maxTokens`, the partial message is recovered and the loop continues; if it throws something
+4. If the model hits `maxTokens`, the partial message is recovered and appended and `MaxTokensReachedError` is thrown
+   (call `agent()` to continue); if the model throws something
    transient, it is retried with backoff; if the prompt would overflow the context, the conversation manager trims first.
 
 The full picture, with a diagram: [The event loop](../sdk/event-loop.md).

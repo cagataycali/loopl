@@ -22,7 +22,8 @@ Phase 2, driven by the first hands-on review of the app on an iPhone 16 Pro.
   the tool-result message → recurse. **There is no iteration cap and no loop detector.** The only bounds are
   the context window (a sliding-window conversation manager trims by token estimate) and cancellation.
 - **Max-tokens recovery** — when a model stops on `maxTokens` mid tool call, the truncated assistant message is
-  appended and the model is asked to continue (Strands `_recover_message_on_max_tokens_reached`).
+  repaired and appended, then `MaxTokensReachedError` is thrown; `agent()` continues from the history
+  (Strands `_recover_message_on_max_tokens_reached` + `MaxTokensReachedException`).
 - **Retries** — model errors are retried with exponential backoff (Strands' throttle path).
 - **Defaults** — generation parameters default to the model card's maximum sensible values (context from
   the catalog's 8 GB recommendation, generate until stop).

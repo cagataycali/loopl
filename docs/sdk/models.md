@@ -37,7 +37,7 @@ on-device additions `load`/`unload`/`availability`. The three shipped runtimes a
 |-------------------------------|--------------------------------------------------------|--------------------------------------------------------------|
 | `ContextWindowOverflowError`  | the prompt does not fit `params.contextLength`         | `conversationManager.reduceContext` → retry the cycle        |
 | `ModelThrottledError`         | a transient failure (GPU busy, warming up)             | retry with backoff, `AgentEvent.throttle(delay:)`            |
-| `MaxTokensReachedError`       | *(not thrown by models — `messageStop(.maxTokens)` is)* | recover the partial message, continue                        |
+| `MaxTokensReachedError`       | *(not thrown by models — they emit `messageStop(.maxTokens)`)* | append the recovered partial message, throw it to the caller (`agent()` continues) |
 | `ModelError`                  | anything else (not loaded, bad weights)                | `EventLoopError` → `.forceStop`, then `.result`              |
 
 ## GenerationParams

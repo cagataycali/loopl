@@ -23,7 +23,7 @@ loopl is a port, not a re-imagining: `Sources/Loopl` mirrors `strands-agents/har
 | `agent.hooks` (`HookRegistry`)                                    | `agent.hooks` (`HookRegistry`)                                      |
 | `agent.event_loop_metrics`                                        | `agent.eventLoopMetrics`                                            |
 | `AgentResult.stop_reason` / `.message` / `.metrics`                | `AgentResult.stopReason` / `.message` / `.metrics`                  |
-| `StopReason` literal `"end_turn" "tool_use" "max_tokens" "stop_sequence" "content_filtered"` | `StopReason.endTurn .toolUse .maxTokens .stopSequence .contentFiltered` + `.cancelled` |
+| `StopReason` literal `"end_turn" "tool_use" "max_tokens" "stop_sequence" "content_filtered"` (+ `checkpoint`, `interrupt`, `guardrail_intervened`, `limit_*`) | `StopReason.endTurn .toolUse .maxTokens .stopSequence .contentFiltered` + `.cancelled`; the server-side reasons are not ported |
 | `EventLoopMetrics.cycle_count` / `.accumulated_usage`              | `EventLoopMetrics.cycleCount` / `.accumulatedUsage`                 |
 
 ## Event loop
@@ -114,5 +114,12 @@ messageStop · metadata` that Strands' `streaming.py` consumes.
    text. `ToolCallParser` / `ToolCallStreamGate` turn Hermes, Llama 3 and generic JSON dialects into native
    `contentBlockStart(.toolUse)` events so the loop stays identical.
 4. **Two extra events** — `.toolStarted` and `.metrics` — for a phone UI (spinner on the tool row, tok/s in a debug sheet).
-5. **No multi-agent, no MCP, no structured output (yet).** `Swarm`/`Graph`, MCP clients and `structured_output` are not
-   ported; the loop's hook points are the same, so they can be added without touching the cycle.
+5. **Cancellation keeps the partial text.** Strands substitutes *"Cancelled by user"*; loopl keeps what was generated and
+   uses that string only when nothing was. The result's `stopReason` is `.cancelled` (a loopl-only case).
+6. **Context overflow is silent.** Strands yields `ForceStopEvent` before the overflow is caught one level up; loopl skips
+   that event because the loop continues after trimming.
+7. **`ToolResult.content` is one string** — no image / JSON / document blocks; `Role` has no `system` case and `ContentBlock`
+   has no image/document/video variants (nothing on the edge produces them).
+8. **Not ported (server concerns):** interrupts, checkpoints, structured output, middleware, sessions, tracing,
+   agent-as-tool, `Swarm`/`Graph`, MCP clients, `SummarizingConversationManager`. The hook points are identical, so
+   each can be added without touching the cycle.
