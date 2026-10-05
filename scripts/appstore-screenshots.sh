@@ -38,7 +38,7 @@ SCENES=(
   "01-hero|empty|Runs on your iPhone. Nothing leaves it."
   "02-streaming|streaming|Streams answers from a local model."
   "03-tool|tool|Tools, inline. Tap a row for the details."
-  "04-models|empty --design-tab models|Pick a model. It downloads once."
+  "04-models|empty --design-tab models|Any model on Hugging Face. Downloads once."
   "05-offline|offline --design-tab chat|Airplane mode is a feature."
   "06-settings|empty --design-tab settings|Only the settings that matter."
 )
