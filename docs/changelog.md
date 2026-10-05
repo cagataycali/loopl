@@ -28,8 +28,8 @@ Phase 2, driven by the first hands-on review of the app on an iPhone 16 Pro.
   the catalog's 8 GB recommendation, generate until stop).
 
 ### Added
-- **Hooks** — `BeforeInvocation` / `AfterInvocation`, `BeforeModelCall` / `AfterModelCall`,
-  `BeforeToolCall` / `AfterToolCall`, `MessageAdded`.
+- **Hooks** — `BeforeInvocationEvent` / `AfterInvocationEvent`, `BeforeModelCallEvent` / `AfterModelCallEvent`,
+  `BeforeToolsEvent` / `AfterToolsEvent`, `BeforeToolCallEvent` / `AfterToolCallEvent`, `MessageAddedEvent`.
 - **GGUF runtime** — `GGUFModel` on the official llama.cpp xcframework (Metal, `n_gpu_layers = 99`,
   sampler chain, token-by-token streaming, chat template via `llama_chat_apply_template`). Catalog gains
   Qwen3-1.7B Q4_K_M, Llama 3.2 3B, gemma-3-1b and SmolLM2 GGUF entries.

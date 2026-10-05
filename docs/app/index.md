@@ -22,8 +22,8 @@ the easiest way to feel what on-device agents are like.
 |---|---|
 | **Chat** | Streaming bubbles · tok/s, TTFT and a context meter (used / max) · **Stop** · tool-call cards that expand to show arguments and result · warnings from the loop detector |
 | **Models** | The catalog (runtime, repo, size, context, min RAM) · Download with progress + resume · Delete · *Loaded* indicator · memory headroom warning before a big download |
-| **Agent** | Toggle each built-in tool · system prompt · optional `Budget` (iterations / tool calls / time / tokens — all off by default) · context length |
-| **Settings** | Hugging Face token (Keychain) · runtime preference (with the availability reason) · offline mode · Demo (scripted) model · clear cache · privacy & about |
+| **Agent** | System prompt · toggle each built-in tool · *Show performance details* (debug sheet, off by default). No iteration cap — see [the event loop](../sdk/event-loop.md) |
+| **Settings** | Network (offline mode) · *Show performance details* · storage (model files, clear) · about & privacy. No token, no account, no demo model. |
 
 ## Identity
 

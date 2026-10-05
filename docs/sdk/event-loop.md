@@ -67,7 +67,7 @@ inside its `Model` implementation — the loop never knows.
 
 | `StopReason`      | What the loop does                                                                              |
 |-------------------|-------------------------------------------------------------------------------------------------|
-| `.endTurn`        | Finish: `AfterInvocation`, then `AgentResult` (always the **last** event, `.result`).            |
+| `.endTurn`        | Finish: `AfterInvocationEvent` hooks, then `AgentResult` (always the **last** event, `.result`).            |
 | `.stopSequence`   | Same as `endTurn`.                                                                              |
 | `.toolUse`        | Run every tool use in the message (step 3), append the tool-result message, **recurse**.         |
 | `.maxTokens`      | Recover (step 4) and recurse.                                                                   |
@@ -81,7 +81,7 @@ Strands runs tool uses through a `ToolExecutor`; the default is `ConcurrentToolE
 `user` message in the original order (the order the model asked for, which is what the model expects back).
 `SequentialToolExecutor` exists for tools that must not overlap (a camera, a single BLE connection).
 
-Each tool call is wrapped in `BeforeToolCall` / `AfterToolCall` hooks — a hook may **replace** the tool (mock it, deny
+Each tool call is wrapped in `BeforeToolCallEvent` / `AfterToolCallEvent` hooks — a hook may **replace** the tool (mock it, deny
 it, route it elsewhere), and a tool that throws becomes a `ToolResult(status: .error)` the model can read, never a crash.
 
 ### 4 · `maxTokens` recovery
@@ -105,7 +105,7 @@ attached.
 `ConversationManager` to `reduceContext` and retries the cycle. The default `SlidingWindowConversationManager`
 drops the oldest turns — never splitting a `toolUse` from its `toolResult` — and, when a single message is too large,
 truncates the tool results inside it (Strands' `truncate_results`). Because it also runs `applyManagement` after every
-appended message (as a `MessageAdded` hook, like Strands), an unlimited loop never grows past the window in the first place.
+appended message (as a `MessageAddedEvent` hook, like Strands), an unlimited loop never grows past the window in the first place.
 
 ## What you see as the caller
 

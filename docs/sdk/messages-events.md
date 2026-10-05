@@ -1,93 +1,148 @@
-# Messages & events
+---
+description: loopl's data model — Message, ContentBlock, ToolUse, ToolResult — and the two event vocabularies, StreamEvent (model → loop) and AgentEvent (loop → you).
+---
+
+# Messages & stream events
+
+Two layers, both borrowed from Strands so the mental model transfers:
+
+1. **Messages** are the conversation — what is sent to the model and kept in `agent.messages`.
+2. **Events** are what flows while a turn runs: `StreamEvent`s from the model into the loop, `AgentEvent`s from the loop to you.
 
 ## Message
 
 ```swift
-public enum Message: Sendable, Hashable, Codable {
-    case system(String)
-    case user(String)
-    case assistant(text: String, toolCalls: [ToolCall])
-    case tool(result: String, callId: String, name: String)
+public struct Message: Sendable, Hashable, Codable, Identifiable {
+    public var id: UUID
+    public var role: Role                  // .system · .user · .assistant · .tool
+    public var content: [ContentBlock]
 
-    public var role: String            // "system" | "user" | "assistant" | "tool"
-    public var text: String
-    public var toolCalls: [ToolCall]   // non-empty only for .assistant
-    public var templateDictionary: [String: any Sendable]   // OpenAI-style dict for chat templates
+    public static func user(_ text: String) -> Message
+    public static func assistant(_ text: String) -> Message
+    public static func assistant(text: String, toolUses: [ToolUse]) -> Message
+    public static func toolResults(_ results: [ToolResult]) -> Message     // role .user, like Strands
+
+    public var text: String                // all .text blocks joined
+    public var reasoning: String
+    public var toolUses: [ToolUse]
 }
 
-public struct ToolCall: Sendable, Hashable, Codable, Identifiable {
-    public var id: String              // "call_xxxxxxxx" (ToolCall.makeId())
+public enum ContentBlock: Sendable, Hashable, Codable {
+    case text(String)
+    case toolUse(ToolUse)
+    case toolResult(ToolResult)
+    case reasoning(String)                 // Qwen3 <think>… — kept in history, UIs may hide it
+}
+```
+
+This is Strands' `Message = {role, content: [ContentBlock]}` with the same four block kinds. Tool results travel in a
+`user` message, exactly as Bedrock and Strands expect, so a transcript round-trips to any Strands-shaped tool unchanged.
+
+```swift
+public struct ToolUse: Sendable, Hashable, Codable, Identifiable {
+    public var toolUseId: String           // "tooluse_xxxxxxxx" — generated if the model did not supply one
     public var name: String
-    public var arguments: [String: JSONValue]
+    public var input: [String: JSONValue]
+}
+
+public struct ToolResult: Sendable, Hashable, Codable, Identifiable {
+    public enum Status: String, Sendable, Codable { case success, error }
+    public var toolUseId: String
+    public var name: String
+    public var status: Status
+    public var content: String             // what the model reads back
+    public var durationMs: Double
+    public static func error(_ toolUse: ToolUse, _ message: String, durationMs: Double = 0) -> ToolResult
 }
 ```
 
-An `enum` rather than a struct-with-content-blocks: on-device models never return mixed text+tool blocks in one turn — a
-turn is either text, text plus parsed calls, or a tool result — so the four cases cover everything the chat templates
-need. `templateDictionary` renders exactly what swift-transformers' `applyChatTemplate` expects (`tool_calls` on the
-assistant turn, `role: tool` + `tool_call_id` on results).
+`JSONValue` is loopl's small JSON enum (`.string/.number/.bool/.null/.array/.object`) with literal conformances, so
+`["city": "Istanbul", "days": 3]` *is* a `[String: JSONValue]`.
 
-## ModelEvent — what a `Model` emits
+## StreamEvent — model → loop
+
+Every `Model` emits the same Bedrock-shaped stream Strands uses for all its providers:
 
 ```swift
-public enum ModelEvent: Sendable {
-    case text(String)        // token delta
-    case toolCall(ToolCall)  // only if the runtime parsed the call itself (mlx-swift-lm native parsers)
-    case metrics(Metrics)    // TTFT / tok/s snapshots; the last one has finished = true
+public enum StreamEvent: Sendable, Hashable {
+    case messageStart(role: Role)
+    case contentBlockStart(ContentBlockStart)      // .text · .toolUse(toolUseId:name:) · .reasoning
+    case contentBlockDelta(ContentBlockDelta)      // .text(String) · .toolUse(input: String) · .reasoning(String)
+    case contentBlockStop
+    case messageStop(StopReason)
+    case metadata(Metrics)
+}
+
+public enum StopReason: String, Sendable, Codable {
+    case endTurn, toolUse, maxTokens, stopSequence, contentFiltered, cancelled
 }
 ```
 
-Runtimes that only produce text emit `.text`; the agent lifts `<tool_call>…</tool_call>` (Hermes/Qwen),
-`<|python_tag|>` / bare JSON (Llama 3) or generic JSON into `ToolCall`s after the turn with `ToolCallParser`.
+A runtime that only produces raw tokens (llama.cpp) or snapshots (Apple Foundation Models) adapts to this vocabulary
+inside its `Model`; the `ToolCallParser` turns `<tool_call>`/JSON dialects into `contentBlockStart(.toolUse)` +
+`contentBlockDelta(.toolUse(input:))` so the loop never sees a dialect.
 
-## AgentEvent — what `Agent.stream` yields
+`StreamAssembler` (Strands `process_stream`) folds the stream into one assistant `Message` and a `Stop` value
+(`stopReason`, `message`, `metrics`). You only meet it when you write a `Model`.
 
-| Event | When |
-|---|---|
-| `.iterationStarted(Int)` | a new pass of the loop (1-based) |
-| `.text(String)` | streamed assistant text |
-| `.metrics(Metrics)` | TTFT, tok/s, context used/max — updated while generating |
-| `.assistantMessage(Message)` | the turn is complete and parsed (text + calls) |
-| `.toolStarted(ToolCall)` | a tool is about to run |
-| `.toolFinished(ToolResult)` | it returned — `isError`, `durationMs`, `content` |
-| `.warning(String)` | loop detector fired (informational; never stops the loop) |
-| `.finished(iterations: Int, reason: FinishReason)` | `.answered` · `.budget` · `.cancelled` |
+## AgentEvent — loop → you
 
 ```swift
-public struct Metrics: Sendable, Hashable {
-    public var promptTokens: Int
-    public var generatedTokens: Int
-    public var ttftMs: Double
+public enum AgentEvent: Sendable {
+    case initEventLoop                                  // first cycle of an invocation
+    case startEventLoop(cycle: Int)                     // each model call
+    case modelStreamChunk(StreamEvent)                  // the raw stream, if you want it
+    case text(String)                                   // assistant text delta
+    case reasoning(String)                              // thinking delta
+    case toolUseStream(name: String, toolUseId: String, partialInput: String)
+    case modelMessage(Message)                          // assembled assistant turn (already appended)
+    case throttle(delay: TimeInterval)                  // retry backoff announced
+    case toolStarted(ToolUse)                           // after BeforeToolCall hooks, before the tool runs
+    case toolResult(ToolResult)
+    case toolResultMessage(Message)                     // the user message carrying all results (appended)
+    case metrics(Metrics)                               // ttft, tok/s, context used/max — for a debug sheet
+    case forceStop(String)                              // unrecoverable error or cancellation
+    case result(AgentResult)                            // ALWAYS the last event
+}
+```
+
+The Strands names are in the comments of the source (`InitEventLoopEvent`, `TextStreamEvent`, `ToolResultEvent`,
+`ForceStopEvent`, `AgentResultEvent`…); only `toolStarted` and `metrics` are loopl additions, because a phone UI wants a
+spinner on the tool row and a tok/s number somewhere quiet.
+
+### From events to a view model
+
+`Transcript` is a pure reducer from `AgentEvent` to a list of `TranscriptItem`s (`user`, `assistant`, `reasoning`,
+`toolUse(_, result:)`, `note`) plus `metrics`, `cycle`, `isRunning`, `lastResult`. `LooplUI.AgentTranscriptView`
+renders exactly this value; your own SwiftUI can too:
+
+```swift
+// snippet: compile
+import Loopl
+
+@MainActor
+func drive(_ agent: Agent, _ prompt: String, into transcript: inout Transcript) async throws {
+    transcript.user(prompt)
+    for try await event in agent.stream(prompt) {
+        _ = transcript.apply(event)            // returns true when the visible list changed
+    }
+    print(transcript.items.count, transcript.lastResult?.stopReason as Any)
+}
+```
+
+## Metrics
+
+```swift
+public struct Metrics: Sendable, Hashable, Codable {
+    public var promptTokens, generatedTokens: Int
+    public var ttftMs: Double                 // time to first token
     public var tokensPerSecond: Double
-    public var contextUsed: Int
-    public var contextMax: Int
+    public var contextUsed, contextMax: Int
     public var finished: Bool
-    public var stopReason: String      // runtime's own word: "end_turn", "max_tokens", …
-    public var estimated: Bool         // true when token counts come from a heuristic, not the tokenizer
+    public var stopReason: String
+    public var estimated: Bool                // true when the runtime cannot count tokens (Apple FM)
+    public var usage: Usage                   // Strands Usage: inputTokens · outputTokens · totalTokens
 }
 ```
 
-## Persisting a conversation
-
-`Message` is `Codable`; `agent.messages` is a plain array you can save and restore (`agent.messages = saved` inside the
-actor, or build a new `Agent` and assign). The app keeps the current conversation in Application Support.
-
-## Transcript — events → UI state
-
-`Transcript` (in `Loopl`, no SwiftUI) folds `AgentEvent`s into a list a view can render:
-
-```swift
-public struct Transcript: Sendable, Hashable {
-    public var items: [TranscriptItem]      // kind: .user · .assistant · .toolCall(ToolCall, result: ToolResult?) · .warning · .note
-    public var metrics: Metrics
-    public var iteration: Int
-    public var isRunning: Bool
-    public mutating func user(_ text: String)
-    public mutating func apply(_ event: AgentEvent) -> Bool   // true when the item list changed; streaming text merges into the open assistant item
-    public mutating func note(_ text: String)
-    public mutating func clear()
-}
-```
-
-`LooplUI.AgentTranscriptView(transcript)` renders it — `UserBubble`, `StreamingTextView`, `ToolCallCard` (collapsed pill →
-expandable arguments/result, ✓/✗), warnings as amber pills — and `TokenMeter(metrics)` draws TTFT / tok/s / context used.
+`EventLoopMetrics` on the `AgentResult` accumulates `Usage` and latency across cycles (Strands `EventLoopMetrics`).

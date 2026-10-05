@@ -58,7 +58,7 @@ def row(m):
 
 out = []
 out.append("# Models\n")
-out.append("What the loopl app ships in its catalog (`models.json`), and what the SDK's `ModelCatalog` "
+out.append("What the loopl app ships in its catalog (`models.json`), and what the SDK's `Catalog` "
            "exposes. Every MLX entry is an `mlx-community` 4-bit conversion downloaded straight from "
            "Hugging Face; none of them is gated. The Apple entry needs no download at all.\n")
 out.append("!!! tip \"How to read *usable context*\"\n"
@@ -79,7 +79,7 @@ for m in models:
 out.append("")
 out.append("## Picking a model\n")
 out.append("- **Default**: `{}` — the best balance of tool-call reliability, speed and context on an 8 GB phone.".format(default or "qwen3-1.7b-4bit"))
-out.append("- **≤ 4B** parameters at 4-bit fit comfortably; **7B/8B class** models load but leave little room for context — the app warns before downloading them and the SDK's `MemoryBudget` refuses to load past the device's safe limit.")
+out.append("- **≤ 4B** parameters at 4-bit fit comfortably; **7B/8B class** models load but leave little room for context — the app warns before downloading them (the catalog's `minRAMGB` vs the device) and keeps the context budget at `ctxUsable8GB`.")
 out.append("- **Tool calls** are proven on the Qwen3 / Qwen2.5 (Hermes format), Llama 3.2 and Apple families. Gemma and SmolLM fall back to plain-JSON parsing — fine for one tool, flaky for many.")
 out.append("- **Context**: the KV cache is the real cost. Doubling context roughly doubles the memory the model needs beyond its weights.\n")
 gen = (doc.get("generatedAt") or doc.get("updated")) if isinstance(doc, dict) else None

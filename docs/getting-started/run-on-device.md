@@ -28,7 +28,7 @@ xcrun devicectl device process launch --device "$UDID" com.example.MyApp
 ## Memory
 
 Before the first `load()` the runtime calls `MLX.GPU.set(cacheLimit: 32 * 1024 * 1024)`; the app reads
-`os_proc_available_memory()` (its `MemoryBudget`) for the headroom meter and the pre-download warning.
+`os_proc_available_memory()` (the app's memory budget) for the headroom meter and the pre-download warning.
 
 | Phone | RAM | safe per-app | fits comfortably |
 |---|---|---|---|

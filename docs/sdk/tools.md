@@ -1,90 +1,127 @@
+---
+description: Tools in loopl — the Tool protocol, ToolSchema, ClosureTool, how tool calls are parsed from each model family, concurrent execution and error handling.
+---
+
 # Tools & JSON schema
 
-A tool is a `Sendable` value with a name, a one-paragraph description, a JSON-schema `parameters` object and an async
-`call` that returns a string the model will read.
+A tool is a Swift value the model can call. Define it once; loopl renders its schema into whatever dialect the loaded
+model speaks (Qwen/Hermes `<tool_call>`, Llama 3 `<|python_tag|>`, Gemma/SmolLM fenced JSON, Apple Foundation Models'
+instructions), parses the call back, runs it, and returns the result to the model as a `toolResult` block.
 
 ```swift
 public protocol Tool: Sendable {
-    var name: String { get }                 // [a-z0-9_]+ — what the model writes in the call
-    var description: String { get }          // the model follows this more than the schema
-    var parameters: JSONValue { get }        // a JSON-schema object
-    func call(_ args: [String: JSONValue]) async throws -> String
+    var name: String { get }
+    var description: String { get }
+    var parameters: JSONValue { get }                              // JSON Schema for the arguments
+    func call(_ args: [String: JSONValue]) async throws -> String  // what the model reads back
 }
 ```
 
-## Writing one
+That is Strands' `@tool` surface — `name`, `description`, an input schema, a body — without decorators: Swift has no
+runtime introspection of parameter names, so you state the schema. `ToolSchema` keeps that short.
+
+## A struct
 
 ```swift
+// snippet: compile
+import Loopl
+import Foundation
+
 struct Weather: Tool {
     let name = "weather"
-    let description = "Current weather for a city. Only works online — say so if it fails."
-    let parameters = ToolSchema.object(["city": ToolSchema.string("City name, e.g. Istanbul")], required: ["city"])
+    let description = "Current conditions for a city. Celsius."
+    let parameters = ToolSchema.object(
+        ["city": ToolSchema.string("City name, e.g. Istanbul"),
+         "days": ToolSchema.number("Forecast length in days, 1–7")],
+        required: ["city"])
 
     func call(_ args: [String: JSONValue]) async throws -> String {
-        guard let city = args["city"]?.stringValue else { throw ToolError("missing 'city'") }
-        if NetworkPolicy.isOffline { throw ToolError("offline mode is on — network refused") }
-        // … fetch …
-        return "Sunny, 22 °C in \(city)"
+        guard let city = args["city"]?.stringValue else { throw ToolError("city is required") }
+        let days = Int(args["days"]?.doubleValue ?? 1)
+        return "\(city): 21 °C, clear, \(days)-day outlook stable"      // call your own source here
     }
 }
 ```
 
-Or inline, without a type:
+`ToolSchema.object(_:required:)`, `.string`, `.number`, `.boolean` build the JSON Schema; for anything richer (enums,
+arrays, nested objects) write the `JSONValue` literal directly — it *is* JSON:
 
 ```swift
-let dice = ClosureTool(name: "roll_dice", description: "Roll an N-sided die",
-                       parameters: ToolSchema.object(["sides": ToolSchema.number("default 6")])) { args in
-    String(Int.random(in: 1...(Int(args["sides"]?.doubleValue ?? 6))))
-}
+// snippet: compile
+import Loopl
+
+let schema: JSONValue = [
+    "type": "object",
+    "properties": [
+        "unit": ["type": "string", "enum": ["c", "f"]],
+        "cities": ["type": "array", "items": ["type": "string"]]
+    ],
+    "required": ["cities"]
+]
 ```
 
-`ToolSchema` has `object(_:required:)`, `string(_)`, `number(_)`, `boolean(_)`; anything fancier is a `JSONValue` literal
-(dictionary/array/string/number/bool literals all work: `["type": "array", "items": ["type": "string"]]`).
+## A closure
 
-!!! tip "Keep descriptions short and literal"
-    Small models follow the *description* more than the schema. One sentence of what it does, one of when to use it,
-    and "only works online" for network tools so the model can explain itself in airplane mode. `CurrentTimeTool` even
-    accepts a city name because models pass "Istanbul" instead of `Europe/Istanbul` — be forgiving in `call`.
-
-## Errors become results
-
-Throwing from `call` is fine — the agent turns it into
+For one-offs, `ClosureTool` wraps a closure:
 
 ```swift
-public struct ToolResult: Sendable, Hashable, Identifiable {
-    public var callId: String
-    public var name: String
-    public var content: String      // the returned string, or "error: …"
-    public var isError: Bool
-    public var durationMs: Double
-    public var message: Message     // .tool(result:callId:name:) — what gets appended
+// snippet: compile
+import Loopl
+import Foundation
+
+let battery = ClosureTool(name: "battery_level",
+                          description: "The device battery level in percent.") { _ in
+    "\(Int.random(in: 20...100)) %"           // UIDevice.current.batteryLevel in the app
 }
 ```
-
-and appends it as a `tool` message, so the model can retry with different arguments or tell the user. An unknown tool
-name gets `error: unknown tool 'x'. Available: a, b, c`.
-
-## How tools reach the model
-
-`Tool.spec` renders the OpenAI-style `{type: "function", function: {name, description, parameters}}` object.
-
-| Family (`ToolFamily`) | Mechanism | Parsed by |
-|---|---|---|
-| `.hermes` — Qwen3 / Qwen2.5 / Hermes | `tools:` passed to the chat template → `<tool_call>{json}</tool_call>` | `ToolCallParser(family: .hermes)` (+ mlx-swift-lm's own parser → `ModelEvent.toolCall`) |
-| `.llama3` — Llama 3.x | `<|python_tag|>{json}` or bare `{"name":…,"parameters":…}` | `ToolCallParser(family: .llama3)` |
-| `.generic` — Gemma, SmolLM, Phi, Apple FM | `PromptBuilder.toolSystemPrompt` lists the specs in the system prompt; the model answers with a bare JSON object | `ToolCallParser(family: .generic)` |
-
-The parser also repairs calls truncated by `maxTokens` (closes the braces) so a cut-off `<tool_call>` still runs.
-`Tests/LooplTests/ToolCallParserTests.swift` pins every dialect on captured model output.
 
 ## Built-in tools
 
-| Type | `name` | Notes |
-|---|---|---|
-| `CurrentTimeTool` | `current_time` | optional IANA `timezone`; also understands a city ("Istanbul") |
-| `CalculatorTool` | `calculator` | own recursive-descent `Calculator` (`+ - * / ^ %`, parentheses) — no `NSExpression` |
-| `RememberTool` / `RecallTool` | `remember` / `recall` | `NotesStore` in Application Support, never synced |
-| `HttpGetTool` | `http_get` | GETs a URL, text only, capped; refuses with `offline mode is on — network refused` when `NetworkPolicy.isOffline` |
-| `DeviceInfoTool` (app) | `device_info` | battery, available memory, total RAM, OS version, offline flag, thermal state — lives in the app because it needs UIKit |
+| Tool               | `name`         | What it does                                                                    |
+|--------------------|----------------|---------------------------------------------------------------------------------|
+| `CurrentTimeTool`  | `current_time` | Date & time, optional IANA `timezone`                                           |
+| `CalculatorTool`   | `calculator`   | Exact arithmetic (`+ - * / % ^`, `sqrt`, `abs`, `round`…) via loopl's `Calculator` |
+| `RememberTool`     | `remember`     | Store a short note under a key (UserDefaults-backed)                            |
+| `RecallTool`       | `recall`       | Read one note or list all                                                       |
+| `HttpGetTool`      | `http_get`     | HTTPS GET, first 4000 chars; refuses while offline                              |
 
-Enable them in the app under **Agent → Tools**; in code just pass the ones you want.
+All are plain structs in `Sources/Loopl/BuiltinTools.swift` — copy one when you start your own.
+
+## How a call gets parsed
+
+Small models do not have a native tool-calling API. loopl's `PromptBuilder` puts the tool specs into the chat template
+(or the system prompt for runtimes without a template) and `ToolCallParser` recognises the model's reply by **family**:
+
+| `ToolFamily` | Models                                   | Wire format                                                     |
+|--------------|------------------------------------------|-----------------------------------------------------------------|
+| `.hermes`    | Qwen 2.5 / 3, Hermes, SmolLM3, Phi-4-mini | `<tool_call>{"name": …, "arguments": {…}}</tool_call>`           |
+| `.llama3`    | Llama 3.1 / 3.2                           | `<|python_tag|>{…}` or a bare `{"name": …, "parameters": {…}}`   |
+| `.generic`   | Gemma, SmolLM2, Apple Foundation Models  | fenced ```json … ``` or a bare JSON object with `name` + `arguments` |
+
+The family comes from the model's catalog entry. Partial calls are held back by `ToolCallStreamGate` so the UI never
+flashes half a `<tool_call>` tag, and a call truncated by `maxTokens` is repaired when the JSON is unambiguous. Parsed calls
+become `StreamEvent.contentBlockStart(.toolUse)` + `contentBlockDelta(.toolUse(input:))`, so by the time the loop sees
+them every model looks like a native tool-calling model.
+
+## Execution: concurrent by default
+
+When an assistant message carries several tool uses, the `ToolExecutor` runs them. `ConcurrentToolExecutor` (default)
+runs all of them in a `TaskGroup` and returns the results **in the order the model asked**; `SequentialToolExecutor`
+runs one at a time for tools that share a resource. Either way:
+
+- a tool that **throws** becomes `ToolResult(status: .error, content: <error text>)` — the model reads it and usually
+  retries with better arguments; the loop never crashes on a tool;
+- a tool the model names that **does not exist** gets an error result naming the available tools;
+- `BeforeToolCallEvent` can swap or deny the tool, `AfterToolCallEvent` can rewrite the result ([Hooks](hooks.md));
+- each result carries `durationMs`, surfaced on the UI tool row and in `EventLoopMetrics.toolCallCount`.
+
+## Tips for small models
+
+- **Short descriptions, few parameters.** A 1.7B model follows a two-field schema reliably; it loses an eight-field one.
+- **Return text the model can quote.** `"21 °C, clear"` beats a JSON blob the model has to re-parse.
+- **Name the unit in the description** ("Celsius", "ISO-8601") instead of relying on an enum.
+- **Fail loudly in `call`.** `throw ToolError("city is required")` teaches the model more than returning an empty string.
+
+!!! strands "Strands → loopl"
+    `@tool def weather(city: str) -> str` → `struct Weather: Tool` · `ToolSpec` → `ToolSpec` (via `tool.toolSpec`) ·
+    `ToolUse` → `ToolUse` · `ToolResult(status="error")` → `ToolResult(status: .error)` · `ConcurrentToolExecutor` → `ConcurrentToolExecutor`.

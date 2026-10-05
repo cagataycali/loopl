@@ -4,7 +4,7 @@
 # external (Strands/Apple/stdlib) and skipped. Run from the repo root.
 set -euo pipefail; cd "$(dirname "$0")/.."
 grep -rhoE '^\s*(public |open )?(final class|class|struct|enum|protocol|actor|typealias) [A-Z][A-Za-z0-9_]+' Sources | awk '{print $NF}' | sort -u > /tmp/loopl-src-types.txt
-grep -rhoE '`[A-Z][A-Za-z0-9_]+`' docs --include=*.md | tr -d '`' | sort -u > /tmp/loopl-doc-types.txt
+grep -rhoE '`[A-Z][A-Za-z0-9_]+`' docs --include='*.md' --exclude=changelog.md | tr -d '`' | sort -u > /tmp/loopl-doc-types.txt
 allowed=docs/allowed_symbols.txt; [[ -f $allowed ]] || : > $allowed
 missing=$(comm -23 /tmp/loopl-doc-types.txt /tmp/loopl-src-types.txt | grep -vxF -f <(grep -v '^#' $allowed) || true)
 undocumented=$(comm -13 /tmp/loopl-doc-types.txt /tmp/loopl-src-types.txt | tr '\n' ' ')

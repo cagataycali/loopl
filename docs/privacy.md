@@ -9,7 +9,7 @@ identifiers and no servers operated by us. We cannot see your prompts because th
 
 | Connection | When | What is sent |
 |---|---|---|
-| `https://huggingface.co` | only when **you** tap *Download* on a model | a request for that repository's files; your Hugging Face token as `Authorization: Bearer` **if** you saved one |
+| `https://huggingface.co` | on first launch (the default Qwen3-0.6B model) and when **you** pick another model | an **anonymous** request for that public repository's files — no token, no account, no identifier |
 | nothing else | — | — |
 
 Running a model, chatting, tool calls (`current_time`, `calculator`, `device_info`, `remember`/`recall`)
@@ -18,9 +18,10 @@ model asks for, only while you are online, and shows you the URL in the tool car
 
 ## What stays on the device
 
+There is no account and no token: the app has nothing that could identify you to anyone, including us.
+
 - **Conversations** — stored in the app's Application Support folder, deleted when you delete them or the app.
 - **Model weights** — Application Support, excluded from iCloud backup.
-- **Hugging Face token** — the iOS Keychain (this device only, not synced), removed with *Remove*.
 - **Notes** written by the `remember` tool — Application Support, never synced.
 
 ## Apple Foundation Models

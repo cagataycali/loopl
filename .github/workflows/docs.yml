@@ -37,6 +37,8 @@ jobs:
       - name: Regenerate models table from the bundled catalog
         run: python3 docs/gen_models.py
       - run: mkdocs build --strict
+      - name: Every documented type exists in Sources/
+        run: ./docs/check_symbols.sh
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

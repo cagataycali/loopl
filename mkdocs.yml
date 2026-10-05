@@ -7,6 +7,8 @@ edit_uri: ""
 exclude_docs: |
   gen_models.py
   check_snippets.sh
+  check_symbols.sh
+  allowed_symbols.txt
   overrides/
 copyright: "© 2026 Çağatay Çalı · loopl is open source · No data collected"
 
@@ -60,6 +62,10 @@ extra_css:
   - stylesheets/loopl.v3.css
 
 plugins:
+  - redirects:
+      redirect_maps:
+        sdk/budget.md: sdk/event-loop.md
+        app/hf-token.md: privacy.md
   - search:
       separator: '[\s\-,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
   # Social cards (og:image per page). Needs cairo + pillow — the docs workflow installs them;
@@ -131,7 +137,7 @@ nav:
       - Messages & events: sdk/messages-events.md
       - Tools & JSON schema: sdk/tools.md
       - Model protocol: sdk/models.md
-      - Budget & the unlimited loop: sdk/budget.md
+      - Conversation managers: sdk/conversation-managers.md
       - Strands mapping: sdk/strands-mapping.md
   - Runtimes:
       - runtimes/index.md
@@ -143,7 +149,6 @@ nav:
       - app/index.md
       - Download flow: app/downloads.md
       - Offline mode: app/offline.md
-      - Hugging Face token: app/hf-token.md
   - Privacy: privacy.md
   - FAQ: faq.md
   - Changelog: changelog.md

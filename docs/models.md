@@ -1,6 +1,6 @@
 # Models
 
-What the loopl app ships in its catalog (`models.json`), and what the SDK's `ModelCatalog` exposes. Every MLX entry is an `mlx-community` 4-bit conversion downloaded straight from Hugging Face; none of them is gated. The Apple entry needs no download at all.
+What the loopl app ships in its catalog (`models.json`), and what the SDK's `Catalog` exposes. Every MLX entry is an `mlx-community` 4-bit conversion downloaded straight from Hugging Face; none of them is gated. The Apple entry needs no download at all.
 
 !!! tip "How to read *usable context*"
     *ctx max* is the model's `max_position_embeddings`. *usable on 8 GB* is what fits next to the 4-bit weights and the KV cache on an iPhone 16 Pro (8 GB, ~5–6 GB per-app jetsam limit) — the value the app uses as its default context. Bigger phones can raise it in **Agent → Context**.
@@ -48,7 +48,7 @@ What the loopl app ships in its catalog (`models.json`), and what the SDK's `Mod
 ## Picking a model
 
 - **Default**: `qwen3-1.7b-4bit` — the best balance of tool-call reliability, speed and context on an 8 GB phone.
-- **≤ 4B** parameters at 4-bit fit comfortably; **7B/8B class** models load but leave little room for context — the app warns before downloading them and the SDK's `MemoryBudget` refuses to load past the device's safe limit.
+- **≤ 4B** parameters at 4-bit fit comfortably; **7B/8B class** models load but leave little room for context — the app warns before downloading them (the catalog's `minRAMGB` vs the device) and keeps the context budget at `ctxUsable8GB`.
 - **Tool calls** are proven on the Qwen3 / Qwen2.5 (Hermes format), Llama 3.2 and Apple families. Gemma and SmolLM fall back to plain-JSON parsing — fine for one tool, flaky for many.
 - **Context**: the KV cache is the real cost. Doubling context roughly doubles the memory the model needs beyond its weights.
 

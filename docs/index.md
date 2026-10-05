@@ -19,7 +19,7 @@ hide:
 
 <p class="loopl-hero__lead">
 <strong>loopl</strong> is a Swift agent SDK built for on-device inference — the Strands agent loop,
-rewritten for Metal and the Neural Engine. Pick a model from Hugging Face, hand the agent a few tools,
+rewritten for Metal and the Neural Engine. Pick a public model from Hugging Face — no account, no token — hand the agent a few tools,
 and let it run until the job is done. The same loop powers the free <strong>loopl</strong> iOS app.
 </p>
 
@@ -93,19 +93,19 @@ naming where it is natural, and feels like Swift everywhere else. Actors, async 
 :material-chip:
 ### On-device runtimes
 **MLX Swift** for 4-bit Hugging Face models on the GPU, **Apple Foundation Models** on iOS 26 with
-zero download, and **GGUF / llama.cpp** on the roadmap. One `Model` protocol, swap at runtime.
+zero download, and **GGUF on llama.cpp** for the wider quantised ecosystem. One `Model` protocol, swap at runtime.
 
 [Runtimes →](runtimes/index.md)
 </div>
 
 <div class="loopl-card" markdown>
 :material-all-inclusive:
-### Unlimited agent loop
-No `max_iterations = 8`. The loop runs until the model stops calling tools or *you* cancel.
-Optional `Budget` caps for iterations, tool calls, wall time and tokens, plus a `LoopDetector` that
-**warns** on identical repeated calls — and never silently stops.
+### The Strands loop, unlimited
+A faithful Swift port of the Strands event loop — stream, run tools concurrently, recurse — with **no
+iteration cap**. The context window (kept in check by a sliding-window conversation manager) and your
+Stop button are the only bounds. Hooks, retries and `maxTokens` recovery included.
 
-[Budget & the loop →](sdk/budget.md)
+[The event loop →](sdk/event-loop.md)
 </div>
 
 </div>

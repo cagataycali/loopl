@@ -32,3 +32,33 @@ OllamaModel
 Swarm
 Graph
 ContextBlock
+# Strands event / exception names quoted on the mapping + event-loop pages
+TypedEvent
+InitEventLoopEvent
+StartEvent
+StartEventLoopEvent
+ModelStreamChunkEvent
+TextStreamEvent
+ReasoningTextStreamEvent
+ToolUseStreamEvent
+ModelMessageEvent
+EventLoopThrottleEvent
+ToolResultEvent
+ToolResultMessageEvent
+ForceStopEvent
+AgentResultEvent
+ContextWindowOverflowException
+EventLoopException
+MaxTokensReachedException
+ModelThrottledException
+SummarizingConversationManager
+OpenAIModel
+EventLoop
+# lives in Tests/ (test-only scripted model) and its nested Turn enum
+FakeModel
+Turn
+# HTTP header
+Range
+# Apple iOS 27 Foundation Models names (quoted as not-yet-usable)
+ToolCallingMode
+ContextOptions

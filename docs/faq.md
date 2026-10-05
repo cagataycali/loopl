@@ -15,14 +15,15 @@
     in an 8 GB phone's per-app limit. Raise it in *Agent → Context* if you have headroom.
 
 ??? question "Does the agent really loop forever?"
-    It loops until the model stops calling tools or you stop it. In practice tasks end in 1–6 iterations;
-    pathological ones hit the loop detector, which warns you and lights the Stop button. If you want a
-    hard cap, set `AgentConfig.budget` — it is `.unlimited` by default on purpose. [Why →](sdk/budget.md)
+    It loops until the model stops calling tools, the context window is exhausted, or you stop it. There is no
+    iteration cap and no loop detector — on purpose: a phone has no API bill to protect, and the Stop button is
+    always one tap away. The `SlidingWindowConversationManager` keeps the history inside the model's context so a
+    long task cannot overflow. [How the loop ends →](sdk/event-loop.md)
 
-??? question "Why is `GGUFModel` a stub?"
-    llama.cpp's chat-template and tool-call code lives in C++ `common/` and is not exported through the
-    C API, so Swift needs a shim or a re-implementation. MLX already parses tool calls natively, so it
-    shipped first. [Details →](runtimes/gguf.md)
+??? question "MLX or GGUF — which should I pick?"
+    MLX repos (`mlx-community/*-4bit`) are the fastest on Apple GPUs and the catalog's default. GGUF files run on
+    llama.cpp's Metal backend and give you the enormous GGUF ecosystem (Q4_K_M quantisations, more families). Same
+    `Agent`, same tools — switch in the Model list. [Runtimes →](runtimes/index.md)
 
 ??? question "Can I use it on the simulator?"
     For UI, yes. For inference, no: MLX compiles Metal kernels at runtime and the simulator has no Metal
@@ -37,9 +38,10 @@
     The catalog entry's `chatTemplateKwargs` sets `enable_thinking: false`, and `MLXModel` passes it to the chat
     template. Remove it from the spec if you want the monologue; it costs tokens and context.
 
-??? question "Do I need a Hugging Face token?"
-    No — nothing in the default catalog is gated. A token is only for gated repos you have access to, and
-    it lives in the Keychain. [Hugging Face token →](app/hf-token.md)
+??? question "Do I need a Hugging Face token or account?"
+    No. loopl downloads **public** repositories anonymously and lists only non-gated models; there is no place to
+    enter a token, nothing is stored in the Keychain, and the app never asks you to sign in to anything.
+    [Privacy →](privacy.md)
 
 ??? question "Where do the model files go, and are they backed up?"
     `Application Support/loopl/models/`, excluded from iCloud backup. Not `Library/Caches` (iOS purges it)
