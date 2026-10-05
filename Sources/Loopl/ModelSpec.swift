@@ -22,19 +22,25 @@ public struct ModelSpec: Sendable, Codable, Hashable, Identifiable {
     public var temperature: Float? = nil
     /// Extra kwargs for the chat template (e.g. Qwen3 `enable_thinking: false`).
     public var chatTemplateKwargs: [String: JSONValue]? = nil
+    /// `true` for Hub repos whose tool-call grammar loopl has not run on-device (`HubCatalog.detectFamily`).
+    /// Curated rows leave it nil; the UI shows "tool calls unverified".
+    public var toolsUnverified: Bool? = nil
 
     public init(id: String, name: String, repo: String, runtime: RuntimeKind, family: ToolFamily, paramsB: Double, sizeBytes: Int64,
                 ctxNominal: Int, ctxUsable8GB: Int, minRAMGB: Double, gated: Bool = false, notes: String? = nil, revision: String? = nil,
-                file: String? = nil, temperature: Float? = nil, chatTemplateKwargs: [String: JSONValue]? = nil) {
+                file: String? = nil, temperature: Float? = nil, chatTemplateKwargs: [String: JSONValue]? = nil, toolsUnverified: Bool? = nil) {
         self.id = id; self.name = name; self.repo = repo; self.runtime = runtime; self.family = family; self.paramsB = paramsB
         self.sizeBytes = sizeBytes; self.ctxNominal = ctxNominal; self.ctxUsable8GB = ctxUsable8GB; self.minRAMGB = minRAMGB
         self.gated = gated; self.notes = notes; self.revision = revision; self.file = file; self.temperature = temperature
-        self.chatTemplateKwargs = chatTemplateKwargs
+        self.chatTemplateKwargs = chatTemplateKwargs; self.toolsUnverified = toolsUnverified
     }
+
+    /// Browsed on Hugging Face at runtime (id "hub:<repo>[:<file>]") rather than shipped in the curated catalog.
+    public var isFromHub: Bool { id.hasPrefix("hub:") }
 
     enum CodingKeys: String, CodingKey {
         case id, name, repo, runtime, family, gated, notes, revision, file, temperature
-        case chatTemplateKwargs = "chat_template_kwargs"
+        case chatTemplateKwargs = "chat_template_kwargs", toolsUnverified = "tools_unverified"
         case paramsB = "params_b", sizeBytes = "size_bytes", ctxNominal = "ctx_nominal"
         case ctxUsable8GB = "ctx_usable_8gb", minRAMGB = "min_ram_gb"
     }
