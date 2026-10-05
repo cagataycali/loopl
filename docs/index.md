@@ -26,7 +26,7 @@ and let it run until the job is done. The same loop powers the free <strong>loop
 <div class="loopl-hero__cta" markdown>
 [Get started](getting-started/index.md){ .loopl-btn .loopl-btn--primary }
 [:fontawesome-brands-github: GitHub](https://github.com/cagataycali/loopl){ .loopl-btn .loopl-btn--ghost }
-<a class="loopl-badge" href="app/index.md" title="App Store listing — coming soon (TestFlight first)">
+<a class="loopl-badge" href="app/" title="App Store listing — coming soon (TestFlight first)">
 <span>:fontawesome-brands-apple:</span><span><small>Free · coming soon on the</small><b>App Store</b></span>
 </a>
 </div>
