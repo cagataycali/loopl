@@ -72,29 +72,27 @@ public final class ModelStore {
         if spec.gated && token == nil { states[spec.id] = .failed("gated model — add your Hugging Face token in Settings"); return }
         states[spec.id] = .downloading(done: 0, total: spec.sizeBytes, filesDone: 0, files: 0)
         let dir = Self.directory(for: spec)
-        tasks[spec.id] = Task { [weak self] in
+        tasks[spec.id] = Task {
             let dl = HFDownloader(token: token)
             do {
                 let files = try await dl.listFiles(repo: spec.repo, revision: spec.revision ?? "main")
                 let total = files.reduce(Int64(0)) { $0 + $1.size }
                 let counter = ByteCounter()
-                var filesDone = 0
-                for f in files {
+                for (filesDone, f) in files.enumerated() {
                     try Task.checkCancellation()
                     try await dl.download(repo: spec.repo, revision: spec.revision ?? "main", file: f, to: dir.appendingPathComponent(f.path)) { delta in
                         let done = counter.add(delta)
-                        Task { @MainActor [weak self] in
-                            guard let self, self.tasks[spec.id] != nil else { return }
+                        Task { @MainActor in
+                            guard self.tasks[spec.id] != nil else { return }
                             self.states[spec.id] = .downloading(done: done, total: total, filesDone: filesDone, files: files.count)
                         }
                     }
-                    filesDone += 1
                 }
-                await MainActor.run { [weak self] in self?.finish(spec) }
+                self.finish(spec)
             } catch is CancellationError {
-                await MainActor.run { [weak self] in self?.finish(spec) }
+                self.finish(spec)
             } catch {
-                await MainActor.run { [weak self] in self?.finish(spec, error: error.localizedDescription) }
+                self.finish(spec, error: error.localizedDescription)
             }
         }
     }

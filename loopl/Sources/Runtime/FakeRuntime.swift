@@ -8,7 +8,7 @@ public actor FakeRuntime: LLMRuntime {
     public private(set) var loadedModelId: String?
     public var scripts: [String]
     public private(set) var seenPrompts: [[Message]] = []
-    public var delayPerChunkNs: UInt64
+    public nonisolated let delayPerChunkNs: UInt64
 
     public init(scripts: [String], delayPerChunkNs: UInt64 = 0) {
         self.scripts = scripts

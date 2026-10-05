@@ -18,7 +18,7 @@ public enum Keychain {
         SecItemAdd(add as CFDictionary, nil)
     }
 
-    public static func get(account: String) -> String? {
+    public static func read(account: String) -> String? {
         let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
                                 kSecAttrAccount as String: account, kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
         var out: CFTypeRef?
@@ -26,5 +26,5 @@ public enum Keychain {
         return String(data: d, encoding: .utf8)
     }
 
-    public static var hfToken: String? { get(account: hfTokenAccount).flatMap { $0.isEmpty ? nil : $0 } }
+    public static var hfToken: String? { Self.read(account: hfTokenAccount).flatMap { $0.isEmpty ? nil : $0 } }
 }

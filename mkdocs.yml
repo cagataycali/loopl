@@ -4,6 +4,9 @@ site_description: "loopl — agents that run on the phone. A native Swift agent 
 repo_url: https://github.com/cagataycali/loopl
 repo_name: cagataycali/loopl
 edit_uri: ""
+exclude_docs: |
+  gen_models.py
+  overrides/
 copyright: "© 2026 Çağatay Çalı · loopl is open source · No data collected"
 
 theme:

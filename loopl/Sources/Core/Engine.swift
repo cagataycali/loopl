@@ -89,7 +89,7 @@ public final class Engine {
             lastError = "\(spec.name) is not downloaded yet"; loadProgress = nil; return
         }
         do {
-            try await rt.load(spec, from: dir) { p in Task { @MainActor [weak self] in self?.loadProgress = p } }
+            try await rt.load(spec, from: dir) { p in Task { @MainActor in self.loadProgress = p } }
             if let old = runtime { await old.unload() }
             runtime = rt
             loadedModel = spec
