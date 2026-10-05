@@ -58,7 +58,7 @@ theme:
 
 extra_css:
   # bump the suffix on every CSS change: Cloudflare caches assets for 4 h (HTML is DYNAMIC)
-  - stylesheets/loopl.v6.css
+  - stylesheets/loopl.v7.css
 
 hooks:
   - docs/hooks/strip_snippet_tags.py

@@ -50,4 +50,4 @@ Headings sentence-case. One `h1` per page. Max line length 68 ch.
 
 Only opacity/transform, 160–240 ms, `cubic-bezier(.2,.7,.2,1)`. Everything respects `prefers-reduced-motion: reduce` (animations off, final state shown).
 
-Stylesheet: `docs/stylesheets/loopl.v6.css` · Swift mirror: `LooplDesign` tokens in `LooplUI`.
+Stylesheet: `docs/stylesheets/loopl.v7.css` · Swift mirror: `LooplDesign` tokens in `LooplUI`.
