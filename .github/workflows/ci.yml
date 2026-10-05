@@ -1,0 +1,69 @@
+name: ci
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['docs/**', 'mkdocs.yml', 'requirements-docs.txt', '.github/workflows/docs.yml']
+  pull_request:
+  workflow_dispatch:
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  ios:
+    name: xcodegen · build · test (iOS Simulator)
+    runs-on: macos-26
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode 26
+        run: |
+          ls /Applications | grep -i xcode || true
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)"
+          xcodebuild -version
+      - name: Cache SwiftPM checkouts (mlx-swift is big)
+        uses: actions/cache@v4
+        with:
+          path: |
+            DerivedData/SourcePackages
+            ~/Library/Caches/org.swift.swiftpm
+          key: spm-${{ runner.os }}-${{ hashFiles('project.yml', 'Package.swift', 'Package.resolved', '**/Package.resolved') }}
+          restore-keys: spm-${{ runner.os }}-
+      - name: xcodegen
+        run: |
+          brew install xcodegen >/dev/null 2>&1 || brew upgrade xcodegen >/dev/null 2>&1 || true
+          xcodegen generate
+      - name: Pick a simulator
+        id: sim
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys;d=json.load(sys.stdin)["devices"];c=[x for k,v in d.items() if "iOS" in k for x in v if "iPhone" in x["name"]];c.sort(key=lambda x:x["name"]);print(c[-1]["udid"])')
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"; xcrun simctl list devices available | grep "$UDID"
+      - name: Build (Debug, simulator)
+        run: |
+          set -o pipefail
+          xcodebuild -project loopl.xcodeproj -scheme loopl -configuration Debug \
+            -destination "id=${{ steps.sim.outputs.udid }}" -derivedDataPath DerivedData \
+            CODE_SIGNING_ALLOWED=NO -skipPackagePluginValidation -skipMacroValidation build 2>&1 | tail -n 80
+      - name: Test (LooplTests on simulator)
+        run: |
+          set -o pipefail
+          xcodebuild -project loopl.xcodeproj -scheme loopl -configuration Debug \
+            -destination "id=${{ steps.sim.outputs.udid }}" -derivedDataPath DerivedData \
+            CODE_SIGNING_ALLOWED=NO -skipPackagePluginValidation -skipMacroValidation test 2>&1 | tail -n 120
+  package:
+    name: swift build · swift test (pure Loopl package, macOS)
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Skip if no Package.swift yet
+        id: pkg
+        run: '[ -f Package.swift ] && echo present=true >> "$GITHUB_OUTPUT" || echo present=false >> "$GITHUB_OUTPUT"'
+      - name: Select Xcode 26
+        if: steps.pkg.outputs.present == 'true'
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)" && swift --version
+      - name: swift build (Loopl core only — no MLX/Metal on macOS CI)
+        if: steps.pkg.outputs.present == 'true'
+        run: swift build --product Loopl 2>&1 | tail -n 60
+      - name: swift test
+        if: steps.pkg.outputs.present == 'true'
+        run: swift test --filter LooplTests 2>&1 | tail -n 120
