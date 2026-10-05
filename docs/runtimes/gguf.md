@@ -1,28 +1,72 @@
-# GGUF / llama.cpp (v2)
+---
+description: GGUFModel — loopl's llama.cpp runtime on the official ggml-org xcframework. Metal offload, single-file GGUF models, sampler chain, tool calls through the shared stream gate.
+---
 
-`GGUFModel` exists as a **stub** today so the catalog and the runtime picker can describe GGUF entries:
+# GGUF / llama.cpp
+
+`GGUFModel` runs any single-file **GGUF** model through [llama.cpp](https://github.com/ggml-org/llama.cpp), using the
+**official xcframework** that ggml-org publishes with every release — no fork, no C++ shim. It is the runtime for the
+widest model ecosystem: Q4_K_M quantisations, families nobody converted to MLX, files you already have.
 
 ```swift
-GGUFModel.availability()   // RuntimeAvailability(available: false, reason: "llama.cpp (GGUF) is planned for v2 — not in this build.")
-try await GGUFModel().load(spec, from: dir) { _ in }   // throws ModelError with the same reason
+// snippet: compile(runtimes)
+import Loopl
+import LooplRuntimes
+import Foundation
+
+func loadGGUF(_ spec: ModelSpec, dir: URL) async throws -> GGUFModel {
+    let model = GGUFModel()
+    print(GGUFModel.availability().reason)                    // "" on device; "simulator: CPU only…" in the simulator
+    try await model.load(spec, from: dir) { p in print("\(Int(p * 100)) %") }   // dir contains spec.file (one .gguf)
+    return model
+}
 ```
 
-## Why v2 and not v1
+## What it does
 
-- llama.cpp no longer ships a `Package.swift`; the SwiftPM path is the **xcframework** from each release
-  (`llama-bNNNNN-xcframework.zip`, ~60 MB) wrapped as a local `binaryTarget`.
-- The C API (`llama.h`) has no chat-template or tool-call handling. That lives in C++ `common/chat.h`
-  (`common_chat_templates_init`, `common_chat_parse`), which is not exported — so either a C shim is built into the
-  xcframework or the rendering/parsing is done in Swift. loopl's `PromptBuilder` + `ToolCallParser` are that Swift
-  side already, which is why the MLX path shipped first.
-- `n_ctx` allocates the KV cache up front; the right value has to be derived from `os_proc_available_memory()` *after*
-  the model loads.
+| Step            | How                                                                                                         |
+|-----------------|-------------------------------------------------------------------------------------------------------------|
+| Load            | `llama_model_load_from_file` with **`n_gpu_layers = 99`** on device (all layers on Metal); `0` in the simulator |
+| Context         | `n_ctx = GenerationParams.contextLength` (≥ 512), `n_batch = n_ubatch = 512`, flash attention auto, threads = cores − 2 (≤ 6) |
+| Prompt          | the model's own chat template via `llama_chat_apply_template` (ChatML fallback); tool specs are folded into the system prompt in the family's dialect, because the C API's template call has no `tools` argument |
+| Prefill         | the tokenised prompt is decoded in `n_batch` slices; a prompt that does not fit throws `ContextWindowOverflowError` *before* decoding, and a KV-slot failure (`llama_decode` → 1) maps to the same error so the conversation manager can trim |
+| Sampling        | sampler chain **top-p → min-p → temperature → dist** (greedy when `temperature ≤ 0`), seeded from `GenerationParams.seed` |
+| Streaming       | one token at a time → `StreamEvent.contentBlockDelta(.text)`; the family's markup is resolved by `ToolCallStreamGate` into native `toolUse` blocks, exactly as in `MLXModel` |
+| Metrics         | exact prompt/generated token counts, ttft and tok/s (`Metrics.estimated == false`)                              |
+| Concurrency     | one generation at a time; a second caller gets `ModelThrottledError` (retryable — the loop backs off) instead of a crash |
 
-## What it will give you
+All llama.cpp calls run on a dedicated serial queue off the Swift cooperative pool, since a decode blocks for seconds.
 
-- The widest model coverage (every Q4_K_M on the Hub; ~10–15 % larger than MLX 4-bit).
-- Single-file downloads that resume trivially.
-- Metal on A18 Pro, same GGML backend as the Mac.
+## Getting llama.cpp into your build
 
-Planned catalog entries (none gated): Qwen3 0.6B/1.7B/4B, Llama-3.2 1B/3B, gemma-3-1b-it, Phi-4-mini, SmolLM2/3 — the
-GGUF rows appear in the [models table](../models.md) once the runtime exists.
+The xcframework is **not** committed. `Package.swift` declares a path-based `binaryTarget` named `llama` only when
+`Vendor/llama.xcframework` exists, and `GGUFModel.swift` is wrapped in `#if canImport(llama)`:
+
+```bash
+scripts/fetch-llama-xcframework.sh             # device + macOS slices from the release zip (~62 MB), sha256-verified
+scripts/fetch-llama-xcframework.sh --with-sim  # + build the iOS-Simulator slice with upstream's build-xcframework.sh (cmake, 10–20 min)
+```
+
+The pinned release is `b11401` (override with `LLAMA_TAG` / `LLAMA_SHA256`). Why not a URL `binaryTarget`? The official
+zip ships `ios-arm64` (device) and `macos` slices but **no iOS-Simulator slice**, so SwiftPM would fail every simulator
+link; vendoring lets the script add that slice when you need it. Without `Vendor/`, everything else in the package builds
+and `GGUFModel.availability()` explains that llama.cpp is not in this build.
+
+## Catalog entries
+
+| Model                       | File                              | Family    | Size    |
+|-----------------------------|-----------------------------------|-----------|---------|
+| Qwen3 0.6B                  | `Qwen3-0.6B-Q4_K_M.gguf`          | `hermes`  | ~0.4 GB |
+| Qwen3 1.7B                  | `Qwen3-1.7B-Q4_K_M.gguf`          | `hermes`  | ~1.1 GB |
+| Qwen3 4B                    | `Qwen3-4B-Q4_K_M.gguf`            | `hermes`  | ~2.5 GB |
+| Llama 3.2 3B Instruct       | `Llama-3.2-3B-Instruct-Q4_K_M.gguf` | `llama3` | ~2.0 GB |
+| Gemma 3 1B it               | `gemma-3-1b-it-Q4_K_M.gguf`       | `generic` | ~0.8 GB |
+| SmolLM2 1.7B Instruct       | `SmolLM2-1.7B-Instruct-Q4_K_M.gguf` | `generic` | ~1.1 GB |
+
+Exact sizes and context budgets are in the generated [Models](../models.md) table. A GGUF `ModelSpec` carries `file`
+— the one artefact `HFDownloader.files(for:)` fetches — and downloads resume like any other model.
+
+!!! tip "MLX or GGUF for the same model?"
+    On an A17 Pro/A18 the MLX 4-bit conversion is usually the faster of the two; GGUF Q4_K_M is a little larger and
+    a little slower but is the format with the most models. Both run the same `Agent`, the same tools and the same
+    tool-call parsing — switch in the app's Model list and compare tok/s in the debug sheet.

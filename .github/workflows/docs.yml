@@ -46,9 +46,9 @@ jobs:
         continue-on-error: true
         with:
           name: docc
-          path: site/api
+          path: .
       - name: What landed under /api
-        run: 'ls site/api 2>/dev/null || echo "api: none (Swift job red)"' 
+        run: '[ -f docc-api.tgz ] && tar -C site -xzf docc-api.tgz && ls site/api || echo "api: none (Swift job red)"' 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
@@ -74,11 +74,11 @@ jobs:
       - name: Snippets typecheck
         run: ./docs/check_snippets.sh
       - name: DocC API reference
-        run: ./docs/build_docc.sh docc-site
+        run: ./docs/build_docc.sh docc-site && tar -C docc-site -czf docc-api.tgz api   # tar: DocC paths contain ':' which upload-artifact rejects
       - uses: actions/upload-artifact@v4
         with:
           name: docc
-          path: docc-site/api
+          path: docc-api.tgz
           retention-days: 7
 
   deploy:

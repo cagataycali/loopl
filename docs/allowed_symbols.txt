@@ -62,3 +62,6 @@ Range
 # Apple iOS 27 Foundation Models names (quoted as not-yet-usable)
 ToolCallingMode
 ContextOptions
+# env vars of scripts/fetch-llama-xcframework.sh
+LLAMA_TAG
+LLAMA_SHA256
