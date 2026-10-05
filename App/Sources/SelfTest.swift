@@ -97,8 +97,14 @@ enum SelfTest {
                 catch { report["offline_http_refused"] = true; emit("http_get refused: \(error.localizedDescription)") }
             }
 
-            // 2) load
-            let model = MLXModel()
+            // 2) load — the runtime the catalog row asks for (MLX or llama.cpp; Apple FM needs no file).
+            let model: any Model
+            switch spec.runtime {
+            case .gguf: model = GGUFModel()
+            case .appleFM: model = AppleFoundationModel()
+            case .mlx: model = MLXModel()
+            }
+            report["runtime"] = spec.runtime.rawValue
             let tLoad = Date()
             try await model.load(spec, from: dir) { _ in }
             report["load_s"] = Date().timeIntervalSince(tLoad)
