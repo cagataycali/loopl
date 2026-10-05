@@ -24,10 +24,18 @@ enum SelfTest {
         return CommandLine.arguments[i + 1]
     }
 
-    static func log(_ s: String) { print("[selftest] \(s)"); fflush(stdout) }
+    static let logURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("selftest.log")
+    /// stdout (for `devicectl --console`) AND Documents/selftest.log (pull it with `devicectl device copy from` while it runs).
+    static func log(_ s: String) {
+        let line = "\(ISO8601DateFormatter().string(from: Date())) \(s)\n"
+        print("[selftest] \(s)"); fflush(stdout)
+        if let h = try? FileHandle(forWritingTo: logURL) { try? h.seekToEnd(); try? h.write(contentsOf: Data(line.utf8)); try? h.close() }
+        else { try? Data(line.utf8).write(to: logURL) }
+    }
 
     @MainActor
     static func run(settings: AppSettings, store: ModelStore, onLog: @escaping (String) -> Void) async -> Never {
+        try? FileManager.default.removeItem(at: logURL)
         var report: [String: Any] = ["ok": false, "device": UIDevice.current.model, "os": UIDevice.current.systemVersion,
                                      "ram_physical": MemoryBudget.physical, "ram_available_start": MemoryBudget.available]
         func emit(_ s: String) { log(s); onLog(s) }

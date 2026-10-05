@@ -96,6 +96,9 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: technology.tiny.loopl.tests
         GENERATE_INFOPLIST_FILE: true
+        # xcodegen derives TEST_HOST from the target name (LooplApp.app); the product is loopl.app.
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/loopl.app/loopl
+        BUNDLE_LOADER: $(TEST_HOST)
 schemes:
   loopl:
     build:

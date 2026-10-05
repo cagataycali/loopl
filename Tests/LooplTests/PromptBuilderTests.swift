@@ -57,11 +57,18 @@ final class PromptBuilderTests: XCTestCase {
     }
 
     func testCatalogDecodes() throws {
-        let url = Bundle.module.url(forResource: "models", withExtension: "json", subdirectory: "Fixtures") ?? Bundle.module.url(forResource: "models", withExtension: "json")
+        // SwiftPM: Fixtures/models.json via Bundle.module; Xcode-hosted: the app bundle's models.json.
+        var url: URL?
+        #if SWIFT_PACKAGE
+        url = Bundle.module.url(forResource: "models", withExtension: "json", subdirectory: "Fixtures") ?? Bundle.module.url(forResource: "models", withExtension: "json")
+        #endif
+        if url == nil { url = Bundle.allBundles.compactMap { $0.url(forResource: "models", withExtension: "json") }.first }
         let data = try Data(contentsOf: XCTUnwrap(url))
         let c = try JSONDecoder().decode(Catalog.self, from: data)
         XCTAssertGreaterThanOrEqual(c.models.count, 6)
+        XCTAssertEqual(c.defaultModelId, "qwen3-1.7b-4bit")
         XCTAssertTrue(c.models.contains { $0.repo == "mlx-community/Qwen3-1.7B-4bit" && !$0.gated })
-        XCTAssertEqual(c.models.first { $0.id == "qwen3-1.7b-4bit" }?.chatTemplateKwargs?["enable_thinking"], .bool(false))
+        let kw: JSONValue? = c.models.first { $0.id == "qwen3-1.7b-4bit" }?.chatTemplateKwargs?["enable_thinking"]
+        XCTAssertEqual(kw, JSONValue.bool(false))
     }
 }
