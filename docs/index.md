@@ -166,7 +166,7 @@ One `Model` protocol, three engines. Numbers from the app's self-test on real ha
 </div>
 
 <div class="loopl-models">
-<span>Qwen3 0.6B · 1.7B · 4B</span><span>Llama 3.2 1B · 3B</span><span>Gemma 3 1B · 4B</span><span>Phi-4-mini</span><span>SmolLM3</span><span>DeepSeek-R1 1.5B</span><span class="more">+ any public repo, through the SDK</span>
+<span>Qwen3 0.6B · 1.7B · 4B</span><span>Llama 3.2 1B · 3B</span><span>Gemma 3 1B · 4B</span><span>Phi-4-mini</span><span>SmolLM3</span><span>DeepSeek-R1 1.5B</span><span class="more">+ any public Hugging Face repo</span>
 </div>
 
 [Models & runtimes →](sdk/models.md){ .loopl-btn .loopl-btn--ghost }
@@ -180,7 +180,7 @@ The SDK's reference client — on TestFlight now, App Store listing pending.
 <div class="loopl-grid--2 loopl-grid" markdown>
 <div class="loopl-phone"><picture><source srcset="assets/app/03-tool.webp" type="image/webp"><img src="assets/app/03-tool.png" alt="The loopl app: the question 'What time is it in Istanbul, and what is 23 × 47?', two expanded tool rows — current_time and calculator — and the answer 06:14 and 1081" width="320" height="696" loading="lazy" decoding="async"></picture></div>
 <div markdown>
-The same loop on the phone: the shot shows the two tool rows it ran for the Istanbul question. First launch fetches Qwen3-0.6B (335 MB) by itself. Then a document-style transcript, tool rows you can expand, a Models tab with 21 public models — any Hugging Face repo is next — and an offline switch that refuses every network call.
+The same loop on the phone: the shot shows the two tool rows it ran for the Istanbul question. First launch fetches Qwen3-0.6B (335 MB) by itself. Then a document-style transcript, tool rows you can expand, a Models tab that searches Hugging Face (MLX and GGUF, any public repo) and an offline switch that refuses every network call.
 
 - **No sign-in, no token** — public models, anonymous download.
 - **No analytics, no servers** — App Store label: *Data Not Collected*.

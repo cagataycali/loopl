@@ -46,9 +46,18 @@ func loadGGUF(_ spec: ModelSpec, dir: URL) async throws -> GGUFModel {
 
 `AppleFoundationModel().load(spec, from: nil)` loads nothing — the model is already on the phone.
 
-## Catalog & download
+## Catalog, Hub & download
 
-`Catalog.loadBundled()` is the app's `models.json` — 21 public models, see the [table](../models.md). `HFDownloader` fetches any public repo anonymously, file by file, resumable; a complete file is skipped, so `load(spec, from:)` works offline afterwards. `ModelSpec.minRAMGB` and `ctxUsable8GB` are the numbers the app checks before downloading and when sizing the KV cache.
+`Catalog.loadBundled()` is the app's `models.json` — 21 public models, see the [table](../models.md). Anything else on Hugging Face goes through `HubCatalog`, anonymously:
+
+```swift
+// snippet: compile(wrap)
+let hub = HubCatalog()
+let hits = try await hub.search("qwen3", kind: .mlx)          // mlx-community/* sorted by downloads; .gguf for GGUF repos
+let spec = try await hub.resolve(hits[0].id)                 // → ModelSpec: runtime, size, context, RAM need, tool family
+```
+
+`search` returns `HubCatalog.Hit`s (downloads, quantisation bits, context, estimated size, gated flag); `resolve` reads `config.json` or the GGUF header and builds a `ModelSpec` the runtimes accept. Results are cached (`HubCache`) so already-downloaded models resolve offline. `HFDownloader` then fetches the files, resumable; a complete file is skipped, so `load(spec, from:)` works offline afterwards. `ModelSpec.minRAMGB` and `ctxUsable8GB` are the numbers the app checks before downloading and when sizing the KV cache.
 
 ## Speed — measured, not quoted
 

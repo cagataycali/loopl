@@ -42,7 +42,7 @@ Free, no login, no analytics. First launch downloads `Qwen3-0.6B-4bit` (≈335 M
 | | |
 |---|---|
 | **Chat** | document-style transcript (no bubbles), streaming text, folded *Thinking…* rows, tool rows with timing, Stop. |
-| **Models** | Recommended catalog (21 public models, MLX + GGUF) and — landing with Phase 3 — **Browse Hugging Face**: search `mlx-community` or GGUF repos, see size · context · RAM fit, download any public repo. |
+| **Models** | Recommended catalog (21 public models, MLX + GGUF) and **Browse Hugging Face**: search `mlx-community` or GGUF repos, paste a repo id, see size · context · RAM fit, download any public repo. |
 | **Settings** | system prompt, tools on/off, **offline mode**, optional performance footer (tok/s, TTFT, context). |
 
 ## Requirements
