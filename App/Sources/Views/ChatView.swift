@@ -191,7 +191,8 @@ struct Composer: View {
         .offset(y: drag)
         // Interruptible: the bar follows the finger (rubber-banded, interactive spring), and on release
         // either the keyboard goes (distance or velocity) or the bar springs back. Reduce Motion: no offset.
-        .gesture(
+        // `simultaneousGesture`: a plain `.gesture` never fires over the TextField (UIKit's recognizers win).
+        .simultaneousGesture(
             DragGesture(minimumDistance: 12)
                 .onChanged { v in
                     guard focused.wrappedValue, !reduceMotion else { return }

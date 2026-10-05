@@ -55,6 +55,10 @@ Free, no login, no analytics. First launch downloads `Qwen3-0.6B-4bit` (≈335 M
 
 Application Support — models (excluded from iCloud backup), conversations, notes. Delete a model from the Models tab; everything goes with the app.
 
+## Motion
+
+Nothing spins. Streamed text fades in by chunk, tool rows open on a spring with a thin sweep while they run, the loaded model's bolt slides between rows, details zoom out of the row you tapped, the composer follows your finger, and the mark draws itself once at launch — 120 Hz, haptics ≤ 1 per 250 ms, all durations in `LooplDesign.Motion`, every one a plain cross-fade under Reduce Motion.
+
 ## Built on the SDK
 
 The app is `App/` in the repository: `Agent` + `Transcript` from `Loopl`, three runtimes from `LooplRuntimes`, and the `LooplUI` components on the [design tokens](../DESIGN.md). Read it as the worked example.
