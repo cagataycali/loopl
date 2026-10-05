@@ -25,7 +25,7 @@ Free, no login, no analytics. First launch downloads `Qwen3-0.6B-4bit` (≈335 M
 </figure>
 <figure markdown>
 ![The model list](../assets/app/04-models.png){ loading=lazy }
-<figcaption>Models: tap to switch; Apple Intelligence built in on iOS 26.</figcaption>
+<figcaption>Models: Browse Hugging Face for any public MLX or GGUF repo; Apple Intelligence built in on iOS 26.</figcaption>
 </figure>
 <figure markdown>
 ![Offline mode](../assets/app/05-offline.png){ loading=lazy }
