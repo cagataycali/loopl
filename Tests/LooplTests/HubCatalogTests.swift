@@ -9,11 +9,16 @@ import Loopl
 ///   config-mlx-qwen2.5-1.5b.json    GET /mlx-community/Qwen2.5-1.5B-Instruct-4bit/resolve/main/config.json
 final class HubCatalogTests: XCTestCase {
     func fixture(_ name: String) throws -> Data {
+        // SwiftPM keeps Fixtures/hub/<name>.json; Xcode-hosted runs (CI simulator job) flatten copied folders → try every shape.
         var url: URL?
         #if SWIFT_PACKAGE
-        url = Bundle.module.url(forResource: name, withExtension: "json", subdirectory: "Fixtures/hub")
+        for sub in ["Fixtures/hub", "hub", nil] { if url == nil { url = Bundle.module.url(forResource: name, withExtension: "json", subdirectory: sub) } }
         #endif
-        if url == nil { url = Bundle.allBundles.compactMap { $0.url(forResource: name, withExtension: "json", subdirectory: "hub") }.first }
+        if url == nil {
+            for sub in ["Fixtures/hub", "hub", nil] where url == nil {
+                url = Bundle.allBundles.compactMap { $0.url(forResource: name, withExtension: "json", subdirectory: sub) }.first
+            }
+        }
         return try Data(contentsOf: XCTUnwrap(url, "fixture \(name) missing"))
     }
 

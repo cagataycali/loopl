@@ -85,6 +85,10 @@ targets:
     sources:
     - path: ../Tests/LooplTests
       excludes: [Fixtures]
+    # Hub fixtures as a folder reference → LooplTests.xctest/hub/<name>.json (tests also try "Fixtures/hub" for SwiftPM).
+    - path: ../Tests/LooplTests/Fixtures/hub
+      type: folder
+      buildPhase: resources
     dependencies:
     - target: LooplApp
     - package: Loopl
