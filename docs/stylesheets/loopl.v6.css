@@ -221,7 +221,7 @@ html[data-js] .loopl-loop.is-on .l-draw { stroke-dashoffset: 0; }
 .loopl-demo__status { font-family: var(--l-mono); font-size: .62rem; color: var(--l-ink-2); margin: 0 0 var(--s1); min-height: 1.2em; }
 .loopl-demo__replay { margin-left: auto; font: inherit; font-size: .62rem; background: transparent; border: 1px solid var(--l-line); border-radius: var(--r-pill); padding: 2px 10px; color: var(--l-ink-2); cursor: pointer; }
 .loopl-demo__replay:hover { color: var(--l-flame); border-color: var(--l-flame); }
-.loopl-demo[data-playing] .loopl-demo__replay { opacity: .4; pointer-events: none; }
+.loopl-demo[data-playing] .loopl-demo__replay { pointer-events: none; border-style: dashed; }
 .loopl-demo__a { display: flex; align-items: center; gap: 2px; }
 .loopl-demo[data-js]:not([data-playing]) .loopl-caret { display: none; }
 @media (prefers-reduced-motion: reduce) {
@@ -230,7 +230,7 @@ html[data-js] .loopl-loop.is-on .l-draw { stroke-dashoffset: 0; }
 .loopl-demo__status { font-family: var(--l-mono); font-size: .62rem; color: var(--l-ink-2); margin: 0 0 var(--s1); min-height: 1.2em; }
 .loopl-demo__replay { margin-left: auto; font: inherit; font-size: .62rem; background: transparent; border: 1px solid var(--l-line); border-radius: var(--r-pill); padding: 2px 10px; color: var(--l-ink-2); cursor: pointer; }
 .loopl-demo__replay:hover { color: var(--l-flame); border-color: var(--l-flame); }
-.loopl-demo[data-playing] .loopl-demo__replay { opacity: .4; pointer-events: none; }
+.loopl-demo[data-playing] .loopl-demo__replay { pointer-events: none; border-style: dashed; }
 .loopl-demo__a { display: flex; align-items: center; gap: 2px; }
 .loopl-demo[data-js]:not([data-playing]) .loopl-caret { display: none; }
   .loopl-caret { animation: none; }
