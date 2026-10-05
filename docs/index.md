@@ -159,13 +159,13 @@ While the stop reason is `toolUse`, call the model again. `endTurn` yields the `
 One `Model` protocol, three engines. Numbers from the app's self-test on real hardware — single runs, not averages.
 
 <div class="loopl-grid loopl-grid--4" markdown>
-<div class="loopl-stat" markdown><b>41 tok/s</b><span>Qwen3-1.7B 4-bit · MLX Swift · iPhone 16 Pro</span></div>
-<div class="loopl-stat" markdown><b>33 tok/s</b><span>Qwen3-1.7B Q4_K_M · llama.cpp GGUF · iPhone 16 Pro</span></div>
-<div class="loopl-stat" markdown><b>0 MB</b><span>Apple Foundation Models · iOS 26 · no download</span></div>
-<div class="loopl-stat" markdown><b>4 tools</b><span>one turn, concurrent · the run above · 1 tool round</span></div>
+<div class="loopl-stat"><b>41 tok/s</b><span>Qwen3-1.7B 4-bit · MLX Swift · iPhone 16 Pro</span></div>
+<div class="loopl-stat"><b>33 tok/s</b><span>Qwen3-1.7B Q4_K_M · llama.cpp GGUF · iPhone 16 Pro</span></div>
+<div class="loopl-stat"><b>0 MB</b><span>Apple Foundation Models · iOS 26 · no download</span></div>
+<div class="loopl-stat"><b>4 tools</b><span>one turn, concurrent · the run above · 1 tool round</span></div>
 </div>
 
-<div class="loopl-models" markdown>
+<div class="loopl-models">
 <span>Qwen3 0.6B · 1.7B · 4B</span><span>Llama 3.2 1B · 3B</span><span>Gemma 3 1B · 4B</span><span>Phi-4-mini</span><span>SmolLM3</span><span>DeepSeek-R1 1.5B</span><span class="more">+ any public repo, through the SDK</span>
 </div>
 
@@ -175,11 +175,12 @@ One `Model` protocol, three engines. Numbers from the app's self-test on real ha
 <section class="loopl-sec" markdown>
 <span class="loopl-kicker">The app</span>
 ## Free. Nothing collected.
+The SDK's reference client — on TestFlight now, App Store listing pending.
 
 <div class="loopl-grid--2 loopl-grid" markdown>
-<div class="loopl-phone"><img src="assets/app/02-streaming.png" alt="The loopl app streaming an answer with a Swift code block" width="300" height="651" loading="lazy"></div>
+<div class="loopl-phone"><picture><source srcset="assets/app/03-tool.webp" type="image/webp"><img src="assets/app/03-tool.png" alt="The loopl app: the question 'What time is it in Istanbul, and what is 23 × 47?', two expanded tool rows — current_time and calculator — and the answer 06:14 and 1081" width="320" height="696" loading="lazy" decoding="async"></picture></div>
 <div markdown>
-First launch fetches Qwen3-0.6B (335 MB) by itself. Then a document-style transcript, tool rows you can expand, a Models tab with 21 public models — any Hugging Face repo is next — and an offline switch that refuses every network call.
+The same loop on the phone: the shot shows the two tool rows it ran for the Istanbul question. First launch fetches Qwen3-0.6B (335 MB) by itself. Then a document-style transcript, tool rows you can expand, a Models tab with 21 public models — any Hugging Face repo is next — and an offline switch that refuses every network call.
 
 - **No sign-in, no token** — public models, anonymous download.
 - **No analytics, no servers** — App Store label: *Data Not Collected*.

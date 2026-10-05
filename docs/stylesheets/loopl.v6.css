@@ -251,9 +251,10 @@ body, .md-typeset { font-family: var(--l-body); -webkit-font-smoothing: antialia
 .loopl-step p { margin: 0; color: var(--l-ink-2); font-size: .8rem; }
 
 /* phone frame */
-.loopl-phone { width: min(300px, 80vw); margin: 0 auto; border-radius: 44px; padding: 10px; background: var(--l-ink); box-shadow: 0 1px 0 var(--l-line); }
-.loopl-phone img { display: block; width: 100%; border-radius: 36px; }
-[data-md-color-scheme="slate"] .loopl-phone { background: #000; border: 1px solid var(--l-line); }
+.loopl-phone { width: min(320px, 78vw); margin: 0 auto; border-radius: 54px; padding: 12px; background: #0c0c0e; box-shadow: inset 0 0 0 1.5px #34343a, 0 32px 64px -40px rgba(20, 16, 10, .6); }
+.loopl-phone img { display: block; width: 100%; height: auto; border-radius: 42px; }
+[data-md-color-scheme="slate"] .loopl-phone { box-shadow: inset 0 0 0 1.5px #3a3a40, 0 0 0 1px var(--l-line); }
+@media (max-width: 960px) { .loopl-phone { order: 2; } }
 
 /* stats (measured only) */
 .loopl-stat { padding: var(--s3) 0; border-top: 1px solid var(--l-line); }
