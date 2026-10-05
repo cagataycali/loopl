@@ -65,3 +65,5 @@ ContextOptions
 # env vars of scripts/fetch-llama-xcframework.sh
 LLAMA_TAG
 LLAMA_SHA256
+DEVICE_ID
+DEVELOPMENT_TEAM

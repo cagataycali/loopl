@@ -1,3 +1,7 @@
+---
+description: AppleFoundationModel — loopl on Apple's on-device model (iOS 26). Zero download, 4,096-token window, availability reasons, manual tool prompting.
+---
+
 # Apple Foundation Models (iOS 26)
 
 `AppleFoundationModel` wraps `FoundationModels.LanguageModelSession`. Zero download, always offline, Apple's ~3B
@@ -38,9 +42,10 @@ to a `ModelError`; trim `agent.messages` and retry.
 ## Tools: manual, not native (v1)
 
 Apple's native `Tool` protocol needs compile-time typed `@Generable` arguments, which does not fit a toolset defined at
-runtime by JSON schema. So v1 prompts manually: `PromptBuilder.toolSystemPrompt(tools:family: .generic, base:)` goes
-into the session **instructions**, the model answers with a bare JSON object, and the agent's
-`ToolCallParser(family: .generic)` lifts the call. Native bridging is noted for v2.
+runtime by JSON schema. So loopl prompts manually: `PromptBuilder.toolSystemPrompt(toolSpecs:family: .generic, base:)`
+goes into the session **instructions**, the model answers with a bare JSON object, and the runtime's
+`ToolCallStreamGate(family: .generic)` turns it into a native `toolUse` stream event — the agent loop sees the same
+thing it sees from Qwen. Bridging to Apple's typed `Tool` protocol is on the [roadmap](../changelog.md).
 
 ## Streaming
 

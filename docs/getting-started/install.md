@@ -1,3 +1,7 @@
+---
+description: Add loopl to an iOS app with SwiftPM — products, the one entitlement that matters, pinned dependencies, and how to get llama.cpp for GGUF.
+---
+
 # Install (SwiftPM)
 
 ## Add the package
@@ -39,11 +43,11 @@
             product: LooplRuntimes
     ```
 
-`Loopl` is pure Swift (Foundation only) and builds everywhere — macOS, Linux, the simulator — which is
-what makes the agent loop unit-testable with `FakeModel`. `LooplRuntimes` pulls in
+`Loopl` is pure Swift (Foundation only) and builds everywhere — macOS, the simulator — which is what makes the agent
+loop unit-testable with a scripted model (the package's own `FakeModel` lives in `Tests/`). `LooplRuntimes` pulls in
 [`mlx-swift-lm`](https://github.com/ml-explore/mlx-swift-lm) `3.32.3` (products `MLXLLM` + `MLXLMCommon` only) and
 [`swift-transformers`](https://github.com/huggingface/swift-transformers) `1.3.4` (`Tokenizers` + `Hub`), pinned `exact:` in
-`Package.swift`. Platforms: iOS 18, macOS 14.
+`Package.swift`. Platforms: iOS 18, macOS 15.
 
 ## Entitlement: Increased Memory Limit
 
@@ -58,6 +62,19 @@ jetsams an iPhone 16 Pro while loading a 1.7B 4-bit model
 
 No other capability is required. `AppleFoundationModel` needs nothing extra; the system asks the user
 nothing because the model is already on the device.
+
+## GGUF: vendor llama.cpp once
+
+`GGUFModel` compiles only when `Vendor/llama.xcframework` is present (`#if canImport(llama)`); the package declares a
+path-based `binaryTarget` for it when it exists. In the loopl repo (or your fork):
+
+```bash
+scripts/fetch-llama-xcframework.sh             # official ggml-org b11401 zip, sha256-verified: device + macOS slices
+scripts/fetch-llama-xcframework.sh --with-sim  # + builds the iOS-Simulator slice (cmake, 10–20 min)
+```
+
+Without it everything else builds and `GGUFModel.availability()` reports that llama.cpp is not in this build.
+Details on the [GGUF runtime](../runtimes/gguf.md) page.
 
 ## Versions that matter
 

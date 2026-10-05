@@ -44,7 +44,7 @@ Coming from Strands Agents? <a href="sdk/strands-mapping/">See how loopl compare
 import Loopl
 import LooplRuntimes
 
-// Qwen3-1.7B at 4-bit: 968 MB on disk, runs on Metal
+// Qwen3-1.7B at 4-bit: 968 MB on disk, runs on Metal (the app ships 21 public models)
 let spec = Catalog.loadBundled().models.first { $0.id == "qwen3-1.7b-4bit" }!
 let dir = URL.documentsDirectory.appending(path: "models/\(spec.id)")   // where HFDownloader put it
 let model = MLXModel()
