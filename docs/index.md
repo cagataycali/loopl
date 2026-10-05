@@ -130,7 +130,7 @@ While the stop reason is `toolUse`, call the model again. `endTurn` yields the `
     }
     ```
 
-[Start →](start.md){ .loopl-btn .loopl-btn--ghost }
+[Get started →](start.md){ .loopl-btn .loopl-btn--ghost }
 
 </section>
 
@@ -173,7 +173,7 @@ First launch fetches Qwen3-0.6B (335 MB) by itself. Then: a document-style trans
 
 <footer class="loopl-footer" markdown>
 <span>© 2026 Çağatay Çalı</span>
-<a href="start/">Start</a> <a href="sdk/agent/">SDK</a> <a href="models/">Models</a> <a href="app/">App</a> <a href="privacy/">Privacy</a> <a href="faq/">FAQ</a> <a href="changelog/">Changelog</a> <a href="api/">API</a> <a href="https://github.com/cagataycali/loopl">GitHub</a>
+<a href="start/">Get started</a> <a href="sdk/agent/">SDK</a> <a href="models/">Models</a> <a href="app/">App</a> <a href="privacy/">Privacy</a> <a href="faq/">FAQ</a> <a href="changelog/">Changelog</a> <a href="api/">API</a> <a href="https://github.com/cagataycali/loopl">GitHub</a>
 <span>Built on the <a href="https://github.com/strands-agents">Strands</a> event loop · <a href="DESIGN/">Design tokens</a></span>
 </footer>
 

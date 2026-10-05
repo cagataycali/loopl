@@ -1,0 +1,11 @@
+{#- loopl override: the repo link WITHOUT data-md-component="source" — Material's bundle would otherwise
+    fetch api.github.com/repos/… for a star count (404 on this private repo → console errors, 3rd-party request). -#}
+<a href="{{ config.repo_url }}" title="{{ lang.t('source') }}" class="md-source">
+  <div class="md-source__icon md-icon">
+    {% set icon = config.theme.icon.repo or "fontawesome/brands/git-alt" %}
+    {% include ".icons/" ~ icon ~ ".svg" %}
+  </div>
+  <div class="md-source__repository">
+    {{ config.repo_name }}
+  </div>
+</a>

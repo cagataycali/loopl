@@ -1,9 +1,9 @@
 ---
-title: Start
+title: Get started
 description: Install loopl with SwiftPM, download a public model, run an agent with tools on an iPhone — one page.
 ---
 
-# Start
+# Get started
 
 Three steps: add the package, fetch a model, run the loop. iOS 18+, Swift 6, Xcode 26.
 

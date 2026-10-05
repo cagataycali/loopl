@@ -20,10 +20,11 @@ theme:
   language: en
   logo: assets/loopl-mark.svg
   favicon: assets/loopl-mark.svg
+  icon:
+    repo: fontawesome/brands/github
   font: false   # self-hosted Inter Tight + system stacks (docs/DESIGN.md); no Google Fonts request
   features:
     - navigation.instant
-    - navigation.instant.progress
     - navigation.tracking
     - navigation.tabs
     - navigation.tabs.sticky
@@ -140,7 +141,7 @@ markdown_extensions:
 
 nav:
   - Home: index.md
-  - Start: start.md
+  - Get started: start.md
   - SDK:
       - Agent & event loop: sdk/agent.md
       - Tools: sdk/tools.md
