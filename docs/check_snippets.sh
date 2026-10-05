@@ -19,8 +19,12 @@ CFG="${SNIPPETS_CONFIG:-debug}"
 MODULES=".build/$CFG/Modules"
 SKIP_BUILD="${SNIPPETS_SKIP_BUILD:-0}"
 if [[ "$SKIP_BUILD" != "1" ]]; then
-  echo "▸ swift build (Loopl, LooplRuntimes) …"
-  swift build -c "$CFG" --product Loopl --product LooplRuntimes 2>&1 | grep -E "error:|Build complete|Compiling Loopl" || true
+  # --target (not --product): a library product makes SwiftPM build the whole package, incl. LooplUI (SwiftUI, iOS-first).
+  for t in Loopl LooplRuntimes; do
+    echo "▸ swift build --target $t …"
+    if ! out="$(swift build -c "$CFG" --target "$t" 2>&1)"; then echo "$out" | grep -E "error:" | head -10; echo "✗ swift build --target $t failed"; exit 2; fi
+    echo "$out" | grep -E "Build of target|Build complete" || true
+  done
 fi
 [[ -d "$MODULES" ]] || { echo "✗ $MODULES missing — run swift build first"; exit 2; }
 
