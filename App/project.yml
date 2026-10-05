@@ -56,9 +56,6 @@ targets:
         - UIInterfaceOrientationPortraitUpsideDown
         - UIInterfaceOrientationLandscapeLeft
         - UIInterfaceOrientationLandscapeRight
-        UIBackgroundModes:
-        - processing
-        # Models are 0.4–2.5 GB; URLSession downloads keep running briefly in background.
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: false
     entitlements:
