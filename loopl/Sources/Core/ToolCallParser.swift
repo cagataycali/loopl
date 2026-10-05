@@ -69,7 +69,7 @@ public struct ToolCallParser: Sendable {
         // Walk matches back to front so removals keep earlier ranges valid.
         for m in re.matches(in: text, range: NSRange(location: 0, length: ns.length)).reversed() {
             let body = ns.substring(with: m.range(at: 1))
-            if let v = JSONValue.parse(body) ?? JSONValue.parse(repairTrailing(body)), let call = call(from: v) {
+            if let v = JSONValue.parse(body) ?? JSONValue.parse(repairTrailing(body)) ?? JSONValue.parse(closeBraces(body)), let call = call(from: v) {
                 calls.insert(call, at: 0)
                 out = (out as NSString).replacingCharacters(in: m.range, with: "")
             }
@@ -134,6 +134,17 @@ public struct ToolCallParser: Sendable {
             if let v = JSONValue.parse(candidate), v.objectValue != nil { return (v, s..<text.endIndex) }
         }
         return nil
+    }
+
+    /// A call cut off by max_tokens: `{"name": "x", "arguments": {"k": "v"` → close what is open.
+    static func closeBraces(_ s: String) -> String {
+        var depth = 0, inString = false, escaped = false
+        for ch in s {
+            if inString { if escaped { escaped = false } else if ch == "\\" { escaped = true } else if ch == "\"" { inString = false } }
+            else if ch == "\"" { inString = true } else if ch == "{" { depth += 1 } else if ch == "}" { depth -= 1 }
+        }
+        guard depth > 0 else { return s }
+        return s.trimmingCharacters(in: .whitespacesAndNewlines) + (inString ? "\"" : "") + String(repeating: "}", count: depth)
     }
 
     static func repairTrailing(_ s: String) -> String {

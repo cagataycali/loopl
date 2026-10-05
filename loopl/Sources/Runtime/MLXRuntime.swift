@@ -86,8 +86,7 @@ public actor MLXRuntime: LLMRuntime {
                     stats.contextUsed = prompt.count
                     continuation.yield(.stats(stats))
 
-                    var gp = GenerateParameters(maxTokens: params.maxTokens, temperature: params.temperature, topP: params.topP)
-                    gp.maxKVSize = params.contextLength
+                    let gp = GenerateParameters(maxTokens: params.maxTokens, maxKVSize: params.contextLength, temperature: params.temperature, topP: params.topP)
 
                     let gen: AsyncStream<Generation> = try await container.perform { context in
                         let input = LMInput(tokens: MLXArray(prompt))

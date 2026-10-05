@@ -34,8 +34,9 @@ targets:
     sources:
     - loopl/Sources
     - loopl/Assets.xcassets
+    # NOT a folder reference: a top-level "Resources" dir inside an iOS .app
+    # makes the installer fail with "Missing bundle ID" (it reads as a macOS bundle).
     - path: loopl/Resources
-      type: folder
       buildPhase: resources
     dependencies:
     - package: mlx-swift-lm
@@ -81,9 +82,13 @@ targets:
     - Tests
     dependencies:
     - target: loopl
+    info:
+      path: Tests/Info.plist
+      properties: {}
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: technology.tiny.loopl.tests
+        GENERATE_INFOPLIST_FILE: true
 schemes:
   loopl:
     build:
