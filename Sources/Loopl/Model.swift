@@ -3,7 +3,7 @@ import Foundation
 public enum RuntimeKind: String, Sendable, Codable, CaseIterable, Identifiable {
     case mlx        // ml-explore/mlx-swift-lm, Metal, real device only
     case appleFM    // Apple Foundation Models (iOS 26+, Apple Intelligence)
-    case gguf       // llama.cpp — v2, stub
+    case gguf       // llama.cpp (ggml-org xcframework)
     public var id: String { rawValue }
     public var label: String {
         switch self {
@@ -14,55 +14,85 @@ public enum RuntimeKind: String, Sendable, Codable, CaseIterable, Identifiable {
     }
 }
 
-public struct GenerationParams: Sendable, Hashable {
+/// Sampling + context configuration (Strands: the provider's `ModelConfig`).
+/// Defaults are "maxed out": no new-token cap (`maxTokens == nil` → generate
+/// until a stop token or the context is full), context from the catalog.
+public struct GenerationParams: Sendable, Hashable, Codable {
     public var temperature: Float = 0.6
     public var topP: Float = 0.95
-    public var maxTokens: Int = 1024
-    /// Hard context window the runtime should budget for (KV cache).
-    public var contextLength: Int = 4096
+    public var minP: Float = 0.0
+    /// `nil` = until the model stops or the context window is full (the loopl default).
+    public var maxTokens: Int? = nil
+    /// Hard context window the runtime budgets for (KV cache).
+    public var contextLength: Int = 8192
+    public var seed: UInt64? = nil
     public init() {}
+    public init(temperature: Float = 0.6, topP: Float = 0.95, minP: Float = 0, maxTokens: Int? = nil, contextLength: Int = 8192, seed: UInt64? = nil) {
+        self.temperature = temperature; self.topP = topP; self.minP = minP; self.maxTokens = maxTokens; self.contextLength = contextLength; self.seed = seed
+    }
 }
 
-/// Live numbers for the HUD — every one measured, none estimated (Apple FM
-/// token counts are labelled as estimates by that runtime).
-public struct Metrics: Sendable, Hashable {
-    public var promptTokens: Int = 0
-    public var generatedTokens: Int = 0
-    /// Milliseconds from `stream()` call to the first visible token.
-    public var ttftMs: Double = 0
-    /// Decode speed (generated tokens / generation seconds), excluding prefill.
-    public var tokensPerSecond: Double = 0
-    public var contextUsed: Int = 0
-    public var contextMax: Int = 0
-    public var finished = false
-    public var stopReason: String = ""
-    public var estimated = false
-    public init() {}
-}
+// MARK: - Errors (Strands `types/exceptions.py`)
 
-/// What a model streams back. `.toolCall` is for runtimes that detect calls
-/// natively (MLX's tool-call policy, Foundation Models' Tool); text-only
-/// runtimes just stream `.text` and the agent parses it.
-public enum ModelEvent: Sendable {
-    case text(String)
-    case toolCall(ToolCall)
-    case metrics(Metrics)
-}
-
+/// Generic runtime failure. Not retried.
 public struct ModelError: LocalizedError, Sendable {
     public let message: String
     public init(_ m: String) { message = m }
     public var errorDescription: String? { message }
 }
 
-/// The one contract every engine implements (Strands: `Model`). Models are
-/// actors — weights must never be touched from two tasks.
+/// Strands `ContextWindowOverflowException`: the prompt does not fit. The agent
+/// asks its `ConversationManager` to reduce context and tries again.
+public struct ContextWindowOverflowError: LocalizedError, Sendable {
+    public let message: String
+    public init(_ m: String = "input is too long for the model's context window") { message = m }
+    public var errorDescription: String? { message }
+}
+
+/// Strands `ModelThrottledException` — the retryable class. On-device: a
+/// transient failure (Metal/GPU busy, memory pressure, engine not ready).
+public struct ModelThrottledError: LocalizedError, Sendable {
+    public let message: String
+    public init(_ m: String) { message = m }
+    public var errorDescription: String? { message }
+}
+
+/// Strands `MaxTokensReachedException`: the model hit its output limit. The
+/// (recovered) partial message is already in `agent.messages`; call again to continue.
+public struct MaxTokensReachedError: LocalizedError, Sendable {
+    public let message: Message
+    public init(message: Message) { self.message = message }
+    public var errorDescription: String? {
+        "Model stopped generating due to maximum token limit. The partial message has been added to the conversation history. You can continue by calling the agent again."
+    }
+}
+
+/// Strands `EventLoopException`: wraps any other failure inside a cycle.
+public struct EventLoopError: LocalizedError, Sendable {
+    public let underlying: String
+    public init(_ error: any Error) { underlying = (error as? LocalizedError)?.errorDescription ?? String(describing: error) }
+    public var errorDescription: String? { underlying }
+}
+
+// MARK: - Model
+
+/// The one contract every engine implements (Strands: `Model`).
+///
+///     func stream(_ messages: [Message], toolSpecs: [ToolSpec], systemPrompt: String?) -> AsyncThrowingStream<StreamEvent, Error>
+///
+/// Models are actors — weights must never be touched from two tasks. Text-only
+/// engines turn `<tool_call>` markup into `toolUse` blocks themselves (as
+/// Strands' Bedrock/OpenAI providers do) — see `ToolCallStreamGate`.
 public protocol Model: Actor {
     nonisolated var kind: RuntimeKind { get }
     var loadedModelId: String? { get }
+    /// Current sampling/context config (Strands `get_config`).
+    var params: GenerationParams { get }
+    /// Strands `update_config`.
+    func updateConfig(_ params: GenerationParams)
     /// `progress` is 0…1 for weight loading (download is the model manager's job).
     func load(_ spec: ModelSpec, from directory: URL?, progress: @Sendable @escaping (Double) -> Void) async throws
-    nonisolated func stream(messages: [Message], tools: [any Tool], params: GenerationParams) -> AsyncThrowingStream<ModelEvent, Error>
+    nonisolated func stream(_ messages: [Message], toolSpecs: [ToolSpec], systemPrompt: String?) -> AsyncThrowingStream<StreamEvent, Error>
     func unload() async
     /// Whether this runtime can run at all on this build/device (Metal, OS version…).
     nonisolated static func availability() -> RuntimeAvailability
@@ -73,4 +103,27 @@ public struct RuntimeAvailability: Sendable, Hashable {
     public var reason: String
     public static let ok = RuntimeAvailability(available: true, reason: "")
     public init(available: Bool, reason: String) { self.available = available; self.reason = reason }
+}
+
+/// Rough token estimate when the runtime has no tokenizer at hand (Strands
+/// `_estimate_input_tokens` falls back to a chars/4 heuristic the same way).
+public enum TokenEstimator {
+    public static func estimate(_ text: String) -> Int { max(1, (text.utf8.count + 3) / 4) }
+    public static func estimate(_ message: Message) -> Int {
+        var n = 4   // role + separators
+        for b in message.content {
+            switch b {
+            case .text(let t), .reasoning(let t): n += estimate(t)
+            case .toolUse(let u): n += 8 + estimate(u.name) + estimate(JSONValue.object(u.input).compact)
+            case .toolResult(let r): n += 8 + estimate(r.content)
+            }
+        }
+        return n
+    }
+    public static func estimate(messages: [Message], systemPrompt: String?, toolSpecs: [ToolSpec]) -> Int {
+        var n = systemPrompt.map(estimate) ?? 0
+        n += messages.reduce(0) { $0 + estimate($1) }
+        n += toolSpecs.reduce(0) { $0 + estimate($1.openAIFunction.compact) }
+        return n
+    }
 }

@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "Loopl",
-    platforms: [.iOS(.v18), .macOS(.v14)],
+    platforms: [.iOS(.v18), .macOS(.v15)],
     products: [
         // The SDK core — pure Swift (Foundation only). Agent loop, Model/Tool protocols,
         // tool-call parsers, prompt rendering, catalog, Hugging Face downloader.

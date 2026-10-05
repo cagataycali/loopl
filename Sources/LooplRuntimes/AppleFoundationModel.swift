@@ -11,7 +11,9 @@ import FoundationModels
 public actor AppleFoundationModel: Model {
     public nonisolated let kind: RuntimeKind = .appleFM
     public private(set) var loadedModelId: String?
+    public private(set) var params = GenerationParams()
     public init() {}
+    public func updateConfig(_ params: GenerationParams) { self.params = params }
 
     public nonisolated static func availability() -> RuntimeAvailability {
         #if canImport(FoundationModels)
@@ -40,44 +42,45 @@ public actor AppleFoundationModel: Model {
     public func load(_ spec: ModelSpec, from directory: URL?, progress: @Sendable @escaping (Double) -> Void) async throws {
         let a = Self.availability()
         guard a.available else { throw ModelError(a.reason) }
+        var p = spec.defaultParams; p.contextLength = min(p.contextLength, 4096); params = p
         loadedModelId = spec.id
         progress(1)
     }
 
     public func unload() async { loadedModelId = nil }
 
-    public nonisolated func stream(messages: [Message], tools: [any Loopl.Tool], params: GenerationParams) -> AsyncThrowingStream<ModelEvent, Error> {
+    public nonisolated func stream(_ messages: [Message], toolSpecs: [Loopl.ToolSpec], systemPrompt: String?) -> AsyncThrowingStream<StreamEvent, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 #if canImport(FoundationModels)
                 guard #available(iOS 26, macOS 26, *) else { continuation.finish(throwing: ModelError("needs iOS 26")); return }
                 do {
+                    let params = await self.params
                     let started = Date()
                     var stats = Metrics()
                     stats.contextMax = 4096
                     // Instructions = system prompt (+ manual tool spec); transcript = the rest, flattened.
-                    let folded = PromptBuilder.foldToolMessages(messages)
-                    let baseSystem: String? = { if case .system(let s)? = folded.first { return s }; return nil }()
-                    let instructions = PromptBuilder.toolSystemPrompt(tools: tools, family: .generic, base: baseSystem)
-                    let turns = folded.filter { if case .system = $0 { return false }; return true }
+                    let turns = PromptBuilder.foldToolMessages(messages)
+                    let instructions = PromptBuilder.toolSystemPrompt(toolSpecs: toolSpecs, family: .generic, base: systemPrompt)
                     var prompt = ""
                     for (i, m) in turns.enumerated() {
-                        if i == turns.count - 1, case .user(let u) = m { prompt += u; break }
-                        prompt += "\(m.role == "user" ? "User" : "Assistant"): \(m.text)\n"
+                        if i == turns.count - 1, m.role == .user { prompt += m.text; break }
+                        prompt += "\(m.role == .user ? "User" : "Assistant"): \(m.text)\n"
                     }
-                    if turns.last.map({ $0.role != "user" }) ?? true { prompt += "Assistant:" }
+                    if turns.last.map({ $0.role != .user }) ?? true { prompt += "Assistant:" }
                     stats.estimated = true
                     stats.promptTokens = (instructions.count + prompt.count) / 4   // estimate: FM exposes no tokenizer; flagged in UI as ≈
                     stats.contextUsed = stats.promptTokens
-                    continuation.yield(.metrics(stats))
+                    if stats.promptTokens >= 4096 { throw ContextWindowOverflowError("prompt ≈\(stats.promptTokens) tokens; Apple FM window is 4096") }
+                    continuation.yield(.metadata(stats))
 
                     let session = LanguageModelSession(instructions: instructions.isEmpty ? nil : instructions)
                     var options = GenerationOptions()
                     options.temperature = Double(params.temperature)
-                    options.maximumResponseTokens = params.maxTokens
+                    if let mt = params.maxTokens { options.maximumResponseTokens = mt }
+                    var gate = ToolCallStreamGate(family: .generic)
                     var emitted = ""
                     var first: Date?
-                    var pieces = 0
                     for try await snapshot in session.streamResponse(to: prompt, options: options) {
                         try Task.checkCancellation()
                         let full = snapshot.content
@@ -86,16 +89,16 @@ public actor AppleFoundationModel: Model {
                         emitted = full
                         if delta.isEmpty { continue }
                         if first == nil { first = Date(); stats.ttftMs = first!.timeIntervalSince(started) * 1000 }
-                        pieces += 1
                         stats.generatedTokens = emitted.count / 4
                         stats.contextUsed = stats.promptTokens + stats.generatedTokens
                         if let f = first { let dt = Date().timeIntervalSince(f); if dt > 0.05 { stats.tokensPerSecond = Double(stats.generatedTokens) / dt } }
-                        continuation.yield(.text(delta))
-                        continuation.yield(.metrics(stats))
+                        for ev in gate.feed(delta) { continuation.yield(ev) }
+                        continuation.yield(.metadata(stats))
                     }
                     stats.finished = true
                     stats.stopReason = "stop"
-                    continuation.yield(.metrics(stats))
+                    continuation.yield(.metadata(stats))
+                    for ev in gate.finish() { continuation.yield(ev) }
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)
@@ -106,23 +109,5 @@ public actor AppleFoundationModel: Model {
             }
             continuation.onTermination = { _ in task.cancel() }
         }
-    }
-}
-
-/// llama.cpp / GGUF — v2. Kept as a type so the catalog can list the
-/// runtime and the Settings picker can say "not in this build".
-public actor GGUFModel: Model {
-    public nonisolated let kind: RuntimeKind = .gguf
-    public private(set) var loadedModelId: String?
-    public init() {}
-    public nonisolated static func availability() -> RuntimeAvailability {
-        RuntimeAvailability(available: false, reason: "llama.cpp (GGUF) is planned for v2 — not in this build.")
-    }
-    public func load(_ spec: ModelSpec, from directory: URL?, progress: @Sendable @escaping (Double) -> Void) async throws {
-        throw ModelError(Self.availability().reason)
-    }
-    public func unload() async {}
-    public nonisolated func stream(messages: [Message], tools: [any Loopl.Tool], params: GenerationParams) -> AsyncThrowingStream<ModelEvent, Error> {
-        AsyncThrowingStream { $0.finish(throwing: ModelError(Self.availability().reason)) }
     }
 }

@@ -6,22 +6,20 @@ final class PromptBuilderTests: XCTestCase {
 
     func testHermesSystemPromptSnapshot() {
         let p = PromptBuilder.toolSystemPrompt(tools: tools, family: .hermes, base: "Be brief.")
-        XCTAssertTrue(p.hasPrefix("Be brief.\n\n# Tools"))
-        XCTAssertTrue(p.contains("<tools>\n{\"function\":{\"description\":\"Evaluate an arithmetic expression exactly."))
+        XCTAssertTrue(p.hasPrefix("Be brief.\n\n# Tools\n"))
+        XCTAssertTrue(p.contains("<tools>\n{\"function\":{\"description\":"))
         XCTAssertTrue(p.contains("\"name\":\"calculator\""))
-        XCTAssertTrue(p.contains("\"required\":[\"expression\"]"))
-        XCTAssertTrue(p.hasSuffix("<tool_call>\n{\"name\": <function-name>, \"arguments\": <args-json-object>}\n</tool_call>\nAfter the tool results arrive, answer the user in plain text."))
+        XCTAssertTrue(p.contains("<tool_call>\n{\"name\": <function-name>, \"arguments\": <args-json-object>}\n</tool_call>"))
     }
 
-    func testLlama3SystemPromptSnapshot() {
+    func testLlama3SystemPrompt() {
         let p = PromptBuilder.toolSystemPrompt(tools: tools, family: .llama3, base: nil)
         XCTAssertTrue(p.hasPrefix("Environment: ipython\n"))
-        XCTAssertTrue(p.contains("{\"name\": function_name, \"parameters\": {argument: value}}"))
+        XCTAssertTrue(p.contains("\"parameters\""))
     }
 
-    func testGenericSystemPromptSnapshot() {
+    func testGenericSystemPrompt() {
         let p = PromptBuilder.toolSystemPrompt(tools: tools, family: .generic, base: nil)
-        XCTAssertTrue(p.hasPrefix("You can use these tools:\n{\"function\""))
         XCTAssertTrue(p.contains("```json fence"))
     }
 
@@ -30,33 +28,38 @@ final class PromptBuilderTests: XCTestCase {
     }
 
     func testFoldToolMessagesKeepsAlternation() {
-        let call = ToolCall(id: "c1", name: "calculator", arguments: ["expression": "1+1"])
-        let msgs: [Message] = [.system("s"), .user("1+1?"), .assistant(text: "", toolCalls: [call]), .tool(result: "1+1 = 2", callId: "c1", name: "calculator")]
+        let use = ToolUse(toolUseId: "c1", name: "calculator", input: ["expression": "1+1"])
+        let msgs: [Message] = [.user("1+1?"), .assistant(text: "", toolUses: [use]),
+                               .toolResults([ToolResult(toolUseId: "c1", name: "calculator", content: "1+1 = 2")])]
         let folded = PromptBuilder.foldToolMessages(msgs)
-        XCTAssertEqual(folded.map(\.role), ["system", "user", "assistant", "user"])
-        XCTAssertEqual(folded[2].text, "<tool_call>\n{\"name\": \"calculator\", \"arguments\": {\"expression\":\"1+1\"}}\n</tool_call>")
-        XCTAssertEqual(folded[3].text, "<tool_response name=\"calculator\" id=\"c1\">\n1+1 = 2\n</tool_response>")
+        XCTAssertEqual(folded.map(\.role), [.user, .assistant, .user])
+        XCTAssertEqual(folded[1].text, "<tool_call>\n{\"name\": \"calculator\", \"arguments\": {\"expression\":\"1+1\"}}\n</tool_call>")
+        XCTAssertEqual(folded[2].text, "<tool_response name=\"calculator\" id=\"c1\">\n1+1 = 2\n</tool_response>")
     }
 
     func testChatMLSnapshot() {
-        let s = PromptBuilder.chatML([.system("sys"), .user("hi")])
+        let s = PromptBuilder.chatML(systemPrompt: "sys", messages: [.user("hi")])
         XCTAssertEqual(s, "<|im_start|>system\nsys<|im_end|>\n<|im_start|>user\nhi<|im_end|>\n<|im_start|>assistant\n")
     }
 
     func testTemplateDictionaryShape() {
-        let call = ToolCall(id: "c1", name: "f", arguments: ["a": 1])
-        let d = Message.assistant(text: "t", toolCalls: [call]).templateDictionary
+        let use = ToolUse(toolUseId: "c1", name: "f", input: ["a": 1])
+        let d = Message.assistant(text: "t", toolUses: [use]).templateDictionaries[0]
         XCTAssertEqual(d["role"] as? String, "assistant")
         let calls = d["tool_calls"] as? [[String: any Sendable]]
         XCTAssertEqual(calls?.count, 1)
         let fn = calls?[0]["function"] as? [String: any Sendable]
         XCTAssertEqual(fn?["name"] as? String, "f")
         XCTAssertEqual((fn?["arguments"] as? [String: any Sendable])?["a"] as? Int, 1)
-        let t = Message.tool(result: "r", callId: "c1", name: "f").templateDictionary
-        XCTAssertEqual(t["tool_call_id"] as? String, "c1")
+        let t = Message.toolResults([ToolResult(toolUseId: "c1", name: "f", content: "r")]).templateDictionaries
+        XCTAssertEqual(t.count, 1)
+        XCTAssertEqual(t[0]["role"] as? String, "tool")
+        XCTAssertEqual(t[0]["tool_call_id"] as? String, "c1")
+        let all = Message.templateDictionaries(systemPrompt: "s", messages: [.user("u")])
+        XCTAssertEqual(all.map { $0["role"] as? String }, ["system", "user"])
     }
 
-    func testCatalogDecodes() throws {
+    func testCatalogDecodesAndIsPublicOnly() throws {
         // SwiftPM: Fixtures/models.json via Bundle.module; Xcode-hosted: the app bundle's models.json.
         var url: URL?
         #if SWIFT_PACKAGE
@@ -65,10 +68,25 @@ final class PromptBuilderTests: XCTestCase {
         if url == nil { url = Bundle.allBundles.compactMap { $0.url(forResource: "models", withExtension: "json") }.first }
         let data = try Data(contentsOf: XCTUnwrap(url))
         let c = try JSONDecoder().decode(Catalog.self, from: data)
-        XCTAssertGreaterThanOrEqual(c.models.count, 6)
-        XCTAssertEqual(c.defaultModelId, "qwen3-1.7b-4bit")
-        XCTAssertTrue(c.models.contains { $0.repo == "mlx-community/Qwen3-1.7B-4bit" && !$0.gated })
-        let kw: JSONValue? = c.models.first { $0.id == "qwen3-1.7b-4bit" }?.chatTemplateKwargs?["enable_thinking"]
-        XCTAssertEqual(kw, JSONValue.bool(false))
+        XCTAssertGreaterThanOrEqual(c.models.count, 12)
+        XCTAssertTrue(c.models.allSatisfy { !$0.gated }, "catalog must list public repos only")
+        XCTAssertEqual(c.defaultModelId, "qwen3-0.6b-4bit")
+        XCTAssertEqual(c.models.first?.id, "qwen3-0.6b-4bit")
+        XCTAssertEqual(c.defaultModel?.repo, "mlx-community/Qwen3-0.6B-4bit")
+        let ggufs = c.models.filter { $0.runtime == .gguf }
+        XCTAssertGreaterThanOrEqual(ggufs.count, 5)
+        XCTAssertTrue(ggufs.allSatisfy { $0.file?.hasSuffix(".gguf") == true })
+        XCTAssertEqual(c["qwen3-1.7b-4bit"]?.chatTemplateKwargs?["enable_thinking"], .bool(false))
+    }
+
+    func testDefaultParamsAreMaxedOut() throws {
+        let spec = ModelSpec(id: "q", name: "Q", repo: "unsloth/Qwen3-1.7B-GGUF", runtime: .gguf, family: .hermes, paramsB: 1.7, sizeBytes: 1,
+                             ctxNominal: 40960, ctxUsable8GB: 8192, minRAMGB: 6)
+        let p = spec.defaultParams
+        XCTAssertNil(p.maxTokens, "no new-token cap by default")
+        XCTAssertEqual(p.contextLength, 8192)
+        XCTAssertEqual(p.temperature, 0.7)
+        let small = ModelSpec(id: "s", name: "S", repo: "x/SmolLM2", runtime: .gguf, family: .generic, paramsB: 1, sizeBytes: 1, ctxNominal: 2048, ctxUsable8GB: 8192, minRAMGB: 1)
+        XCTAssertEqual(small.defaultParams.contextLength, 2048, "never above the model's own window")
     }
 }

@@ -7,13 +7,13 @@ final class ToolCallParserTests: XCTestCase {
         XCTAssertEqual(r.text, "Let me check.")
         XCTAssertEqual(r.calls.count, 1)
         XCTAssertEqual(r.calls[0].name, "current_time")
-        XCTAssertEqual(r.calls[0].arguments["timezone"], .string("Europe/Istanbul"))
+        XCTAssertEqual(r.calls[0].input["timezone"], .string("Europe/Istanbul"))
     }
 
     func testHermesTwoCallsKeepOrder() {
         let r = ToolCallParser(family: .hermes).parse("<tool_call>{\"name\":\"a\",\"arguments\":{}}</tool_call><tool_call>{\"name\":\"b\",\"arguments\":{\"x\":1}}</tool_call>")
         XCTAssertEqual(r.calls.map(\.name), ["a", "b"])
-        XCTAssertEqual(r.calls[1].arguments["x"], .number(1))
+        XCTAssertEqual(r.calls[1].input["x"], .number(1))
         XCTAssertEqual(r.text, "")
     }
 
@@ -27,7 +27,7 @@ final class ToolCallParserTests: XCTestCase {
         let r = ToolCallParser(family: .llama3).parse("<|python_tag|>{\"name\": \"calculator\", \"parameters\": {\"expression\": \"2+2\"}}<|eom_id|>")
         XCTAssertEqual(r.calls.count, 1)
         XCTAssertEqual(r.calls[0].name, "calculator")
-        XCTAssertEqual(r.calls[0].arguments["expression"], .string("2+2"))
+        XCTAssertEqual(r.calls[0].input["expression"], .string("2+2"))
     }
 
     func testLlama3BareJSONMessage() {
@@ -55,7 +55,7 @@ final class ToolCallParserTests: XCTestCase {
 
     func testArgumentsAsJSONString() {
         let r = ToolCallParser(family: .generic).parse("{\"name\": \"calculator\", \"arguments\": \"{\\\"expression\\\": \\\"1+1\\\"}\"}")
-        XCTAssertEqual(r.calls.first?.arguments["expression"], .string("1+1"))
+        XCTAssertEqual(r.calls.first?.input["expression"], .string("1+1"))
     }
 
     func testTruncatedCallIsRepaired() {

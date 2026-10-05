@@ -175,12 +175,12 @@ public struct UserBubble: View {
 /// A quiet inline row — icon · tool name · spinner → ✓/✗ — that expands on tap
 /// to a monospaced card with the arguments and the result.
 public struct ToolRow: View {
-    public var call: ToolCall
+    public var call: ToolUse
     public var result: ToolResult?
     @State private var expanded = false
     @State private var spin = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    public init(call: ToolCall, result: ToolResult?) { self.call = call; self.result = result }
+    public init(call: ToolUse, result: ToolResult?) { self.call = call; self.result = result }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -229,9 +229,9 @@ public struct ToolRow: View {
 
 /// The expanded details of a tool call: arguments in, result out, monospaced.
 public struct ToolCallCard: View {
-    public var call: ToolCall
+    public var call: ToolUse
     public var result: ToolResult?
-    public init(call: ToolCall, result: ToolResult?) { self.call = call; self.result = result }
+    public init(call: ToolUse, result: ToolResult?) { self.call = call; self.result = result }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -252,7 +252,7 @@ public struct ToolCallCard: View {
     }
 
     private var argsText: String {
-        let pairs = call.arguments.sorted { $0.key < $1.key }.map { "\($0.key): \($0.value.compactDescription)" }
+        let pairs = call.input.sorted { $0.key < $1.key }.map { "\($0.key): \($0.value.compactDescription)" }
         return pairs.isEmpty ? "{}" : pairs.joined(separator: "\n")
     }
     private func labelled(_ k: String, _ v: String) -> some View {
@@ -372,8 +372,8 @@ public struct AgentTranscriptView<Empty: View, Banner: View>: View {
         switch item.kind {
         case .user(let s): UserTurn(s).padding(.top, 8)
         case .assistant(let s): StreamingTextView(s, streaming: transcript.isRunning && item.id == transcript.items.last?.id)
-        case .toolCall(let c, let r): ToolRow(call: c, result: r)
-        case .warning(let w): Label(w, systemImage: LooplDesign.iconWarning).font(.caption).foregroundStyle(.orange)
+        case .toolUse(let c, let r): ToolRow(call: c, result: r)
+        case .reasoning(let r): Text(r).font(.caption).foregroundStyle(.secondary).italic()
         case .note(let s): Text(s).font(.caption).foregroundStyle(.tertiary)
         }
     }
@@ -458,17 +458,17 @@ public struct DownloadProgressRow: View {
 // MARK: - Previews (fixture events, no model)
 
 enum PreviewFixtures {
-    static let call = ToolCall(id: "call_1", name: "calculator", arguments: ["expression": "23*47"])
-    static let result = ToolResult(callId: "call_1", name: "calculator", content: "23*47 = 1081", isError: false, durationMs: 1.2)
+    static let call = ToolUse(toolUseId: "call_1", name: "calculator", input: ["expression": "23*47"])
+    static let result = ToolResult(toolUseId: "call_1", name: "calculator", status: .success, content: "23*47 = 1081", durationMs: 1.2)
     static var transcript: Transcript {
         var t = Transcript()
         t.user("what time is it in Istanbul and what is 23*47?")
-        t.apply(.iterationStarted(1))
+        t.apply(.startEventLoop(cycle: 1))
         t.apply(.text("Let me check both."))
-        t.apply(.assistantMessage(.assistant(text: "Let me check both.", toolCalls: [call, ToolCall(id: "call_2", name: "current_time", arguments: ["timezone": "Europe/Istanbul"])])))
-        t.apply(.toolStarted(call)); t.apply(.toolFinished(result))
-        t.apply(.toolStarted(ToolCall(id: "call_2", name: "current_time", arguments: ["timezone": "Europe/Istanbul"])))
-        t.apply(.iterationStarted(2))
+        t.apply(.modelMessage(.assistant(text: "Let me check both.", toolUses: [call, ToolUse(toolUseId: "call_2", name: "current_time", input: ["timezone": "Europe/Istanbul"])])))
+        t.apply(.toolStarted(call)); t.apply(.toolResult(result))
+        t.apply(.toolStarted(ToolUse(toolUseId: "call_2", name: "current_time", input: ["timezone": "Europe/Istanbul"])))
+        t.apply(.startEventLoop(cycle: 2))
         t.apply(.text("It is **05:41** in Istanbul and 23 × 47 = 1081.\n\n```swift\nlet agent = Agent(model: model)\n```"))
         var m = Metrics(); m.ttftMs = 412; m.tokensPerSecond = 38.4; m.promptTokens = 612; m.generatedTokens = 41; m.contextUsed = 653; m.contextMax = 8192
         t.apply(.metrics(m))
@@ -488,6 +488,6 @@ enum PreviewFixtures {
     VStack(alignment: .leading, spacing: 12) {
         ToolRow(call: PreviewFixtures.call, result: nil)
         ToolRow(call: PreviewFixtures.call, result: PreviewFixtures.result)
-        ToolRow(call: PreviewFixtures.call, result: ToolResult(callId: "call_1", name: "calculator", content: "error: division by zero", isError: true, durationMs: 0.4))
+        ToolRow(call: PreviewFixtures.call, result: ToolResult(toolUseId: "call_1", name: "calculator", status: .error, content: "error: division by zero", durationMs: 0.4))
     }.padding()
 }

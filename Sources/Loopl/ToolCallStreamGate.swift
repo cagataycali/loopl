@@ -1,0 +1,124 @@
+import Foundation
+
+/// Provider-side helper: converts a text-only decode stream into Strands
+/// `StreamEvent`s, turning tool-call markup (`<tool_call>…</tool_call>`,
+/// `<|python_tag|>{…}`, fenced JSON, bare `{"name":…}`) into `toolUse` content
+/// blocks — the job Strands' Bedrock/OpenAI providers do with native tool-use
+/// deltas, done here for small open models that only speak text.
+///
+/// Text is forwarded live until the first character that could open a tool
+/// call; from there on it is withheld and resolved at `finish()` with
+/// `ToolCallParser`, so a UI never shows half a `<tool_call>` tag and the
+/// visible text never contains the markup. Not thread-safe: one per stream.
+public struct ToolCallStreamGate: Sendable {
+    public let family: ToolFamily
+    private var full = ""
+    private var emitted = ""          // text already sent as deltas
+    private var holding = false
+    private var started = false
+    private var textBlockOpen = false
+    private var reasoningOpen = false
+    private var inThink = false
+    private let parser: ToolCallParser
+
+    public init(family: ToolFamily) { self.family = family; parser = ToolCallParser(family: family) }
+
+    /// Openers we must not stream through. Order matters only for the prefix check.
+    static let openers = ["<tool_call>", "<|tool_call|>", "<function_call>", "<|python_tag|>", "```", "{\""]
+
+    /// Feed one decoded text piece; returns the stream events to emit now.
+    public mutating func feed(_ piece: String) -> [StreamEvent] {
+        var out: [StreamEvent] = []
+        if !started { started = true; out.append(.messageStart(role: .assistant)) }
+        full += piece
+        guard !holding else { return out }
+
+        // Qwen3 thinking: stream it as reasoning deltas, not text.
+        let pending = String(full.dropFirst(emitted.count))
+        var textToEmit = ""
+        var reasoningToEmit = ""
+        var consumed = 0
+        var i = pending.startIndex
+        scan: while i < pending.endIndex {
+            let rest = pending[i...]
+            if inThink {
+                if rest.hasPrefix("</think>") { inThink = false; i = pending.index(i, offsetBy: 8); consumed = pending.distance(from: pending.startIndex, to: i); continue }
+                if Self.isPrefixOfAny(String(rest), ["</think>"]) { break scan }   // might be the closer — wait
+                reasoningToEmit.append(rest.first!); i = pending.index(after: i); consumed = pending.distance(from: pending.startIndex, to: i); continue
+            }
+            if rest.hasPrefix("<think>") { inThink = true; i = pending.index(i, offsetBy: 7); consumed = pending.distance(from: pending.startIndex, to: i); continue }
+            if Self.isPrefixOfAny(String(rest), ["<think>"]) && rest.count < 7 { break scan }
+            if Self.opensToolCall(String(rest)) {
+                holding = true
+                break scan
+            }
+            if Self.isPrefixOfAny(String(rest), Self.openers) { break scan }     // ambiguous tail — wait for more
+            textToEmit.append(rest.first!); i = pending.index(after: i); consumed = pending.distance(from: pending.startIndex, to: i)
+        }
+        if !reasoningToEmit.isEmpty {
+            if textBlockOpen { out.append(.contentBlockStop); textBlockOpen = false }
+            if !reasoningOpen { out.append(.contentBlockStart(.reasoning)); reasoningOpen = true }
+            out.append(.contentBlockDelta(.reasoning(reasoningToEmit)))
+        }
+        if !textToEmit.isEmpty {
+            if reasoningOpen { out.append(.contentBlockStop); reasoningOpen = false }
+            if !textBlockOpen { out.append(.contentBlockStart(.text)); textBlockOpen = true }
+            out.append(.contentBlockDelta(.text(textToEmit)))
+        }
+        emitted += String(pending.prefix(consumed))
+        return out
+    }
+
+    /// End of decode. Resolves withheld text into text / toolUse blocks and emits `messageStop`.
+    /// `stopReason` is the runtime's reason (`.endTurn` on EOS, `.maxTokens` when the budget/context ran out).
+    public mutating func finish(stopReason: StopReason = .endTurn, native: [ToolUse] = []) -> [StreamEvent] {
+        var out: [StreamEvent] = []
+        if !started { started = true; out.append(.messageStart(role: .assistant)) }
+        if reasoningOpen { out.append(.contentBlockStop); reasoningOpen = false }
+        let parsed = parser.parse(full)
+        // Visible text = parsed text (markup + <think> stripped); emit whatever we have not streamed yet.
+        let visible = parsed.text
+        let alreadyShown = Self.visiblePrefix(emitted)
+        var remainder = ""
+        if visible.hasPrefix(alreadyShown.trimmingCharacters(in: .whitespacesAndNewlines)) {
+            remainder = String(visible.dropFirst(alreadyShown.trimmingCharacters(in: .whitespacesAndNewlines).count))
+        } else if !alreadyShown.isEmpty, visible.hasPrefix(alreadyShown) {
+            remainder = String(visible.dropFirst(alreadyShown.count))
+        } else if alreadyShown.isEmpty {
+            remainder = visible
+        }
+        if !remainder.isEmpty || textBlockOpen {
+            if !textBlockOpen { out.append(.contentBlockStart(.text)); textBlockOpen = true }
+            if !remainder.isEmpty { out.append(.contentBlockDelta(.text(remainder))) }
+            out.append(.contentBlockStop); textBlockOpen = false
+        }
+        var uses = native
+        for c in parsed.calls where !uses.contains(where: { $0.name == c.name && $0.input == c.input }) { uses.append(c) }
+        if stopReason == .maxTokens, !uses.isEmpty, parsed.calls.contains(where: { _ in true }), !Self.hasClosedMarkup(full) {
+            // The call was cut off: keep the toolUse blocks so Strands' recovery can replace them with its notice.
+        }
+        for u in uses {
+            out.append(.contentBlockStart(.toolUse(toolUseId: u.toolUseId, name: u.name)))
+            out.append(.contentBlockDelta(.toolUse(input: JSONValue.object(u.input).compact)))
+            out.append(.contentBlockStop)
+        }
+        out.append(.messageStop(stopReason == .endTurn && !uses.isEmpty ? .toolUse : stopReason))
+        return out
+    }
+
+    // MARK: helpers
+
+    static func isPrefixOfAny(_ s: String, _ candidates: [String]) -> Bool {
+        candidates.contains { $0.count > s.count && $0.hasPrefix(s) }
+    }
+    static func opensToolCall(_ rest: String) -> Bool {
+        for o in openers where rest.hasPrefix(o) {
+            if o == "{\"" { return rest.hasPrefix("{\"name\"") || rest.count < 7 && "{\"name\"".hasPrefix(rest) }
+            return true
+        }
+        return false
+    }
+    static func hasClosedMarkup(_ s: String) -> Bool { s.contains("</tool_call>") || s.contains("```\n") }
+    /// What the UI has seen so far, with any streamed `<think>` stripped (we never stream it as text).
+    static func visiblePrefix(_ s: String) -> String { s }
+}

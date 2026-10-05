@@ -1,6 +1,6 @@
 import Foundation
 
-/// A tool the agent may call (Strands: `Tool`). `parameters` is a JSON Schema object.
+/// A tool the agent may call (Strands: `AgentTool`). `parameters` is a JSON Schema object.
 public protocol Tool: Sendable {
     var name: String { get }
     var description: String { get }
@@ -14,31 +14,37 @@ public struct ToolError: LocalizedError, Sendable {
     public var errorDescription: String? { message }
 }
 
-/// What a tool run produced (Strands: `ToolResult`).
-public struct ToolResult: Sendable, Hashable, Identifiable {
-    public var id: String { callId }
-    public var callId: String
+/// Strands `ToolSpec`: what the model is told about a tool.
+public struct ToolSpec: Sendable, Hashable, Codable {
     public var name: String
-    public var content: String
-    public var isError: Bool
-    public var durationMs: Double
-    public init(callId: String, name: String, content: String, isError: Bool, durationMs: Double) {
-        self.callId = callId; self.name = name; self.content = content; self.isError = isError; self.durationMs = durationMs
+    public var description: String
+    public var inputSchema: JSONValue
+    public init(name: String, description: String, inputSchema: JSONValue) {
+        self.name = name; self.description = description; self.inputSchema = inputSchema
     }
-    public var message: Message { .tool(result: content, callId: callId, name: name) }
+    /// OpenAI-style function spec — the shape HF chat templates understand.
+    public var openAIFunction: JSONValue {
+        .object(["type": "function",
+                 "function": .object(["name": .string(name), "description": .string(description), "parameters": inputSchema])])
+    }
 }
 
 extension Tool {
-    /// OpenAI-style function spec — the shape HF chat templates understand.
-    public var spec: JSONValue {
-        .object(["type": "function",
-                 "function": .object(["name": .string(name), "description": .string(description), "parameters": parameters])])
+    public var toolSpec: ToolSpec { ToolSpec(name: name, description: description, inputSchema: parameters) }
+    /// OpenAI-style function spec (0.1 name, kept).
+    public var spec: JSONValue { toolSpec.openAIFunction }
+}
+
+extension Array where Element == ToolSpec {
+    /// `[[String: Any]]` for `applyChatTemplate(messages:tools:)`.
+    public var templateDictionaries: [[String: any Sendable]] {
+        map { ($0.openAIFunction.anyValue as? [String: any Sendable]) ?? [:] }
     }
 }
 
-/// Tool specs as `[[String: Any]]` for `applyChatTemplate(messages:tools:)`.
+/// Tool specs as `[[String: Any]]` for `applyChatTemplate(messages:tools:)` (0.1 helper).
 public func toolSpecs(_ tools: [any Tool]) -> [[String: any Sendable]] {
-    tools.map { ($0.spec.anyValue as? [String: any Sendable]) ?? [:] }
+    tools.map(\.toolSpec).templateDictionaries
 }
 
 /// Build a JSON-schema `parameters` object with less typing:

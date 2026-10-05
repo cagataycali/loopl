@@ -1,13 +1,13 @@
 import Foundation
 
-/// Hugging Face repo download with resume, per-byte progress, token auth
-/// and a hard offline gate. Written by hand (not `HubApi`) so every byte
-/// that leaves the device goes through `NetworkPolicy.session` and the
-/// offline rule is one `guard` at the top of each request.
+/// Hugging Face repo download with resume, per-byte progress and a hard
+/// offline gate. ANONYMOUS by design: loopl only lists public repos, so there
+/// is no token, no account and nothing to store. Written by hand (not
+/// `HubApi`) so every byte that leaves the device goes through
+/// `NetworkPolicy.session` and the offline rule is one `guard` per request.
 public struct HFDownloader: Sendable {
-    public var token: String?
     public var host = "https://huggingface.co"
-    public init(token: String?) { self.token = token }
+    public init() {}
 
     public struct RemoteFile: Sendable, Hashable, Decodable {
         public var path: String
@@ -22,7 +22,7 @@ public struct HFDownloader: Sendable {
             switch self {
             case .offline: "offline mode is on — downloads are refused"
             case .http(let c, let p): "HTTP \(c) for \(p)"
-            case .gated(let repo): "\(repo) is gated — accept the licence on huggingface.co and add your token in Settings"
+            case .gated(let repo): "\(repo) is gated on huggingface.co — loopl downloads public models only; pick another model"
             case .io(let s): s
             }
         }
@@ -34,6 +34,7 @@ public struct HFDownloader: Sendable {
         let p = f.path
         if p.contains("/") { return false }
         if p.hasSuffix(".safetensors") { return true }
+        if p.hasSuffix(".gguf") { return false }   // GGUF repos are fetched one file at a time (`files(for:)`)
         let names: Set<String> = ["config.json", "generation_config.json", "tokenizer.json", "tokenizer_config.json",
                                   "tokenizer.model", "special_tokens_map.json", "model.safetensors.index.json",
                                   "chat_template.jinja", "chat_template.json", "added_tokens.json", "merges.txt", "vocab.json"]
@@ -42,19 +43,31 @@ public struct HFDownloader: Sendable {
 
     func request(_ url: URL) -> URLRequest {
         var r = URLRequest(url: url, timeoutInterval: 60)
-        r.setValue("loopl/0.1 (iOS; mlx)", forHTTPHeaderField: "User-Agent")
-        if let token, !token.isEmpty { r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        r.setValue("loopl/0.2 (iOS)", forHTTPHeaderField: "User-Agent")
         return r
     }
 
-    public func listFiles(repo: String, revision: String = "main") async throws -> [RemoteFile] {
+    /// What to download for a catalog entry: every MLX file, or the one GGUF file.
+    public func files(for spec: ModelSpec) async throws -> [RemoteFile] {
+        let all = try await listFiles(repo: spec.repo, revision: spec.revision ?? "main", filter: false)
+        if spec.runtime == .gguf {
+            guard let name = spec.file, let f = all.first(where: { $0.path == name }) else {
+                throw DLError.io("\(spec.repo) has no file named \(spec.file ?? "<nil>")")
+            }
+            return [f]
+        }
+        return all.filter(Self.wanted)
+    }
+
+    public func listFiles(repo: String, revision: String = "main", filter: Bool = true) async throws -> [RemoteFile] {
         guard !NetworkPolicy.isOffline else { throw DLError.offline }
         let url = URL(string: "\(host)/api/models/\(repo)/tree/\(revision)?recursive=false")!
         let (data, resp) = try await NetworkPolicy.session.data(for: request(url))
         let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
         if code == 401 || code == 403 { throw DLError.gated(repo) }
         guard code == 200 else { throw DLError.http(code, url.path) }
-        return try JSONDecoder().decode([RemoteFile].self, from: data).filter(Self.wanted)
+        let files = try JSONDecoder().decode([RemoteFile].self, from: data).filter { $0.type == "file" }
+        return filter ? files.filter(Self.wanted) : files
     }
 
     /// Downloads one file to `dest` with `Range` resume via a `.part` sidecar.

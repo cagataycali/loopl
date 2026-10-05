@@ -20,13 +20,13 @@ public struct ToolCallParser: Sendable {
 
     public struct Result: Sendable, Equatable {
         public var text: String
-        public var calls: [ToolCall]
+        public var calls: [ToolUse]
         public var hasCalls: Bool { !calls.isEmpty }
     }
 
     public func parse(_ raw: String) -> Result {
         var text = raw
-        var calls: [ToolCall] = []
+        var calls: [ToolUse] = []
 
         // 1. Explicit markup — accepted for every family (models drift between dialects).
         for pattern in Self.markupPatterns {
@@ -61,10 +61,10 @@ public struct ToolCallParser: Sendable {
         #"<function_call>\s*([\s\S]*?)\s*</function_call>"#,
     ]
 
-    static func extract(pattern: String, from text: String) -> (String, [ToolCall]) {
+    static func extract(pattern: String, from text: String) -> (String, [ToolUse]) {
         guard let re = try? NSRegularExpression(pattern: pattern, options: []) else { return (text, []) }
         let ns = text as NSString
-        var calls: [ToolCall] = []
+        var calls: [ToolUse] = []
         var out = text
         // Walk matches back to front so removals keep earlier ranges valid.
         for m in re.matches(in: text, range: NSRange(location: 0, length: ns.length)).reversed() {
@@ -77,10 +77,10 @@ public struct ToolCallParser: Sendable {
         return (out, calls)
     }
 
-    static func extractPythonTag(from text: String) -> (String, [ToolCall]) {
+    static func extractPythonTag(from text: String) -> (String, [ToolUse]) {
         let tag = "<|python_tag|>"
         guard text.contains(tag) else { return (text, []) }
-        var calls: [ToolCall] = []
+        var calls: [ToolUse] = []
         var pieces = text.components(separatedBy: tag)
         let head = pieces.removeFirst()
         var leftovers = head
@@ -153,13 +153,13 @@ public struct ToolCallParser: Sendable {
 
     /// `{"name": "...", "arguments"|"parameters": {...}}` (also tolerates
     /// OpenAI's nested `{"function": {...}}` and a JSON-string `arguments`).
-    static func call(from value: JSONValue) -> ToolCall? {
+    static func call(from value: JSONValue) -> ToolUse? {
         var obj = value.objectValue
         if let fn = obj?["function"]?.objectValue { obj = fn }
         guard let obj, let name = obj["name"]?.stringValue, !name.isEmpty else { return nil }
         var args = obj["arguments"] ?? obj["parameters"] ?? obj["args"] ?? .object([:])
         if let s = args.stringValue, let parsed = JSONValue.parse(s) { args = parsed }
-        let id = obj["id"]?.stringValue ?? ToolCall.makeId()
-        return ToolCall(id: id, name: name, arguments: args.objectValue ?? [:])
+        let id = obj["id"]?.stringValue ?? ToolUse.makeId()
+        return ToolUse(toolUseId: id, name: name, input: args.objectValue ?? [:])
     }
 }
