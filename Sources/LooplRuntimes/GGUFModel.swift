@@ -172,7 +172,8 @@ public actor GGUFModel: Model {
         let nCtx = Int(llama_n_ctx(s.ctx))
 
         // 1. Prompt text: model template via llama_chat_apply_template (tools folded into the system prompt), else ChatML.
-        let prompt = renderPrompt(template: s.template, systemPrompt: systemPrompt, messages: messages, toolSpecs: toolSpecs, family: s.spec.family)
+        let prompt = renderPrompt(template: s.template, systemPrompt: systemPrompt, messages: messages, toolSpecs: toolSpecs, family: s.spec.family,
+                                  kwargs: s.spec.chatTemplateKwargs)
 
         // 2. Tokenize.
         var tokens = tokenize(vocab, prompt)
@@ -252,19 +253,30 @@ public actor GGUFModel: Model {
 
     // MARK: prompt
 
-    static func renderPrompt(template: String?, systemPrompt: String?, messages: [Loopl.Message], toolSpecs: [Loopl.ToolSpec], family: ToolFamily) -> String {
+    static func renderPrompt(template: String?, systemPrompt: String?, messages: [Loopl.Message], toolSpecs: [Loopl.ToolSpec], family: ToolFamily,
+                             kwargs: [String: JSONValue]? = nil) -> String {
         let sys = PromptBuilder.toolSystemPrompt(toolSpecs: toolSpecs, family: family, base: systemPrompt)
         let folded = PromptBuilder.foldToolMessages(messages)
         var chat: [(String, String)] = []
         if !sys.isEmpty { chat.append(("system", sys)) }
         for m in folded { chat.append((m.role.rawValue, m.text)) }
-        if let template, let rendered = applyTemplate(template, chat) { return rendered }
+        var out: String
+        if let template, let rendered = applyTemplate(template, chat) { out = rendered }
         // Gemma-style templates reject a system role → merge into the first user turn and retry.
-        if let template, !sys.isEmpty, chat.count > 1, chat[1].0 == "user" {
-            var merged = Array(chat.dropFirst(2)); merged.insert(("user", sys + "\n\n" + chat[1].1), at: 0)
-            if let rendered = applyTemplate(template, merged) { return rendered }
-        }
-        return PromptBuilder.chatML(systemPrompt: sys.isEmpty ? nil : sys, messages: folded)
+        else if let template, !sys.isEmpty, chat.count > 1, chat[1].0 == "user",
+                let rendered = applyTemplate(template, { var m = Array(chat.dropFirst(2)); m.insert(("user", sys + "\n\n" + chat[1].1), at: 0); return m }()) { out = rendered }
+        else { out = PromptBuilder.chatML(systemPrompt: sys.isEmpty ? nil : sys, messages: folded) }
+        return applyKwargs(out, kwargs: kwargs)
+    }
+
+    /// `llama_chat_apply_template` takes no template kwargs. The one that matters on-device is Qwen3's
+    /// `enable_thinking: false`, which the Jinja template implements by opening the assistant turn with an
+    /// empty think block — so we append exactly that.
+    static func applyKwargs(_ rendered: String, kwargs: [String: JSONValue]?) -> String {
+        guard case .bool(false)? = kwargs?["enable_thinking"] else { return rendered }
+        let empty = "<think>\n\n</think>\n\n"
+        if rendered.hasSuffix(empty) || rendered.hasSuffix("</think>\n\n") { return rendered }
+        return rendered + empty
     }
 
     private static func applyTemplate(_ template: String, _ chat: [(String, String)]) -> String? {

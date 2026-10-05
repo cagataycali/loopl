@@ -73,6 +73,17 @@ final class GGUFModelTests: XCTestCase {
         XCTAssertTrue(fallback.hasPrefix("<|im_start|>system\nsys<|im_end|>"), "unknown template → ChatML fallback")
     }
 
+    func testEnableThinkingFalseOpensAnEmptyThinkBlock() {
+        let tmpl = "{% for message in messages %}{{'<|im_start|>' + message['role'] + '\\n' + message['content'] + '<|im_end|>' + '\\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\\n' }}{% endif %}"
+        let off = GGUFModel.renderPrompt(template: tmpl, systemPrompt: nil, messages: [.user("hi")], toolSpecs: [], family: .hermes, kwargs: ["enable_thinking": .bool(false)])
+        XCTAssertTrue(off.hasSuffix("<|im_start|>assistant\n<think>\n\n</think>\n\n"), "Qwen3 non-thinking = empty think block, as its Jinja template renders it")
+        let on = GGUFModel.renderPrompt(template: tmpl, systemPrompt: nil, messages: [.user("hi")], toolSpecs: [], family: .hermes, kwargs: ["enable_thinking": .bool(true)])
+        XCTAssertTrue(on.hasSuffix("<|im_start|>assistant\n"))
+        let none = GGUFModel.renderPrompt(template: tmpl, systemPrompt: nil, messages: [.user("hi")], toolSpecs: [], family: .hermes)
+        XCTAssertEqual(none, on)
+        XCTAssertEqual(GGUFModel.applyKwargs("x<think>\n\n</think>\n\n", kwargs: ["enable_thinking": .bool(false)]), "x<think>\n\n</think>\n\n", "never doubled")
+    }
+
     func testUTF8AccumulatorSplitsScalars() {
         var acc = UTF8Accumulator()
         let euro = Array("€".utf8)   // E2 82 AC

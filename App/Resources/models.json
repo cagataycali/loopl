@@ -235,7 +235,10 @@
       "ctx_usable_8gb": 8192,
       "min_ram_gb": 3,
       "gated": false,
-      "notes": "Single-file GGUF; built-in chat template with tools."
+      "notes": "Single-file GGUF; built-in chat template with tools.",
+      "chat_template_kwargs": {
+        "enable_thinking": false
+      }
     },
     {
       "id": "qwen3-1.7b-q4_k_m",
@@ -250,7 +253,10 @@
       "ctx_usable_8gb": 8192,
       "min_ram_gb": 6,
       "gated": false,
-      "notes": "Single-file GGUF; built-in chat template with tools."
+      "notes": "Single-file GGUF; built-in chat template with tools.",
+      "chat_template_kwargs": {
+        "enable_thinking": false
+      }
     },
     {
       "id": "qwen3-4b-q4_k_m",
@@ -265,7 +271,10 @@
       "ctx_usable_8gb": 8192,
       "min_ram_gb": 8,
       "gated": false,
-      "notes": "Single-file GGUF."
+      "notes": "Single-file GGUF.",
+      "chat_template_kwargs": {
+        "enable_thinking": false
+      }
     },
     {
       "id": "llama-3.2-3b-instruct-q4_k_m",
