@@ -31,16 +31,17 @@ hide:
 
 </div>
 
-<div class="loopl-demo" data-play aria-label="A real agent run captured on an iPhone 16 Pro">
-<div class="loopl-demo__bar"><b>Qwen3-1.7B · 4-bit · MLX</b><span>iPhone 16 Pro · offline-capable</span></div>
-<p class="loopl-demo__you loopl-demo__step">you</p>
-<p class="loopl-demo__q loopl-demo__step">what time is it in Istanbul and what is 23*47? then remember the answer under the key 'proof' and recall it</p>
-<div class="loopl-demo__tool loopl-demo__step" style="animation-delay:.4s"><b>current_time</b> Europe/Istanbul <i>Mon 5 Oct 13:50 <span class="ok">✓</span></i></div>
-<div class="loopl-demo__tool loopl-demo__step" style="animation-delay:.55s"><b>calculator</b> 23*47 <i>1081 <span class="ok">✓</span></i></div>
-<div class="loopl-demo__tool loopl-demo__step" style="animation-delay:.7s"><b>remember</b> proof <i>remembered <span class="ok">✓</span></i></div>
-<div class="loopl-demo__tool loopl-demo__step" style="animation-delay:.85s"><b>recall</b> proof <i>proof: 1081 <span class="ok">✓</span></i></div>
-<div class="loopl-demo__a loopl-demo__step" style="animation-delay:1.2s"><p>1081<span class="loopl-caret" aria-hidden="true"></span></p></div>
-<p class="loopl-demo__foot loopl-demo__step" style="animation-delay:1.5s">2 cycles · 4 tools, concurrent · 41 tok/s · TTFT 2.3 s · ctx 787 / 8192 — the app's <code>--selftest</code> run, 2026-10-05</p>
+<div class="loopl-demo" aria-label="A real agent run captured on an iPhone 16 Pro, replayed">
+<div class="loopl-demo__bar"><b>Qwen3-1.7B · 4-bit · MLX</b><span>iPhone 16 Pro</span><button type="button" class="loopl-demo__replay" aria-label="Replay the run">↻ replay</button></div>
+<p class="loopl-demo__you">you</p>
+<p class="loopl-demo__q">what time is it in Istanbul and what is 23*47? then remember the answer under the key 'proof' and recall it</p>
+<p class="loopl-demo__status" aria-live="polite">end_turn · 2 cycles · 5.8 s on device</p>
+<div class="loopl-demo__tool" data-step="tool"><b>current_time</b> Europe/Istanbul <i>Mon 5 Oct 13:50 <span class="ok">✓</span></i></div>
+<div class="loopl-demo__tool" data-step="tool"><b>calculator</b> 23*47 <i>1081 <span class="ok">✓</span></i></div>
+<div class="loopl-demo__tool" data-step="tool"><b>remember</b> proof <i>remembered <span class="ok">✓</span></i></div>
+<div class="loopl-demo__tool" data-step="tool"><b>recall</b> proof <i>proof: 1081 <span class="ok">✓</span></i></div>
+<div class="loopl-demo__a" data-step="answer"><p data-text="1081">1081</p><span class="loopl-caret" aria-hidden="true"></span></div>
+<p class="loopl-demo__foot" data-step="foot">4 tools in one turn, concurrent · 41 tok/s · TTFT 2.3 s · ctx 787 / 8192 — the app's <code>--selftest</code>, 2026-10-05</p>
 </div>
 
 </section>

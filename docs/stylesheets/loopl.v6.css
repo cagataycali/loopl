@@ -195,10 +195,26 @@ body, .md-typeset { font-family: var(--l-body); -webkit-font-smoothing: antialia
 .loopl-demo__foot { margin-top: var(--s2); font-family: var(--l-mono); font-size: .62rem; color: var(--l-ink-2); }
 .loopl-caret { display: inline-block; width: .5em; height: 1em; background: var(--l-flame-fill); vertical-align: -.15em; margin-left: 2px; animation: l-blink 1s steps(2) infinite; }
 @keyframes l-blink { to { opacity: 0; } }
-.loopl-demo[data-play] .loopl-demo__step { opacity: 0; transform: translateY(6px); animation: l-in .36s var(--ease) forwards; }
+/* demo replay (docs/javascripts/demo.js): rows are visible without JS; with JS, [data-step] rows fade in as the run replays */
+.loopl-demo[data-js] [data-step] { opacity: 0; transform: translateY(6px); transition: opacity .32s var(--ease), transform .32s var(--ease); }
+.loopl-demo[data-js] [data-step].is-on { opacity: 1; transform: none; }
+.loopl-demo__status { font-family: var(--l-mono); font-size: .62rem; color: var(--l-ink-2); margin: 0 0 var(--s1); min-height: 1.2em; }
+.loopl-demo__replay { margin-left: auto; font: inherit; font-size: .62rem; background: transparent; border: 1px solid var(--l-line); border-radius: var(--r-pill); padding: 2px 10px; color: var(--l-ink-2); cursor: pointer; }
+.loopl-demo__replay:hover { color: var(--l-flame); border-color: var(--l-flame); }
+.loopl-demo[data-playing] .loopl-demo__replay { opacity: .4; pointer-events: none; }
+.loopl-demo__a { display: flex; align-items: center; gap: 2px; }
+.loopl-demo[data-js]:not([data-playing]) .loopl-caret { display: none; }
 @keyframes l-in { to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) {
-  .loopl-demo[data-play] .loopl-demo__step { opacity: 1; transform: none; animation: none; }
+  /* demo replay (docs/javascripts/demo.js): rows are visible without JS; with JS, [data-step] rows fade in as the run replays */
+.loopl-demo[data-js] [data-step] { opacity: 0; transform: translateY(6px); transition: opacity .32s var(--ease), transform .32s var(--ease); }
+.loopl-demo[data-js] [data-step].is-on { opacity: 1; transform: none; }
+.loopl-demo__status { font-family: var(--l-mono); font-size: .62rem; color: var(--l-ink-2); margin: 0 0 var(--s1); min-height: 1.2em; }
+.loopl-demo__replay { margin-left: auto; font: inherit; font-size: .62rem; background: transparent; border: 1px solid var(--l-line); border-radius: var(--r-pill); padding: 2px 10px; color: var(--l-ink-2); cursor: pointer; }
+.loopl-demo__replay:hover { color: var(--l-flame); border-color: var(--l-flame); }
+.loopl-demo[data-playing] .loopl-demo__replay { opacity: .4; pointer-events: none; }
+.loopl-demo__a { display: flex; align-items: center; gap: 2px; }
+.loopl-demo[data-js]:not([data-playing]) .loopl-caret { display: none; }
   .loopl-caret { animation: none; }
   .loopl-btn { transition: none; }
 }

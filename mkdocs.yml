@@ -63,6 +63,9 @@ extra_css:
 hooks:
   - docs/hooks/strip_snippet_tags.py
 
+extra_javascript:
+  - javascripts/demo.js
+
 plugins:
   - redirects:
       redirect_maps:
