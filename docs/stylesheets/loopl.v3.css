@@ -1,8 +1,8 @@
 /* loopl — tiny-flame palette · design tokens
    ------------------------------------------------------------------ */
 :root {
-  --loopl-flame: #ff5a1f;
-  --loopl-flame-2: #ffb347;
+  --loopl-flame: #ff6a1f;        /* brand gradient start (App/Resources/brand) is #FF7A22 */
+  --loopl-flame-2: #ffc244;      /* brand gradient end */
   --loopl-flame-soft: rgba(255, 90, 31, .12);
   --loopl-ink: #0f0f12;
   --loopl-radius: 1rem;

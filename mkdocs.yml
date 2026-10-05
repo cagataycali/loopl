@@ -56,7 +56,7 @@ theme:
 
 extra_css:
   # bump the suffix on every CSS change: Cloudflare caches assets for 4 h (HTML is DYNAMIC)
-  - stylesheets/loopl.v2.css
+  - stylesheets/loopl.v3.css
 
 plugins:
   - search:
