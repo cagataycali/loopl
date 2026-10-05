@@ -1,0 +1,8 @@
+*.xcodeproj
+xcuserdata/
+DerivedData/
+.build/
+*.ipa
+*.dSYM.zip
+.DS_Store
+*.hf_token
