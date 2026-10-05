@@ -1,5 +1,10 @@
 # SDK overview
 
+!!! info "0.1 surface"
+    This is the `0.1` API the repository is converging on (Swift package products `Loopl`, `LooplRuntimes`, `LooplUI`).
+    The reference app in `App/` already runs the same loop; while the package split lands, symbol names on these pages
+    are the contract — the [Changelog](../changelog.md) records every rename.
+
 ```
 Loopl                  pure Swift, no UIKit — builds on macOS/Linux/simulator
 ├─ Agent               the loop: stream → parse tool calls → run tools → append → repeat

@@ -25,6 +25,17 @@ the easiest way to feel what on-device agents are like.
 | **Agent** | Toggle each built-in tool · system prompt · optional budget (iterations / tokens / time — all off by default) · context length · thinking on/off for Qwen3 |
 | **Settings** | Hugging Face token (Keychain) · runtime preference · offline simulation toggle · clear cache · privacy & about |
 
+## Identity
+
+| | |
+|---|---|
+| Bundle ID | `technology.tiny.loopl` |
+| Price | Free · no in-app purchases |
+| Account | none · no sign-in anywhere |
+| Distribution | TestFlight first, then the App Store (the badge above lights up when the listing exists) |
+| Support | [loopl.dev](https://loopl.dev) · [GitHub issues](https://github.com/cagataycali/loopl/issues) |
+| Privacy | [loopl.dev/privacy](../privacy.md) — Data Not Collected |
+
 ## Requirements
 
 - iOS 18.0+. For Apple Foundation Models: iOS 26 on an Apple-Intelligence device with it enabled.
