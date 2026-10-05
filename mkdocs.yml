@@ -7,6 +7,7 @@ edit_uri: ""
 exclude_docs: |
   gen_models.py
   check_snippets.sh
+  build_docc.sh
   check_symbols.sh
   allowed_symbols.txt
   overrides/
@@ -139,6 +140,7 @@ nav:
       - Model protocol: sdk/models.md
       - Conversation managers: sdk/conversation-managers.md
       - Strands mapping: sdk/strands-mapping.md
+      - API reference (DocC): https://loopl.dev/api/
   - Runtimes:
       - runtimes/index.md
       - MLX Swift: runtimes/mlx.md
