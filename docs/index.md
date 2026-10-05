@@ -46,12 +46,10 @@ hide:
 
 </section>
 
-<div class="loopl-strip" markdown>
-<span>:material-wifi-off: works in airplane mode</span>
-<span>:material-account-off: no account, ever</span>
-<span>:material-chart-line-variant: zero analytics</span>
-<span>:material-all-inclusive: no iteration cap</span>
-<span>:material-source-branch: open source</span>
+<div class="loopl-strip">
+<span>Runs in airplane mode</span>
+<span>No account. No analytics.</span>
+<span>No iteration cap</span>
 </div>
 
 <section class="loopl-sec" markdown>
@@ -59,7 +57,25 @@ hide:
 ## One loop, until the job is done
 A faithful Swift port of the Strands event loop. The context window and your Stop button are the only bounds.
 
-<div class="loopl-grid" markdown>
+<div class="loopl-how" markdown>
+<figure class="loopl-loop" aria-labelledby="loop-title" role="img">
+<svg viewBox="0 0 560 250" width="560" height="250" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.5" font-family="ui-monospace, SF Mono, Menlo, monospace" font-size="12">
+<title id="loop-title">The event loop: prompt → model streams → tool use runs tools concurrently → results return to the model → end turn → answer</title>
+<defs><marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0.5 L7.5 4 L0 7.5" fill="none" stroke="currentColor" stroke-width="1.2"/></marker>
+<marker id="arrf" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0.5 L7.5 4 L0 7.5" fill="none" class="l-f" stroke-width="1.2"/></marker></defs>
+<text x="280" y="22" text-anchor="middle" fill="currentColor" stroke="none" opacity=".6" font-size="10.5">no iteration counter · the loop ends when the model stops calling tools</text>
+<rect x="10" y="80" width="96" height="40" rx="8"/><text x="58" y="105" text-anchor="middle" fill="currentColor" stroke="none">prompt</text>
+<rect x="190" y="68" width="180" height="64" rx="10" stroke-width="2"/><text x="280" y="95" text-anchor="middle" fill="currentColor" stroke="none" font-weight="700">model</text><text x="280" y="115" text-anchor="middle" fill="currentColor" stroke="none" opacity=".6" font-size="10.5">streams text · tool_use</text>
+<rect x="190" y="190" width="180" height="50" rx="8"/><text x="280" y="212" text-anchor="middle" fill="currentColor" stroke="none">tools</text><text x="280" y="229" text-anchor="middle" fill="currentColor" stroke="none" opacity=".6" font-size="10.5">all calls, concurrent</text>
+<rect x="454" y="80" width="96" height="40" rx="8"/><text x="502" y="105" text-anchor="middle" fill="currentColor" stroke="none">answer</text>
+<path d="M106 100 H184" marker-end="url(#arr)"/>
+<path d="M370 100 H448" marker-end="url(#arr)"/><text x="409" y="90" text-anchor="middle" fill="currentColor" stroke="none" opacity=".7" font-size="10.5">end_turn</text>
+<path d="M250 132 V184" marker-end="url(#arr)"/><text x="242" y="163" text-anchor="end" fill="currentColor" stroke="none" opacity=".7" font-size="10.5">tool_use</text>
+<path class="l-f" d="M310 190 V138" marker-end="url(#arrf)" stroke-width="2"/><text class="l-f" x="318" y="163" fill="currentColor" stroke="none" font-size="10.5">tool_result → again</text>
+</svg>
+</figure>
+
+<div class="loopl-steps" markdown>
 <div class="loopl-step" markdown>
 <span class="loopl-step__n">1</span>
 ### Stream
@@ -74,6 +90,7 @@ Every call in the turn runs concurrently; results go back as one message.
 <span class="loopl-step__n">3</span>
 ### Recurse
 While the stop reason is `toolUse`, call the model again. `endTurn` yields the `AgentResult`.
+</div>
 </div>
 </div>
 </section>
@@ -140,10 +157,11 @@ While the stop reason is `toolUse`, call the model again. `endTurn` yields the `
 ## Three runtimes, one protocol
 Measured on real hardware with the app's self-test — single runs, not averages.
 
-<div class="loopl-grid" markdown>
+<div class="loopl-grid loopl-grid--4" markdown>
 <div class="loopl-stat" markdown><b>41 tok/s</b><span>Qwen3-1.7B 4-bit · MLX Swift · iPhone 16 Pro</span></div>
 <div class="loopl-stat" markdown><b>33 tok/s</b><span>Qwen3-1.7B Q4_K_M · llama.cpp (GGUF) · iPhone 16 Pro</span></div>
 <div class="loopl-stat" markdown><b>0 MB</b><span>Apple Foundation Models · iOS 26 · nothing to download</span></div>
+<div class="loopl-stat" markdown><b>4 tools</b><span>in one turn, concurrently — the run above, 1 tool round</span></div>
 </div>
 
 <div class="loopl-models" markdown>
