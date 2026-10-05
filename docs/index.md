@@ -59,7 +59,7 @@ for try await event in agent.stream(q) {
     switch event {
     case .text(let t):           print(t, terminator: "")
     case .toolStarted(let call): print("→ \(call.name)")
-    case .toolFinished(let r):   print("← \(r.content)")
+    case .toolResult(let r):     print("← \(r.content)")
     default: break
     }
 }

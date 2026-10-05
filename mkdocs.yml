@@ -126,6 +126,8 @@ nav:
   - SDK:
       - sdk/index.md
       - Agent: sdk/agent.md
+      - The event loop: sdk/event-loop.md
+      - Hooks: sdk/hooks.md
       - Messages & events: sdk/messages-events.md
       - Tools & JSON schema: sdk/tools.md
       - Model protocol: sdk/models.md

@@ -1,0 +1,34 @@
+# Type names the docs may mention although they are not declared in Sources/ (external: Swift stdlib, Apple, Strands, MLX, Hugging Face).
+AsyncThrowingStream
+Codable
+Sendable
+Task
+TaskGroup
+Actor
+Hashable
+Identifiable
+Foundation
+SwiftUI
+LanguageModel
+LanguageModelSession
+Tool
+NSExpression
+URLSession
+Documents
+# package / module names
+Loopl
+LooplRuntimes
+LooplUI
+MLXLLM
+MLXLMCommon
+MLXFoundationModels
+MLXHuggingFace
+MLXLanguageModel
+Tokenizers
+Hub
+# Strands (Python/TS) names quoted in the mapping page
+BedrockModel
+OllamaModel
+Swarm
+Graph
+ContextBlock

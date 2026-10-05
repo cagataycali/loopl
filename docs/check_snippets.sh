@@ -16,21 +16,22 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 CFG="${SNIPPETS_CONFIG:-debug}"
-MODULES=".build/$CFG/Modules"
+SCRATCH="${SNIPPETS_SCRATCH:-.build}"      # another checkout's warm .build can be reused (same dependency checkouts)
+MODULES="$SCRATCH/$CFG/Modules"
 SKIP_BUILD="${SNIPPETS_SKIP_BUILD:-0}"
 if [[ "$SKIP_BUILD" != "1" ]]; then
   # --target (not --product): a library product makes SwiftPM build the whole package, incl. LooplUI (SwiftUI, iOS-first).
   for t in Loopl LooplRuntimes; do
     echo "▸ swift build --target $t …"
-    if ! out="$(swift build -c "$CFG" --target "$t" 2>&1)"; then echo "$out" | grep -E "error:" | head -10; echo "✗ swift build --target $t failed"; exit 2; fi
+    if ! out="$(swift build -c "$CFG" --scratch-path "$SCRATCH" --target "$t" 2>&1)"; then echo "$out" | grep -E "error:" | head -10; echo "✗ swift build --target $t failed"; exit 2; fi
     echo "$out" | grep -E "Build of target|Build complete" || true
   done
 fi
 [[ -d "$MODULES" ]] || { echo "✗ $MODULES missing — run swift build first"; exit 2; }
 
 CC_FLAGS=()
-for m in .build/"$CFG"/*.build/module.modulemap; do [[ -f "$m" ]] && CC_FLAGS+=(-Xcc "-fmodule-map-file=$m"); done
-while IFS= read -r d; do CC_FLAGS+=(-Xcc "-I$d"); done < <(find .build/checkouts -path "*/include/module.modulemap" -not -path "*/Tests/*" -not -path "*/Benchmarks/*" 2>/dev/null | xargs -n1 dirname)
+for m in "$SCRATCH"/"$CFG"/*.build/module.modulemap; do [[ -f "$m" ]] && CC_FLAGS+=(-Xcc "-fmodule-map-file=$m"); done
+while IFS= read -r d; do CC_FLAGS+=(-Xcc "-I$d"); done < <(find "$SCRATCH"/checkouts -path "*/include/module.modulemap" -not -path "*/Tests/*" -not -path "*/Benchmarks/*" 2>/dev/null | xargs -n1 dirname)
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 total=0; failed=0; files=()
