@@ -271,7 +271,14 @@ body, .md-typeset { font-family: var(--l-body); -webkit-font-smoothing: antialia
 body:has(.loopl-home) .md-footer { display: none; }   /* the landing has its own footer */
 
 @media (max-width: 960px) {
-  .loopl-hero { grid-template-columns: minmax(0, 1fr); gap: var(--s4); padding-top: var(--s4); }
+  .loopl-hero { grid-template-columns: minmax(0, 1fr); gap: var(--s3); padding-top: var(--s2); }
+  .loopl-hero__lead { font-size: .95rem; margin-bottom: var(--s3); }
+  .loopl-hero .loopl-cta { gap: var(--s1); }
+  .loopl-hero .loopl-btn { flex: 1 1 0; justify-content: center; padding: 0 var(--s2); white-space: nowrap; }
+  .loopl-hero__meta { font-size: .7rem; }
+  body:has(.loopl-home) .md-main__inner { margin-top: 0; }
+  .loopl-demo { padding: var(--s2); font-size: .76rem; min-height: 0; }
+  .loopl-home .loopl-final > h2 { font-size: 1.5rem; }
   .loopl-grid, .loopl-grid--2 { grid-template-columns: minmax(0, 1fr); }
   .loopl-home .loopl-sec { padding-top: var(--s8); }
   .loopl-home .loopl-sec > h2 { font-size: 1.6rem; }

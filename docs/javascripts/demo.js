@@ -50,7 +50,7 @@
   var seen = false;
   new IntersectionObserver(function (entries, io) {
     if (entries.some(function (e) { return e.isIntersecting; }) && !seen) { seen = true; play(); io.disconnect(); }
-  }, { threshold: 0.4 }).observe(demo);
+  }, { threshold: 0.25 }).observe(demo);
   if (replay) replay.addEventListener('click', function () { if (!playing) play(); });
   setTimeout(function () { if (!seen) finalState(); }, 12000);   // never leave the card blank (print, odd viewports)
 })();
