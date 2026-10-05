@@ -7,3 +7,6 @@ DerivedData/
 *.dSYM.zip
 .DS_Store
 *.hf_token
+
+# llama.cpp xcframework (scripts/fetch-llama-xcframework.sh)
+Vendor/

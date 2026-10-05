@@ -1,5 +1,16 @@
 // swift-tools-version: 6.0
 import PackageDescription
+import Foundation
+
+// llama.cpp (GGUF runtime) is an optional vendored xcframework: run
+// `scripts/fetch-llama-xcframework.sh [--with-sim]` to put the official
+// ggml-org release at Vendor/llama.xcframework (gitignored). When it is
+// there, LooplRuntimes links it and GGUFModel is real; when it is not,
+// `canImport(llama)` is false and GGUFModel reports itself unavailable.
+// (A URL binaryTarget is not used because the official zip has no iOS
+// Simulator slice — it would fail every simulator build at link time.)
+let llamaXCFramework = "Vendor/llama.xcframework"
+let hasLlama = FileManager.default.fileExists(atPath: URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent(llamaXCFramework).path)
 
 let package = Package(
     name: "Loopl",
@@ -30,11 +41,13 @@ let package = Package(
                 .product(name: "MLXLMCommon", package: "mlx-swift-lm"),
                 .product(name: "Tokenizers", package: "swift-transformers"),
                 .product(name: "Hub", package: "swift-transformers"),
-            ],
+            ] + (hasLlama ? [.target(name: "llama")] : []),
             path: "Sources/LooplRuntimes",
             swiftSettings: [.swiftLanguageMode(.v6)]),
         .target(name: "LooplUI", dependencies: ["Loopl"], path: "Sources/LooplUI", swiftSettings: [.swiftLanguageMode(.v6)]),
         .testTarget(name: "LooplTests", dependencies: ["Loopl"], path: "Tests/LooplTests",
                     resources: [.copy("Fixtures")], swiftSettings: [.swiftLanguageMode(.v6)]),
-    ]
+        .testTarget(name: "LooplRuntimesTests", dependencies: ["Loopl", "LooplRuntimes"], path: "Tests/LooplRuntimesTests",
+                    swiftSettings: [.swiftLanguageMode(.v6)]),
+    ] + (hasLlama ? [.binaryTarget(name: "llama", path: llamaXCFramework)] : [])
 )

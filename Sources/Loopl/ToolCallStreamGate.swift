@@ -13,7 +13,8 @@ import Foundation
 public struct ToolCallStreamGate: Sendable {
     public let family: ToolFamily
     private var full = ""
-    private var emitted = ""          // text already sent as deltas
+    private var emitted = ""          // raw text consumed from `full` (incl. <think> parts never shown)
+    private var emittedVisible = ""   // text actually sent as text deltas
     private var holding = false
     private var started = false
     private var textBlockOpen = false
@@ -60,7 +61,11 @@ public struct ToolCallStreamGate: Sendable {
             if !reasoningOpen { out.append(.contentBlockStart(.reasoning)); reasoningOpen = true }
             out.append(.contentBlockDelta(.reasoning(reasoningToEmit)))
         }
+        if !textToEmit.isEmpty, !textBlockOpen, emittedVisible.isEmpty {
+            textToEmit = String(textToEmit.drop(while: { $0.isWhitespace || $0.isNewline }))   // no leading blank lines after a </think>
+        }
         if !textToEmit.isEmpty {
+            emittedVisible += textToEmit
             if reasoningOpen { out.append(.contentBlockStop); reasoningOpen = false }
             if !textBlockOpen { out.append(.contentBlockStart(.text)); textBlockOpen = true }
             out.append(.contentBlockDelta(.text(textToEmit)))
@@ -78,14 +83,20 @@ public struct ToolCallStreamGate: Sendable {
         let parsed = parser.parse(full)
         // Visible text = parsed text (markup + <think> stripped); emit whatever we have not streamed yet.
         let visible = parsed.text
-        let alreadyShown = Self.visiblePrefix(emitted)
+        let shown = emittedVisible
         var remainder = ""
-        if visible.hasPrefix(alreadyShown.trimmingCharacters(in: .whitespacesAndNewlines)) {
-            remainder = String(visible.dropFirst(alreadyShown.trimmingCharacters(in: .whitespacesAndNewlines).count))
-        } else if !alreadyShown.isEmpty, visible.hasPrefix(alreadyShown) {
-            remainder = String(visible.dropFirst(alreadyShown.count))
-        } else if alreadyShown.isEmpty {
+        if shown.isEmpty {
             remainder = visible
+        } else if visible.hasPrefix(shown) {
+            remainder = String(visible.dropFirst(shown.count))
+        } else {
+            let trimmedShown = shown.trimmingCharacters(in: .whitespacesAndNewlines)
+            if visible.hasPrefix(trimmedShown) { remainder = String(visible.dropFirst(trimmedShown.count)) }
+        }
+        remainder = String(remainder.drop(while: { $0.isWhitespace || $0.isNewline }).reversed().drop(while: { $0.isWhitespace || $0.isNewline }).reversed())
+        if !shown.isEmpty, !remainder.isEmpty, !shown.hasSuffix(" "), !shown.hasSuffix("\n"), !remainder.hasPrefix(" ") {
+            // the withheld tail started mid-sentence — keep whatever separator the model had
+            if let gapStart = visible.range(of: trimmedOrSelf(shown))?.upperBound, gapStart < visible.endIndex, visible[gapStart].isWhitespace { remainder = " " + remainder }
         }
         if !remainder.isEmpty || textBlockOpen {
             if !textBlockOpen { out.append(.contentBlockStart(.text)); textBlockOpen = true }
@@ -94,9 +105,6 @@ public struct ToolCallStreamGate: Sendable {
         }
         var uses = native
         for c in parsed.calls where !uses.contains(where: { $0.name == c.name && $0.input == c.input }) { uses.append(c) }
-        if stopReason == .maxTokens, !uses.isEmpty, parsed.calls.contains(where: { _ in true }), !Self.hasClosedMarkup(full) {
-            // The call was cut off: keep the toolUse blocks so Strands' recovery can replace them with its notice.
-        }
         for u in uses {
             out.append(.contentBlockStart(.toolUse(toolUseId: u.toolUseId, name: u.name)))
             out.append(.contentBlockDelta(.toolUse(input: JSONValue.object(u.input).compact)))
@@ -119,6 +127,5 @@ public struct ToolCallStreamGate: Sendable {
         return false
     }
     static func hasClosedMarkup(_ s: String) -> Bool { s.contains("</tool_call>") || s.contains("```\n") }
-    /// What the UI has seen so far, with any streamed `<think>` stripped (we never stream it as text).
-    static func visiblePrefix(_ s: String) -> String { s }
+    private func trimmedOrSelf(_ s: String) -> String { s.trimmingCharacters(in: .whitespacesAndNewlines) }
 }

@@ -64,3 +64,50 @@ final class ToolCallParserTests: XCTestCase {
         XCTAssertEqual(r.calls.first?.name, "recall")
     }
 }
+
+final class ToolCallStreamGateTests: XCTestCase {
+    func run(_ pieces: [String], family: ToolFamily = .hermes, stop: StopReason = .endTurn) -> (text: String, stop: StreamAssembler.Stop) {
+        var gate = ToolCallStreamGate(family: family)
+        var a = StreamAssembler()
+        var text = ""
+        for p in pieces { for ev in gate.feed(p) { for e in a.feed(ev) { if case .text(let t) = e { text += t } } } }
+        for ev in gate.finish(stopReason: stop) { for e in a.feed(ev) { if case .text(let t) = e { text += t } } }
+        return (text, a.finish())
+    }
+
+    func testPlainTextStreamsLiveAndEndsEndTurn() {
+        let r = run(["Hel", "lo ", "wor", "ld."])
+        XCTAssertEqual(r.text, "Hello world."); XCTAssertEqual(r.stop.stopReason, .endTurn); XCTAssertEqual(r.stop.message.text, "Hello world.")
+    }
+
+    func testMarkupSplitAcrossChunksBecomesToolUse() {
+        let r = run(["Sure. <to", "ol_call>{\"name\": \"calc\", \"argu", "ments\": {\"x\": 1}}</tool_c", "all>"])
+        XCTAssertEqual(r.text.trimmingCharacters(in: .whitespaces), "Sure.", "live deltas may end with the separator that preceded the markup")
+        XCTAssertEqual(r.stop.stopReason, .toolUse)
+        XCTAssertEqual(r.stop.message.toolUses.map(\.name), ["calc"])
+        XCTAssertEqual(r.stop.message.toolUses[0].input["x"], .number(1))
+        XCTAssertFalse(r.stop.message.text.contains("<tool_call>"))
+    }
+
+    func testThinkBlockIsReasoningNotText() {
+        let r = run(["<think>", "hmm", "</think>", "\n\n", "pong"])
+        XCTAssertEqual(r.text, "pong")
+        XCTAssertEqual(r.stop.message.reasoning, "hmm")
+        XCTAssertEqual(r.stop.message.text, "pong")
+    }
+
+    func testAngleBracketThatIsNotAnOpenerIsReleased() {
+        let r = run(["a <b> c", " and 1 < 2"])
+        XCTAssertEqual(r.text, "a <b> c and 1 < 2")
+    }
+
+    func testBareJSONObjectIsAToolCall() {
+        let r = run(["{\"name\": \"f\", \"arguments\": {}}"], family: .generic)
+        XCTAssertEqual(r.stop.message.toolUses.map(\.name), ["f"]); XCTAssertEqual(r.text, "")
+    }
+
+    func testMaxTokensKeepsStopReason() {
+        let r = run(["partial answer"], stop: .maxTokens)
+        XCTAssertEqual(r.stop.stopReason, .maxTokens); XCTAssertEqual(r.text, "partial answer")
+    }
+}
