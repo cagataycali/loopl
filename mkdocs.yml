@@ -19,17 +19,24 @@ theme:
     text: Inter
     code: JetBrains Mono
   features:
+    - navigation.instant
+    - navigation.instant.progress
+    - navigation.tracking
     - navigation.tabs
     - navigation.tabs.sticky
     - navigation.sections
+    - navigation.path
     - navigation.top
     - navigation.footer
     - navigation.indexes
     - search.suggest
     - search.highlight
+    - search.share
     - content.code.copy
     - content.code.annotate
     - content.tabs.link
+    - content.tooltips
+    - announce.dismiss
     - toc.follow
   palette:
     - media: "(prefers-color-scheme: dark)"
@@ -50,6 +57,18 @@ theme:
 extra_css:
   - stylesheets/loopl.css
 
+plugins:
+  - search:
+      separator: '[\s\-,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
+  # Social cards (og:image per page). Needs cairo + pillow — the docs workflow installs them;
+  # set LOOPL_SOCIAL_CARDS=false for a quick local build without cairo.
+  - social:
+      enabled: !ENV [LOOPL_SOCIAL_CARDS, true]
+      cards_layout_options:
+        background_color: "#0f0f12"
+        color: "#ffffff"
+        font_family: Inter
+
 extra:
   social:
     - icon: fontawesome/brands/github
@@ -68,9 +87,25 @@ markdown_extensions:
   - toc:
       permalink: true
   - pymdownx.details
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.tabbed:
       alternate_style: true
+      slugify: !!python/object/apply:pymdownx.slugs.slugify
+        kwds:
+          case: lower
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.keys
+  - pymdownx.mark
+  - pymdownx.caret
+  - pymdownx.tilde
+  - def_list
+  - footnotes
+  - abbr
   - pymdownx.highlight:
       anchor_linenums: true
   - pymdownx.inlinehilite

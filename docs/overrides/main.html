@@ -1,7 +1,11 @@
 {% extends "base.html" %}
 {% block extrahead %}
-  <meta property="og:title" content="loopl — agents that run on the phone" />
-  <meta property="og:description" content="Native Swift agent SDK for on-device inference + a free iOS app. No cloud, no login." />
-  <meta property="og:url" content="https://loopl.dev/" />
-  <meta name="theme-color" content="#ff5a1f" />
+  {# og:title / og:description / og:image / twitter:* come from the social plugin #}
+  <meta property="og:site_name" content="loopl" />
+  <meta name="theme-color" content="#0f0f12" media="(prefers-color-scheme: dark)" />
+  <meta name="theme-color" content="#ff5a1f" media="(prefers-color-scheme: light)" />
+  <link rel="apple-touch-icon" href="{{ 'assets/loopl-mark.svg' | url }}" />
+{% endblock %}
+{% block announce %}
+  <span style="font-size:.7rem">loopl is pre-release — the SDK API is stabilising this week. <a href="{{ 'changelog/' | url }}" style="color:#ffb347">Changelog →</a></span>
 {% endblock %}

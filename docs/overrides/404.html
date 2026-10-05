@@ -1,0 +1,15 @@
+{% extends "main.html" %}
+{% block content %}
+<div class="loopl-404">
+  <h1>404</h1>
+  <p><strong>This page ran out of context.</strong><br>
+  The address <code id="loopl-404-path"></code> does not exist on loopl.dev — the docs were reorganised, or the link was mistyped.</p>
+  <div class="loopl-hero__cta">
+    <a class="loopl-btn loopl-btn--primary" href="{{ config.site_url }}">Home</a>
+    <a class="loopl-btn loopl-btn--ghost" href="{{ config.site_url }}getting-started/">Getting started</a>
+    <a class="loopl-btn loopl-btn--ghost" href="{{ config.site_url }}sdk/">SDK</a>
+    <a class="loopl-btn loopl-btn--ghost" href="https://github.com/cagataycali/loopl/issues/new">Report a broken link</a>
+  </div>
+  <script>document.getElementById("loopl-404-path").textContent = location.pathname;</script>
+</div>
+{% endblock %}

@@ -29,6 +29,8 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: requirements-docs.txt
+      - name: Native libs for social cards (cairo, freetype)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libcairo2-dev libfreetype6-dev libffi-dev libjpeg-dev libpng-dev libz-dev > /dev/null
       - run: pip install -r requirements-docs.txt
       - name: Regenerate models table from the bundled catalog
         run: python3 docs/gen_models.py
@@ -59,7 +61,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install -r requirements-docs.txt && python3 docs/gen_models.py && mkdocs build --strict
+      - run: pip install -r requirements-docs.txt && python3 docs/gen_models.py && LOOPL_SOCIAL_CARDS=false mkdocs build --strict
       - run: npx -y wrangler pages deploy site --project-name loopl --branch main
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

@@ -15,7 +15,7 @@ hide:
 
 <span class="loopl-hero__eyebrow">:material-fire: native swift · edge inference</span>
 
-<h1 class="loopl-hero__title">Agents that run on the phone.<br>No cloud, no login.</h1>
+<h1 class="loopl-hero__title">Agents that run <em>on the phone</em>.<br>No cloud, no login.</h1>
 
 <p class="loopl-hero__lead">
 <strong>loopl</strong> is a Swift agent SDK built for on-device inference — the Strands agent loop,
@@ -43,20 +43,20 @@ Coming from Strands Agents? <a href="sdk/strands-mapping/">See how loopl compare
 import Loopl
 import LooplRuntimes
 
-let model = MLXModel()                                   // Metal, on the phone
-try await model.load(spec, from: modelDir) { _ in }      // mlx-community/Qwen3-1.7B-4bit, 968 MB on disk
+// Qwen3-1.7B at 4-bit: 968 MB on disk, runs on Metal
+let model = MLXModel()
+try await model.load(spec, from: modelDir) { _ in }
 
 let agent = Agent(model: model,
                   tools: [CurrentTimeTool(), CalculatorTool()],
                   systemPrompt: "You are a concise assistant.")
 
-for try await event in agent.stream("What time is it in Istanbul, and what's 23*47?") {
+let q = "What time is it in Istanbul, and what's 23*47?"
+for try await event in agent.stream(q) {
     switch event {
-    case .text(let t):              print(t, terminator: "")
-    case .toolStarted(let call):    print("→ \(call.name)")
-    case .toolFinished(let r):      print("← \(r.content)")
-    case .metrics(let m) where m.finished: print("
-\(Int(m.tokensPerSecond)) tok/s")
+    case .text(let t):           print(t, terminator: "")
+    case .toolStarted(let call): print("→ \(call.name)")
+    case .toolFinished(let r):   print("← \(r.content)")
     default: break
     }
 }
@@ -66,7 +66,7 @@ for try await event in agent.stream("What time is it in Istanbul, and what's 23*
 
 </div>
 
-<div class="loopl-strip">
+<div class="loopl-strip" markdown>
 <span>:material-apple: iOS 18+ · iPhone 15 Pro+ recommended</span>
 <span>:material-wifi-off: works in airplane mode</span>
 <span>:material-account-off: no account, ever</span>
