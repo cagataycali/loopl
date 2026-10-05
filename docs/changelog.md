@@ -12,38 +12,53 @@ breaking change is called out under **Changed** with the old → new symbol.
     loopl is in its first week. The SDK surface is settling around the Strands event loop; until `0.2.0`
     ships, treat the pages under *SDK* as the direction, and the changelog as the contract.
 
-## 0.2.0 — in progress
+## 0.2.0 — in progress (main, 2026-10-05)
 
-Phase 2, driven by the first hands-on review of the app on an iPhone 16 Pro.
+Phase 2, driven by the first hands-on review of the app on an iPhone 16 Pro. Everything below is on `main`;
+the TestFlight build that carries it is being cut.
 
 ### Changed
-- **Event loop** — the agent loop is a faithful Swift port of the Strands `event_loop_cycle`: stream → assemble
-  the assistant message from stream events → run tools **concurrently** when `stopReason == toolUse` → append
-  the tool-result message → recurse. **There is no iteration cap and no loop detector.** The only bounds are
-  the context window (a sliding-window conversation manager trims by token estimate) and cancellation.
-- **Max-tokens recovery** — when a model stops on `maxTokens` mid tool call, the truncated assistant message is
-  repaired and appended, then `MaxTokensReachedError` is thrown; `agent()` continues from the history
-  (Strands `_recover_message_on_max_tokens_reached` + `MaxTokensReachedException`).
-- **Retries** — model errors are retried with exponential backoff (Strands' throttle path).
-- **Defaults** — generation parameters default to the model card's maximum sensible values (context from
-  the catalog's 8 GB recommendation, generate until stop).
+- **Event loop** — `Sources/Loopl` is now a faithful Swift port of Strands' `event_loop_cycle`: stream → `StreamAssembler`
+  → tools via a `ToolExecutor` (**concurrent** by default) → tool-result message → recurse. **No iteration cap, no loop
+  detector.** The context window (`SlidingWindowConversationManager`, the only limiter) and cancellation bound the loop.
+  44 tests on a scripted model: 25-deep tool chain, parallel tools, `maxTokens` recovery, retry/backoff, window trimming, hook order.
+- **Vocabulary** — `Message {role, content: [ContentBlock]}`, `ToolUse`/`ToolResult`, `StreamEvent`, `StopReason`,
+  `AgentEvent` (Strands' event names), `EventLoopMetrics`/`Usage`. `Model.stream(_:toolSpecs:systemPrompt:)` returns
+  `StreamEvent`s; tool-call markup is resolved inside each runtime by `ToolCallStreamGate`.
+- **Max-tokens recovery** — the truncated assistant message is repaired and appended, then `MaxTokensReachedError` is
+  thrown; `agent()` continues from the history (Strands `_recover_message_on_max_tokens_reached` + `MaxTokensReachedException`).
+- **Retries** — `ModelRetryStrategy` with Strands' defaults (6 attempts, 4 s → 240 s) on `ModelThrottledError`; `AgentEvent.throttle`.
+- **Defaults** — `GenerationParams.maxTokens = nil` (until stop), context from the catalog's 8 GB budget, temperature per model card.
+- **App** — chat is a document (no bubbles, no metrics strip; *Show performance details* adds a quiet footer), composer with
+  interactive keyboard dismiss, first-launch download of `mlx-community/Qwen3-0.6B-4bit` with inline progress and auto-reload of
+  the last model, Models tab → a tap-to-switch list, conversation history (sheet / iPad sidebar), new app icon + launch mark,
+  App Store screenshot sets (6.9", 6.5", iPad 13"). `UIBackgroundModes` removed (plain `URLSession` downloads).
+- **Package** — platforms iOS 18 / macOS 15; `LooplUI` builds on macOS.
 
 ### Added
-- **Hooks** — `BeforeInvocationEvent` / `AfterInvocationEvent`, `BeforeModelCallEvent` / `AfterModelCallEvent`,
-  `BeforeToolsEvent` / `AfterToolsEvent`, `BeforeToolCallEvent` / `AfterToolCallEvent`, `MessageAddedEvent`.
-- **GGUF runtime** — `GGUFModel` on the official llama.cpp xcframework (Metal, `n_gpu_layers = 99`,
-  sampler chain, token-by-token streaming, chat template via `llama_chat_apply_template`). Catalog gains
-  Qwen3-1.7B Q4_K_M, Llama 3.2 3B, gemma-3-1b and SmolLM2 GGUF entries.
-- **App** — automatic first-launch download of `mlx-community/Qwen3-0.6B-4bit` and auto-load of the last
-  model; a clean reading layout (no bubbles, no metrics strip — a debug sheet instead); keyboard dismiss on
-  swipe; new app icon and launch screen; iPad layout; Dynamic Type and VoiceOver passes; App Store screenshots.
-- **Docs** — this site rebuilt for quality: social cards, 404, instant navigation, versioned changelog;
-  SDK pages rewritten from the final sources with compiling snippets and a DocC API reference under `/api/`.
+- **Hooks** — `HookRegistry`/`HookProvider` with `BeforeInvocationEvent` / `AfterInvocationEvent`, `BeforeModelCallEvent` /
+  `AfterModelCallEvent`, `BeforeToolsEvent` / `AfterToolsEvent`, `BeforeToolCallEvent` / `AfterToolCallEvent`, `MessageAddedEvent`.
+- **Conversation managers** — `ConversationManager` protocol, `SlidingWindowConversationManager` (window 40, tool-result
+  truncation, proactive trim at 0.7 × context, `pinFirst`), `NullConversationManager`.
+- **GGUF runtime** — `GGUFModel` on the official llama.cpp xcframework `b11401` (Metal, `n_gpu_layers = 99`, sampler chain
+  top-p → min-p → temperature, chat template via `llama_chat_apply_template`, token-by-token streaming, overflow mapped to
+  `ContextWindowOverflowError`); `scripts/fetch-llama-xcframework.sh` vendors the framework (+ optional simulator slice).
+  Catalog: Qwen3 0.6B/1.7B/4B, Llama 3.2 3B, Gemma 3 1B, SmolLM2 1.7B as Q4_K_M.
+- **Docs** — loopl.dev rebuilt: brand mark, social cards, 404, instant navigation, this versioned changelog; every SDK page
+  written from the sources with `// snippet: compile` samples typechecked in CI (`docs/check_snippets.sh`), a type-name drift
+  gate (`docs/check_symbols.sh`), and the **DocC API reference** at [loopl.dev/api](https://loopl.dev/api/).
 
 ### Removed
-- `Budget.maxIterations`, `LoopDetector` (and the "max iterations: 8" setting in the app).
-- Hugging Face token: no token UI, no Keychain code — only **public, non-gated** repositories are listed.
-- The demo (scripted) runtime; `FakeModel` now lives in `Tests/` only.
+- `AgentConfig`, `Budget`, `LoopDetector`, `FinishReason`, `ModelEvent` (replaced by the vocabulary above; one-commit
+  deprecation shims in `Compat.swift` for `ToolUse(id:name:arguments:)`, `ToolResult(callId:…)`, `Message.assistant(text:toolCalls:)`).
+- Hugging Face token: no token UI, no `Keychain`, `HFDownloader()` is anonymous — only public, non-gated repositories are listed.
+- The demo (scripted) runtime and the "max iterations" setting; `FakeModel` now lives in `Tests/` only.
+
+### Roadmap
+- Device tok/s table for GGUF vs MLX on the same models.
+- Background `URLSession` downloads (today a locked phone pauses a download).
+- `SummarizingConversationManager` with the local model; Apple Foundation Models native `Tool` bridging.
+- TestFlight → App Store listing (free).
 
 ## 0.1.0 — 2026-10-05
 
