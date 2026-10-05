@@ -6,6 +6,7 @@ repo_name: cagataycali/loopl
 edit_uri: ""
 exclude_docs: |
   gen_models.py
+  check_snippets.sh
   overrides/
 copyright: "© 2026 Çağatay Çalı · loopl is open source · No data collected"
 

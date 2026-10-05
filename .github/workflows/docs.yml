@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - "docs/**"
+      - "Sources/**"
+      - "Package.swift"
       - "mkdocs.yml"
       - "requirements-docs.txt"
       - ".github/workflows/docs.yml"
@@ -39,6 +41,21 @@ jobs:
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
+
+  # Every ```swift block tagged `// snippet: compile` must typecheck against the current package (docs/check_snippets.sh).
+  snippets:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - uses: actions/cache@v4
+        with:
+          path: .build
+          key: snippets-spm-${{ runner.os }}-${{ hashFiles('Package.resolved') }}
+          restore-keys: snippets-spm-${{ runner.os }}-
+      - run: ./docs/check_snippets.sh
 
   deploy:
     needs: build

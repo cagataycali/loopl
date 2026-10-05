@@ -40,12 +40,15 @@ Coming from Strands Agents? <a href="sdk/strands-mapping/">See how loopl compare
 <div class="loopl-hero__code" markdown>
 
 ```swift
+// snippet: compile(wrap,runtimes)
 import Loopl
 import LooplRuntimes
 
 // Qwen3-1.7B at 4-bit: 968 MB on disk, runs on Metal
+let spec = Catalog.loadBundled().models.first { $0.id == "qwen3-1.7b-4bit" }!
+let dir = URL.documentsDirectory.appending(path: "models/\(spec.id)")   // where HFDownloader put it
 let model = MLXModel()
-try await model.load(spec, from: modelDir) { _ in }
+try await model.load(spec, from: dir) { _ in }
 
 let agent = Agent(model: model,
                   tools: [CurrentTimeTool(), CalculatorTool()],
@@ -132,13 +135,14 @@ Optional `Budget` caps for iterations, tool calls, wall time and tokens, plus a 
 ## One struct to a tool { .loopl-section-title }
 
 ```swift
+// snippet: compile
 struct Clock: Tool {
     let name = "current_time"
     let description = "Current date & time, optionally for an IANA time zone"
     let parameters = ToolSchema.object(["timezone": ToolSchema.string("e.g. Europe/Istanbul")])
     func call(_ args: [String: JSONValue]) async throws -> String {
         let tz = TimeZone(identifier: args["timezone"]?.stringValue ?? "") ?? .current
-        return Date().formatted(.dateTime.timeZone(tz))
+        return Date().formatted(Date.FormatStyle(date: .abbreviated, time: .shortened, timeZone: tz))
     }
 }
 ```
