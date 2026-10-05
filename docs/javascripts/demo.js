@@ -8,8 +8,10 @@
     document.documentElement.setAttribute('data-js', '');
     var reveal = new IntersectionObserver(function (entries) {
       entries.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add('is-on'); reveal.unobserve(e.target); } });
-    }, { threshold: 0.2 });
-    document.querySelectorAll('.loopl-reveal, .loopl-loop').forEach(function (el) { reveal.observe(el); });
+    }, { threshold: 0.15, rootMargin: '0px 0px 96px 0px' });
+    var targets = document.querySelectorAll('.loopl-reveal, .loopl-loop');
+    targets.forEach(function (el) { reveal.observe(el); });
+    setTimeout(function () { targets.forEach(function (el) { el.classList.add('is-on'); }); reveal.disconnect(); }, 3000);  // print / headless / odd viewports: never hide content
   }
   var demo = document.querySelector('.loopl-demo');
   if (!demo) return;

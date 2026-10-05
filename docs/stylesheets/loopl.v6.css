@@ -132,6 +132,9 @@ body, .md-typeset { font-family: var(--l-body); -webkit-font-smoothing: antialia
 .md-typeset .mermaid { text-align: center; }
 
 /* header / tabs / nav */
+/* keep the site name in the header — no swap to the page title on scroll */
+.md-header__topic:first-child { opacity: 1 !important; transform: none !important; pointer-events: auto !important; }
+.md-header__topic + .md-header__topic { display: none; }
 .md-header, .md-tabs { background: var(--l-bg); color: var(--l-ink); box-shadow: none; border-bottom: 1px solid var(--l-line); }
 .md-header[data-md-state="shadow"], .md-header--shadow { box-shadow: none; }
 .md-header__title, .md-tabs__link { font-family: var(--l-display); font-weight: 600; }
@@ -179,7 +182,7 @@ body, .md-typeset { font-family: var(--l-body); -webkit-font-smoothing: antialia
 /* reveal (demo.js adds [data-js] to <html>; reduced-motion and no-JS: everything simply visible) */
 html[data-js] .loopl-reveal { opacity: 0; transform: translateY(8px); transition: opacity .44s var(--ease), transform .44s var(--ease); }
 html[data-js] .loopl-reveal.is-on { opacity: 1; transform: none; }
-html[data-js] .loopl-reveal:nth-child(2) { transition-delay: .07s; } html[data-js] .loopl-reveal:nth-child(3) { transition-delay: .14s; } html[data-js] .loopl-reveal:nth-child(4) { transition-delay: .21s; }
+html[data-js] .loopl-reveal:nth-child(2) { transition-delay: .09s; } html[data-js] .loopl-reveal:nth-child(3) { transition-delay: .18s; } html[data-js] .loopl-reveal:nth-child(4) { transition-delay: .27s; }
 /* the recurse edge draws itself once the diagram is in view */
 html[data-js] .loopl-loop .l-draw { stroke-dasharray: 60; stroke-dashoffset: 60; transition: stroke-dashoffset .7s var(--ease) .25s; }
 html[data-js] .loopl-loop.is-on .l-draw { stroke-dashoffset: 0; }
