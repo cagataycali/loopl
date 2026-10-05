@@ -72,22 +72,22 @@ A faithful Swift port of the Strands event loop. The context window and your Sto
 <path d="M106 100 H184" marker-end="url(#arr)"/>
 <path d="M370 100 H448" marker-end="url(#arr)"/><text x="409" y="90" text-anchor="middle" fill="currentColor" stroke="none" opacity=".7" font-size="10.5">end_turn</text>
 <path d="M250 132 V184" marker-end="url(#arr)"/><text x="242" y="163" text-anchor="end" fill="currentColor" stroke="none" opacity=".7" font-size="10.5">tool_use</text>
-<path class="l-f" d="M310 190 V138" marker-end="url(#arrf)" stroke-width="2"/><text class="l-f" x="318" y="163" fill="currentColor" stroke="none" font-size="10.5">tool_result → again</text>
+<path class="l-f l-draw" d="M310 190 V138" marker-end="url(#arrf)" stroke-width="2"/><text class="l-f" x="318" y="163" fill="currentColor" stroke="none" font-size="10.5">tool_result → again</text>
 </svg>
 </figure>
 
 <div class="loopl-steps" markdown>
-<div class="loopl-step" markdown>
+<div class="loopl-step loopl-reveal" markdown>
 <span class="loopl-step__n">1</span>
 ### Stream
 The model streams text and tool-use blocks; `Transcript` renders each delta as it lands.
 </div>
-<div class="loopl-step" markdown>
+<div class="loopl-step loopl-reveal" markdown>
 <span class="loopl-step__n">2</span>
 ### Run tools
 Every call in the turn runs concurrently; results go back as one message.
 </div>
-<div class="loopl-step" markdown>
+<div class="loopl-step loopl-reveal" markdown>
 <span class="loopl-step__n">3</span>
 ### Recurse
 While the stop reason is `toolUse`, call the model again. `endTurn` yields the `AgentResult`.
@@ -159,10 +159,10 @@ While the stop reason is `toolUse`, call the model again. `endTurn` yields the `
 One `Model` protocol, three engines. Numbers from the app's self-test on real hardware — single runs, not averages.
 
 <div class="loopl-grid loopl-grid--4" markdown>
-<div class="loopl-stat"><b>41 tok/s</b><span>Qwen3-1.7B 4-bit · MLX Swift · iPhone 16 Pro</span></div>
-<div class="loopl-stat"><b>33 tok/s</b><span>Qwen3-1.7B Q4_K_M · llama.cpp GGUF · iPhone 16 Pro</span></div>
-<div class="loopl-stat"><b>0 MB</b><span>Apple Foundation Models · iOS 26 · no download</span></div>
-<div class="loopl-stat"><b>4 tools</b><span>one turn, concurrent · the run above · 1 tool round</span></div>
+<div class="loopl-stat loopl-reveal"><b>41 tok/s</b><span>Qwen3-1.7B 4-bit · MLX Swift · iPhone 16 Pro</span></div>
+<div class="loopl-stat loopl-reveal"><b>33 tok/s</b><span>Qwen3-1.7B Q4_K_M · llama.cpp GGUF · iPhone 16 Pro</span></div>
+<div class="loopl-stat loopl-reveal"><b>0 MB</b><span>Apple Foundation Models · iOS 26 · no download</span></div>
+<div class="loopl-stat loopl-reveal"><b>4 tools</b><span>one turn, concurrent · the run above · 1 tool round</span></div>
 </div>
 
 <div class="loopl-models">

@@ -2,9 +2,17 @@
    (core2/device-proof/selftest-qwen3-1.7b-4bit.log, 2026-10-05 10:50:53–59Z) at ~2× speed.
    Progressive: without JS every row is simply visible. Reduced motion → final state, no replay. */
 (function () {
-  var demo = document.querySelector('.loopl-demo');
-  if (!demo || !('IntersectionObserver' in window)) return;
+  if (!('IntersectionObserver' in window)) return;
   var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (!reduce) {
+    document.documentElement.setAttribute('data-js', '');
+    var reveal = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add('is-on'); reveal.unobserve(e.target); } });
+    }, { threshold: 0.2 });
+    document.querySelectorAll('.loopl-reveal, .loopl-loop').forEach(function (el) { reveal.observe(el); });
+  }
+  var demo = document.querySelector('.loopl-demo');
+  if (!demo) return;
   var steps = Array.prototype.slice.call(demo.querySelectorAll('[data-step]'));
   var status = demo.querySelector('.loopl-demo__status');
   var answer = demo.querySelector('.loopl-demo__a p');
