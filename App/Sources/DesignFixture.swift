@@ -84,6 +84,22 @@ enum DesignFixture {
             t.apply(.startEventLoop(cycle: 2))
             t.apply(.text("It's **06:14** on Sunday morning in Istanbul, and 23 × 47 = **1081**."))
             t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("It's **06:14** on Sunday morning in Istanbul, and 23 × 47 = **1081**."), metrics: EventLoopMetrics())))
+        case "edit":
+            // Hold-to-edit (lane EDIT-MESSAGE): a settled two-turn thread; holding "And in Tokyo?" → Edit /
+            // Copy / Delete from here, holding an answer → Copy / Retry. Save & regenerate and Retry are
+            // scripted (`regenerate`) because the fixture has no model behind it.
+            t.user("What time is it in Istanbul?")
+            t.apply(.startEventLoop(cycle: 1))
+            let c = ToolUse(toolUseId: "tooluse_e1", name: "current_time", input: ["timezone": .string("Europe/Istanbul")])
+            t.apply(.modelMessage(.assistant(text: "", toolUses: [c])))
+            t.apply(.toolStarted(c)); t.apply(.toolResult(ToolResult(toolUseId: "tooluse_e1", name: "current_time", content: "2026-10-06T06:14:09+03:00 (Europe/Istanbul, Tuesday)", durationMs: 1.8)))
+            t.apply(.startEventLoop(cycle: 2))
+            t.apply(.text("It's **06:14** on Tuesday morning in Istanbul."))
+            t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("It's **06:14** on Tuesday morning in Istanbul."), metrics: EventLoopMetrics())))
+            t.user("And in Tokyo?")
+            t.apply(.startEventLoop(cycle: 1))
+            t.apply(.text("Tokyo is six hours ahead of Istanbul, so it's **12:14** there."))
+            t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("Tokyo is six hours ahead of Istanbul, so it's **12:14** there."), metrics: EventLoopMetrics())))
         case "vision":
             // The exact exchange the macOS proof produced with Qwen3.5-0.8B-4bit on Tests/…/Fixtures/vision-test.png.
             let png = Bundle.main.url(forResource: "vision-test", withExtension: "png").flatMap { try? Data(contentsOf: $0) } ?? Data()
@@ -151,6 +167,25 @@ enum DesignFixture {
             for w in "Okay — I won't post it. Tell me if you'd like it changed first.".split(separator: " ") { _ = engine.transcript.apply(.text(String(w) + " ")); await sleep(0.04) }
         }
         _ = engine.transcript.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("done"), metrics: EventLoopMetrics())))
+    }
+
+    /// The `edit` scene has no agent: script the regenerated answer to an edited / retried user turn.
+    @MainActor static func regenerate(_ engine: Engine, text: String, images: [ImageBlock]) async {
+        func sleep(_ s: Double) async { try? await Task.sleep(for: .seconds(s)) }
+        engine.haptics.emit(.send)
+        engine.transcript.user(text, images: images)
+        await sleep(0.8)
+        _ = engine.transcript.apply(.startEventLoop(cycle: 1))
+        let lower = text.lowercased()
+        let cities: [(String, (String, String, String))] = [("tokyo", ("Tokyo", "12:14", "six hours ahead")), ("london", ("London", "04:14", "two hours behind")),
+                    ("new york", ("New York", "23:14 (Monday)", "seven hours behind")), ("berlin", ("Berlin", "05:14", "one hour behind")),
+                    ("sydney", ("Sydney", "14:14", "eight hours ahead"))]
+        // The LAST city named wins, so "Tokyo → London" edits answer about London.
+        let city = cities.compactMap { k, v in lower.range(of: k).map { ($0.lowerBound, v) } }.max { $0.0 < $1.0 }?.1 ?? ("there", "the same", "")
+        let answer = city.2.isEmpty ? "I'd need a city to compare with Istanbul — which one did you mean?"
+                                    : "\(city.0) is \(city.2) of Istanbul time, so it's **\(city.1)** there right now."
+        for tok in tokenize(answer) { _ = engine.transcript.apply(.text(tok)); await sleep(0.03) }
+        _ = engine.transcript.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant(answer), metrics: EventLoopMetrics())))
     }
 
     @MainActor static func replayApple(_ engine: Engine) async {

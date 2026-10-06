@@ -233,17 +233,26 @@ public struct UserTurn: View {
     public var text: String
     /// Pictures the user attached — rendered as tiles above the text (tap to zoom).
     public var images: [ImageBlock]
-    public init(_ text: String, images: [ImageBlock] = []) { self.text = text; self.images = images }
+    /// The built-in Copy menu. `EditableUserTurn` passes false and supplies the richer hold menu itself.
+    public var menu: Bool
+    public init(_ text: String, images: [ImageBlock] = [], menu: Bool = true) { self.text = text; self.images = images; self.menu = menu }
     public var body: some View {
+        // An EMPTY `.contextMenu {}` still installs the interaction and eats the long-press, so the Copy menu is
+        // attached only when asked for; with menu == false (EditableUserTurn) the outer hold menu owns the gesture.
+        if menu { turn.contextMenu { Button("Copy", systemImage: "doc.on.doc") { copy(text) } } } else { turn }
+    }
+    private var turn: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("You").font(.caption.weight(.semibold)).foregroundStyle(.secondary).textCase(.uppercase).kerning(0.6)
             if !images.isEmpty { ImageStrip(images).padding(.bottom, 2) }
             if !text.isEmpty {
-                Text(text).font(.body).lineSpacing(4).foregroundStyle(.primary.opacity(0.85)).textSelection(.enabled)
+                // With the hold menu the text is NOT selectable: a long-press on selectable text opens the selection UI
+                // and swallows the context menu. Copy is in the menu; Edit gives a real text field to select in.
+                let body = Text(text).font(.body).lineSpacing(4).foregroundStyle(.primary.opacity(0.85))
+                if menu { body.textSelection(.enabled) } else { body }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .contextMenu { Button("Copy", systemImage: "doc.on.doc") { copy(text) } }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(images.isEmpty ? "You said: \(text)" : "You sent \(images.count) image\(images.count == 1 ? "" : "s"): \(text)")
     }
@@ -449,6 +458,8 @@ public struct AgentTranscriptView<Empty: View, Banner: View>: View {
     private let banner: () -> Banner
     /// Human-in-the-loop: called when an `ApprovalCard` is answered (see `onApproval(_:)`).
     public var onApproval: ((ApprovalRequest, ApprovalDecision) -> Void)? = nil
+    /// Hold-to-edit (see MessageEditing.swift): nil = rows keep their Copy-only menus.
+    public var actions: TranscriptActions? = nil
     @State private var pinned = true
     @State private var lastCount = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -535,8 +546,13 @@ public struct AgentTranscriptView<Empty: View, Banner: View>: View {
 
     @ViewBuilder private func row(_ item: TranscriptItem) -> some View {
         switch item.kind {
-        case .user(let s): UserTurn(s, images: item.images).padding(.top, 8)
-        case .assistant(let s): StreamingTextView(s, streaming: transcript.isRunning && item.id == transcript.items.last?.id)
+        case .user(let s):
+            if let actions { EditableUserTurn(item: item, text: s, actions: actions).padding(.top, 8) }
+            else { UserTurn(s, images: item.images).padding(.top, 8) }
+        case .assistant(let s):
+            let streaming = transcript.isRunning && item.id == transcript.items.last?.id
+            if let actions { RetryableAssistantTurn(item: item, text: s, streaming: streaming, actions: actions) }
+            else { StreamingTextView(s, streaming: streaming) }
         case .toolUse(let c, let r):
             VStack(alignment: .leading, spacing: 8) {
                 ToolRow(call: c, result: r, expanded: expandTools)
@@ -575,6 +591,10 @@ enum JumpLog {
 }
 
 public extension AgentTranscriptView {
+    /// Hold a message to Edit / Copy / Delete from here (user rows) or Copy / Retry (assistant rows).
+    func transcriptActions(_ actions: TranscriptActions?) -> Self {
+        var copy = self; copy.actions = actions; return copy
+    }
     /// Route approval answers (`ApprovalCard`) to the agent — `agent.resolve(approval: req.id, decision)`.
     func onApproval(_ handler: @escaping (ApprovalRequest, ApprovalDecision) -> Void) -> Self {
         var copy = self; copy.onApproval = handler; return copy

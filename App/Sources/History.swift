@@ -15,8 +15,14 @@ struct SavedConversation: Codable, Identifiable, Hashable {
     var updated: Date
     var modelName: String?
     var items: [Item]
+    /// Set when the thread was rewritten (a message edited, retried, or cut) — optional so 0.1 files still decode.
+    var editedAt: Date?
 
-    static func from(_ t: Transcript, id: UUID, modelName: String?) -> SavedConversation? {
+    init(id: UUID, title: String, updated: Date, modelName: String?, items: [Item], editedAt: Date? = nil) {
+        self.id = id; self.title = title; self.updated = updated; self.modelName = modelName; self.items = items; self.editedAt = editedAt
+    }
+
+    static func from(_ t: Transcript, id: UUID, modelName: String?, editedAt: Date? = nil) -> SavedConversation? {
         let items: [Item] = t.items.compactMap {
             switch $0.kind {
             case .user(let s): .user(s)
@@ -34,7 +40,25 @@ struct SavedConversation: Codable, Identifiable, Hashable {
         }
         guard items.contains(where: { if case .user = $0 { return true }; return false }) else { return nil }
         let first = items.compactMap { if case .user(let s) = $0 { return s }; return nil }.first ?? "Conversation"
-        return SavedConversation(id: id, title: String(first.prefix(60)), updated: Date(), modelName: modelName, items: items)
+        return SavedConversation(id: id, title: String(first.prefix(60)), updated: Date(), modelName: modelName, items: items, editedAt: editedAt)
+    }
+
+    /// Everything strictly before the item at `index` (History-level "delete from here" / the kept half of an edit).
+    func truncated(before index: Int) -> SavedConversation {
+        var c = self
+        c.items = Array(items.prefix(max(0, index)))
+        c.editedAt = Date()
+        c.updated = c.editedAt!
+        return c
+    }
+
+    /// Replace the user message at `index` (must be a `.user` item) and drop everything after it.
+    func replacing(userAt index: Int, with text: String) -> SavedConversation? {
+        guard items.indices.contains(index), case .user = items[index] else { return nil }
+        var c = truncated(before: index)
+        c.items.append(.user(text))
+        if index == 0 { c.title = String(text.prefix(60)) }
+        return c
     }
 
     func transcript() -> Transcript {
@@ -79,9 +103,11 @@ final class ConversationArchive {
         conversations.insert(c, at: 0)
     }
 
-    func delete(_ c: SavedConversation) {
-        try? FileManager.default.removeItem(at: Self.root.appendingPathComponent("\(c.id.uuidString).json"))
-        conversations.removeAll { $0.id == c.id }
+    func delete(_ c: SavedConversation) { delete(id: c.id) }
+
+    func delete(id: UUID) {
+        try? FileManager.default.removeItem(at: Self.root.appendingPathComponent("\(id.uuidString).json"))
+        conversations.removeAll { $0.id == id }
     }
 
     func deleteAll() { conversations.forEach(delete) }
@@ -113,6 +139,7 @@ struct HistoryList: View {
                                 HStack(spacing: 6) {
                                     Text(c.updated, format: .relative(presentation: .named))
                                     if let m = c.modelName { Text("·"); Text(m) }
+                                    if c.editedAt != nil { Text("·"); Label("edited", systemImage: "pencil").labelStyle(.titleAndIcon).accessibilityLabel("edited") }
                                 }.font(.caption).foregroundStyle(.secondary).lineLimit(1)
                             }
                         }

@@ -73,6 +73,8 @@ public final class Engine {
     public let haptics = HapticBus()
     let archive = ConversationArchive()
     private(set) var currentId = UUID()
+    /// When the current thread was last rewritten by Edit / Retry / Delete from here (persisted with it).
+    private(set) var currentEditedAt: Date?
     private var model: (any Model)?
     private var agent: Agent?
     private var runTask: Task<Void, Never>?
@@ -191,7 +193,7 @@ public final class Engine {
     public func newConversation() {
         guard !isGenerating else { return }
         archiveCurrent()
-        transcript.clear(); agent = nil; currentId = UUID()
+        transcript.clear(); agent = nil; currentId = UUID(); currentEditedAt = nil
     }
 
     /// Reopen a saved conversation. The model starts a fresh context — the
@@ -200,17 +202,66 @@ public final class Engine {
         guard !isGenerating else { return }
         archiveCurrent()
         currentId = c.id
+        currentEditedAt = c.editedAt
         transcript = c.transcript()
         agent = nil
     }
 
     func delete(_ c: SavedConversation) {
         archive.delete(c)
-        if c.id == currentId { transcript.clear(); agent = nil; currentId = UUID() }
+        if c.id == currentId { transcript.clear(); agent = nil; currentId = UUID(); currentEditedAt = nil }
     }
 
     private func archiveCurrent() {
-        if let saved = SavedConversation.from(transcript, id: currentId, modelName: loadedModel?.name) { archive.upsert(saved) }
+        if let saved = SavedConversation.from(transcript, id: currentId, modelName: loadedModel?.name, editedAt: currentEditedAt) { archive.upsert(saved) }
+    }
+
+    // MARK: - Hold a message: Edit · Delete from here · Retry
+
+    /// Edit a user turn and regenerate: everything from that turn on is removed, the model's history is
+    /// rebuilt from what is kept (`Transcript.messages`), a FRESH agent is started on it and the edited
+    /// text is sent as an ordinary turn — tools, approvals and the event loop exactly as for a new message.
+    /// The pictures attached to the original turn travel with the edit.
+    public func edit(_ itemId: UUID, text: String) {
+        guard !isGenerating, loadedModel != nil, let item = transcript.item(itemId), case .user = item.kind else { return }
+        let kept = transcript.truncated(before: itemId)
+        rewrite(kept)
+        regenerate(text, images: item.images)
+    }
+
+    /// Re-run the agent from the user turn that owns `itemId` (an assistant row, a tool row — or a user row itself).
+    public func retry(_ itemId: UUID) {
+        guard !isGenerating, loadedModel != nil, let turn = transcript.userTurn(before: itemId), case .user(let text) = turn.kind else { return }
+        let kept = transcript.truncated(before: turn.id)
+        rewrite(kept)
+        regenerate(text, images: turn.images)
+    }
+
+    /// The edited / retried turn goes through `send` like any other. DEBUG design fixtures have no model
+    /// behind the "ready" state, so they replay a scripted answer instead (captures only).
+    private func regenerate(_ text: String, images: [ImageBlock]) {
+        if model == nil, DesignFixture.requested { Task { await DesignFixture.regenerate(self, text: text, images: images) }; return }
+        send(text, images: images)
+    }
+
+    /// Remove `itemId` and everything after it. The thread stays open for a new message.
+    public func deleteFrom(_ itemId: UUID) {
+        guard !isGenerating, transcript.index(of: itemId) != nil else { return }
+        rewrite(transcript.truncated(before: itemId))
+        if transcript.items.isEmpty { archive.delete(id: currentId) } else { archiveCurrent() }
+    }
+
+    /// Install a truncated transcript: the agent is rebuilt lazily on the kept history, the edit is stamped.
+    private func rewrite(_ kept: Transcript) {
+        transcript = kept
+        currentEditedAt = Date()
+        lastError = nil
+        if let model {
+            let a = Agent(model: model, tools: activeTools, systemPrompt: settings.systemPrompt, messages: kept.messages, hooks: [approvalPolicy])
+            agent = a
+        } else {
+            agent = nil
+        }
     }
 
     /// Can the loaded model look at pictures? (`ModelSpec.vision`, MLX runtime.) Gates the composer's attach button.
