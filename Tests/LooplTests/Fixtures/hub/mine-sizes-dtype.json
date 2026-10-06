@@ -1,0 +1,436 @@
+[
+ {
+  "id": "cagataydev/loopl-0.8b-4bit",
+  "private": true,
+  "gated": false,
+  "downloads": 4,
+  "likes": 0,
+  "lastModified": "2026-10-06T15:38:09.000Z",
+  "pipeline_tag": "image-text-to-text",
+  "library_name": "mlx",
+  "tags": [
+   "mlx",
+   "safetensors",
+   "loopl",
+   "image-text-to-text"
+  ],
+  "config": {
+   "architectures": [
+    "Qwen3_5ForConditionalGeneration"
+   ],
+   "model_type": "qwen3_5",
+   "quantization_config": {
+    "bits": 4
+   }
+  },
+  "safetensors": {
+   "parameters": {
+    "U32": 751894528,
+    "BF16": 101091392
+   },
+   "total": 852985920
+  },
+  "siblings": [
+   {
+    "rfilename": ".gitattributes"
+   },
+   {
+    "rfilename": "README.md"
+   },
+   {
+    "rfilename": "chat_template.jinja"
+   },
+   {
+    "rfilename": "config.json"
+   },
+   {
+    "rfilename": "generation_config.json"
+   },
+   {
+    "rfilename": "model.safetensors"
+   },
+   {
+    "rfilename": "model.safetensors.index.json"
+   },
+   {
+    "rfilename": "preprocessor_config.json"
+   },
+   {
+    "rfilename": "processor_config.json"
+   },
+   {
+    "rfilename": "tokenizer.json"
+   },
+   {
+    "rfilename": "tokenizer_config.json"
+   },
+   {
+    "rfilename": "video_preprocessor_config.json"
+   },
+   {
+    "rfilename": "vocab.json"
+   }
+  ]
+ },
+ {
+  "id": "cagataydev/loopl-2b-4bit",
+  "private": true,
+  "gated": false,
+  "downloads": 6,
+  "likes": 0,
+  "lastModified": "2026-10-06T15:40:27.000Z",
+  "pipeline_tag": "image-text-to-text",
+  "library_name": "mlx",
+  "tags": [
+   "mlx",
+   "safetensors",
+   "loopl",
+   "image-text-to-text"
+  ],
+  "config": {
+   "architectures": [
+    "Qwen3_5ForConditionalGeneration"
+   ],
+   "model_type": "qwen3_5",
+   "quantization_config": {
+    "bits": 4
+   }
+  },
+  "safetensors": {
+   "parameters": {
+    "U32": 1881276416,
+    "BF16": 331965248
+   },
+   "total": 2213241664
+  },
+  "siblings": [
+   {
+    "rfilename": ".gitattributes"
+   },
+   {
+    "rfilename": "README.md"
+   },
+   {
+    "rfilename": "chat_template.jinja"
+   },
+   {
+    "rfilename": "config.json"
+   },
+   {
+    "rfilename": "generation_config.json"
+   },
+   {
+    "rfilename": "model.safetensors"
+   },
+   {
+    "rfilename": "model.safetensors.index.json"
+   },
+   {
+    "rfilename": "preprocessor_config.json"
+   },
+   {
+    "rfilename": "processor_config.json"
+   },
+   {
+    "rfilename": "tokenizer.json"
+   },
+   {
+    "rfilename": "tokenizer_config.json"
+   },
+   {
+    "rfilename": "video_preprocessor_config.json"
+   },
+   {
+    "rfilename": "vocab.json"
+   }
+  ]
+ },
+ {
+  "id": "cagataydev/loopl-4b-4bit",
+  "private": true,
+  "gated": false,
+  "downloads": 0,
+  "likes": 0,
+  "lastModified": "2026-10-06T15:30:11.000Z",
+  "pipeline_tag": "image-text-to-text",
+  "library_name": "mlx",
+  "tags": [
+   "mlx",
+   "safetensors",
+   "loopl",
+   "image-text-to-text"
+  ],
+  "config": {
+   "architectures": [
+    "Qwen3_5ForConditionalGeneration"
+   ],
+   "model_type": "qwen3_5",
+   "quantization_config": {
+    "bits": 4
+   }
+  },
+  "safetensors": {
+   "parameters": {
+    "U32": 4204789760,
+    "BF16": 334475776
+   },
+   "total": 4539265536
+  },
+  "siblings": [
+   {
+    "rfilename": ".gitattributes"
+   },
+   {
+    "rfilename": "README.md"
+   },
+   {
+    "rfilename": "chat_template.jinja"
+   },
+   {
+    "rfilename": "config.json"
+   },
+   {
+    "rfilename": "generation_config.json"
+   },
+   {
+    "rfilename": "model.safetensors"
+   },
+   {
+    "rfilename": "model.safetensors.index.json"
+   },
+   {
+    "rfilename": "preprocessor_config.json"
+   },
+   {
+    "rfilename": "processor_config.json"
+   },
+   {
+    "rfilename": "tokenizer.json"
+   },
+   {
+    "rfilename": "tokenizer_config.json"
+   },
+   {
+    "rfilename": "video_preprocessor_config.json"
+   },
+   {
+    "rfilename": "vocab.json"
+   }
+  ]
+ },
+ {
+  "id": "mlx-community/Qwen3-VL-2B-Instruct-4bit",
+  "private": false,
+  "gated": false,
+  "downloads": 3185,
+  "likes": 2,
+  "lastModified": "2025-10-21T16:59:57.000Z",
+  "pipeline_tag": "image-text-to-text",
+  "library_name": "transformers",
+  "tags": [
+   "safetensors",
+   "image-text-to-text",
+   "mlx"
+  ],
+  "config": {
+   "architectures": [
+    "Qwen3VLForConditionalGeneration"
+   ],
+   "model_type": "qwen3_vl",
+   "quantization_config": {
+    "bits": 4
+   }
+  },
+  "safetensors": {
+   "parameters": {
+    "U32": 1720451072,
+    "BF16": 407080960
+   },
+   "total": 2127532032
+  },
+  "siblings": [
+   {
+    "rfilename": ".gitattributes"
+   },
+   {
+    "rfilename": "README.md"
+   },
+   {
+    "rfilename": "added_tokens.json"
+   },
+   {
+    "rfilename": "chat_template.jinja"
+   },
+   {
+    "rfilename": "chat_template.json"
+   },
+   {
+    "rfilename": "config.json"
+   },
+   {
+    "rfilename": "generation_config.json"
+   },
+   {
+    "rfilename": "merges.txt"
+   },
+   {
+    "rfilename": "model.safetensors"
+   },
+   {
+    "rfilename": "model.safetensors.index.json"
+   },
+   {
+    "rfilename": "preprocessor_config.json"
+   },
+   {
+    "rfilename": "special_tokens_map.json"
+   },
+   {
+    "rfilename": "tokenizer.json"
+   },
+   {
+    "rfilename": "tokenizer_config.json"
+   },
+   {
+    "rfilename": "video_preprocessor_config.json"
+   },
+   {
+    "rfilename": "vocab.json"
+   }
+  ]
+ },
+ {
+  "id": "mlx-community/Qwen3-8B-8bit",
+  "private": false,
+  "gated": false,
+  "downloads": 787,
+  "likes": 3,
+  "lastModified": "2025-04-28T22:26:57.000Z",
+  "pipeline_tag": "text-generation",
+  "library_name": "mlx",
+  "tags": [
+   "mlx",
+   "safetensors",
+   "text-generation"
+  ],
+  "config": {
+   "architectures": [
+    "Qwen3ForCausalLM"
+   ],
+   "model_type": "qwen3",
+   "quantization_config": {
+    "bits": 8
+   }
+  },
+  "safetensors": {
+   "parameters": {
+    "U32": 8190427136,
+    "BF16": 308224
+   },
+   "total": 8190735360
+  },
+  "siblings": [
+   {
+    "rfilename": ".gitattributes"
+   },
+   {
+    "rfilename": "README.md"
+   },
+   {
+    "rfilename": "added_tokens.json"
+   },
+   {
+    "rfilename": "config.json"
+   },
+   {
+    "rfilename": "merges.txt"
+   },
+   {
+    "rfilename": "model-00001-of-00002.safetensors"
+   },
+   {
+    "rfilename": "model-00002-of-00002.safetensors"
+   },
+   {
+    "rfilename": "model.safetensors.index.json"
+   },
+   {
+    "rfilename": "special_tokens_map.json"
+   },
+   {
+    "rfilename": "tokenizer.json"
+   },
+   {
+    "rfilename": "tokenizer_config.json"
+   },
+   {
+    "rfilename": "vocab.json"
+   }
+  ]
+ },
+ {
+  "id": "cagataydev/loopl-0.8b",
+  "private": true,
+  "gated": false,
+  "downloads": 0,
+  "likes": 0,
+  "lastModified": "2026-10-06T15:37:53.000Z",
+  "pipeline_tag": "image-text-to-text",
+  "library_name": "transformers",
+  "tags": [
+   "safetensors",
+   "image-text-to-text",
+   "loopl"
+  ],
+  "config": {
+   "architectures": [
+    "Qwen3_5ForConditionalGeneration"
+   ],
+   "model_type": "qwen3_5"
+  },
+  "safetensors": {
+   "parameters": {
+    "BF16": 852985920
+   },
+   "total": 852985920
+  },
+  "siblings": [
+   {
+    "rfilename": ".gitattributes"
+   },
+   {
+    "rfilename": "README.md"
+   },
+   {
+    "rfilename": "chat_template.jinja"
+   },
+   {
+    "rfilename": "config.json"
+   },
+   {
+    "rfilename": "generation_config.json"
+   },
+   {
+    "rfilename": "model.safetensors"
+   },
+   {
+    "rfilename": "preprocessor_config.json"
+   },
+   {
+    "rfilename": "scorecard.json"
+   },
+   {
+    "rfilename": "tokenizer.json"
+   },
+   {
+    "rfilename": "tokenizer_config.json"
+   },
+   {
+    "rfilename": "train_summary.json"
+   },
+   {
+    "rfilename": "video_preprocessor_config.json"
+   }
+  ]
+ }
+]
