@@ -406,6 +406,17 @@ enum DesignFixture {
             - Tool results are rendered as rows you can open.
             """))
             t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("…"), metrics: EventLoopMetrics())))
+        case "agents":
+            // Phase 6 sub-agent cards. Default = mid-flight: `weather` done · `notes` waiting for an approval ·
+            // `issues` started with wait:false (its row returned, the child runs on → background chip).
+            // `--design-agents finished` = everything settled: notes denied → failed, issues done + the wake line + the
+            // parent's second answer. `--design-agents live` streams the whole story over ~14 s (motion captures).
+            if value("--design-agents") == "live" {
+                engine.transcript = t
+                replay = Task { await replayAgents(engine, loop: CommandLine.arguments.contains("--design-loop")) }
+                return
+            }
+            seedAgents(&t, finished: value("--design-agents") == "finished")
         default: // streaming
             t.user("Explain what an agent loop is, in three short points, with a Swift example.")
             t.apply(.startEventLoop(cycle: 1))
@@ -429,6 +440,177 @@ enum DesignFixture {
             t.apply(.metrics(m))
         }
         engine.transcript = t
+    }
+
+    // MARK: agents scene (Phase 6 lane E)
+
+    static let agentsPrompt = "Check the weather in Hoboken and post a note about it, in parallel — and start a summary of the repo's newest issues in the background."
+    static func agentUse(_ id: String, name: String, prompt: String, task: String, tools: [String], wait: Bool = true) -> ToolUse {
+        ToolUse(toolUseId: id, name: "use_agent", input: ["action": .string("run"), "name": .string(name), "system_prompt": .string(prompt), "input": .string(task),
+                                                          "tools": .array(tools.map { .string($0) }), "wait": .bool(wait)])
+    }
+    static func agentInfo(_ id: String, _ use: ToolUse, startedAt: Date) -> SubAgentInfo {
+        let i = use.input
+        return SubAgentInfo(id: id, parentToolUseId: use.toolUseId, name: i["name"]?.stringValue ?? "agent", systemPrompt: i["system_prompt"]?.stringValue ?? "",
+                            input: i["input"]?.stringValue ?? "", tools: i["tools"]?.arrayValue?.compactMap(\.stringValue) ?? [],
+                            background: !(i["wait"]?.boolValue ?? true), startedAt: startedAt)
+    }
+    static let weatherUse = agentUse("tooluse_ag_w", name: "weather", prompt: "You check the weather with the http tool and answer in one line, in °C.", task: "Weather in Hoboken right now?", tools: ["http", "current_time"])
+    static let notesUse = agentUse("tooluse_ag_n", name: "notes", prompt: "You post short notes to the notes API. Never invent content.", task: "Post a note: 'Hoboken, 17 °C, partly cloudy'.", tools: ["http"])
+    static let issuesUse = agentUse("tooluse_ag_i", name: "issues", prompt: "You summarise GitHub issues in three bullets. Use the http tool; be brief.", task: "Summarise the three newest open issues of cagataycali/loopl.", tools: ["http"], wait: false)
+    static let notesPost = ToolUse(toolUseId: "tooluse_ag_n_post", name: "http",
+                                   input: ["method": "POST", "url": "https://notes.example.com/api/notes",
+                                           "headers": ["Authorization": "Bearer n0tes-secret", "Accept": "application/json"],
+                                           "body": ["text": "Hoboken, 17 °C, partly cloudy", "tags": ["weather"]]])
+    static let weatherHttp = ToolUse(toolUseId: "tooluse_ag_w_http", name: "http", input: ["url": .string("https://api.open-meteo.com/v1/forecast?latitude=40.74&longitude=-74.03&current=temperature_2m,weather_code")])
+    static let issuesHttp = ToolUse(toolUseId: "tooluse_ag_i_http", name: "http", input: ["url": .string("https://api.github.com/repos/cagataycali/loopl/issues?state=open&per_page=3")])
+    static let issuesSummary = "Three newest issues: **#118** composer mic placement, **#116** Models storage line, **#115** AX-XL settings rows — all opened today, none assigned."
+    static func done(_ text: String, stop: StopReason = .endTurn) -> AgentEvent { .result(AgentResult(stopReason: stop, message: .assistant(text), metrics: EventLoopMetrics())) }
+    static func wakeLine(_ info: SubAgentInfo, status: SubAgentStatus, result: String, endedAt: Date) -> String {
+        SubAgentWake.line(for: SubAgentEnvelope(info: info, status: status, result: result, endedAt: endedAt))
+    }
+
+    /// Settled fixtures carry a real end time, so elapsed reads the child's span, not "since launch".
+    static func endAgent(_ t: inout Transcript, _ id: String, at: Date) {
+        if let idx = t.agentIndex(id), case .agent(var run) = t.items[idx].kind { run.endedAt = at; t.items[idx].kind = .agent(run) }
+    }
+
+    /// The agents story as settled state. `finished:false` stops with notes waiting and issues in the background.
+    static func seedAgents(_ t: inout Transcript, finished: Bool) {
+        let t0 = Date().addingTimeInterval(finished ? -96 : -38)
+        let w = agentInfo("agent_w", weatherUse, startedAt: t0), n = agentInfo("agent_n", notesUse, startedAt: t0.addingTimeInterval(0.3)), i = agentInfo("agent_i", issuesUse, startedAt: t0.addingTimeInterval(0.6))
+        t.user(agentsPrompt)
+        t.apply(.startEventLoop(cycle: 1))
+        t.apply(.text("I'll run two helpers in parallel and start the issue summary in the background."))
+        t.apply(.modelMessage(.assistant(text: "I'll run two helpers in parallel and start the issue summary in the background.", toolUses: [weatherUse, notesUse, issuesUse])))
+        // weather — inline, done in 6.2 s
+        t.apply(.toolStarted(weatherUse)); t.apply(.childStarted(w)); t.apply(.childStatus(id: w.id, .running))
+        t.apply(.child(id: w.id, .startEventLoop(cycle: 1)))
+        t.apply(.child(id: w.id, .text("Fetching the current conditions.")))
+        t.apply(.child(id: w.id, .modelMessage(.assistant(text: "Fetching the current conditions.", toolUses: [weatherHttp]))))
+        t.apply(.child(id: w.id, .toolStarted(weatherHttp)))
+        t.apply(.child(id: w.id, .toolResult(ToolResult(toolUseId: weatherHttp.toolUseId, name: "http", content: "{\"status\":200,\"body\":{\"current\":{\"temperature_2m\":17.4,\"weather_code\":2}}}", durationMs: 412))))
+        t.apply(.child(id: w.id, .startEventLoop(cycle: 2)))
+        t.apply(.child(id: w.id, .text("Hoboken: **17 °C**, partly cloudy.")))
+        t.apply(.child(id: w.id, done("Hoboken: **17 °C**, partly cloudy.")))
+        t.apply(.childStatus(id: w.id, .done)); endAgent(&t, w.id, at: t0.addingTimeInterval(6.2))
+        t.apply(.toolResult(ToolResult(toolUseId: weatherUse.toolUseId, name: "use_agent", content: "{\"id\":\"agent_w\",\"status\":\"done\",\"result\":\"Hoboken: 17 °C, partly cloudy.\"}", durationMs: 6_200)))
+        // notes — inline, stops at the POST approval (waiting for you)
+        t.apply(.toolStarted(notesUse)); t.apply(.childStarted(n)); t.apply(.childStatus(id: n.id, .running))
+        t.apply(.child(id: n.id, .startEventLoop(cycle: 1)))
+        t.apply(.child(id: n.id, .text("Posting the note now.")))
+        t.apply(.child(id: n.id, .modelMessage(.assistant(text: "Posting the note now.", toolUses: [notesPost]))))
+        t.apply(.child(id: n.id, .approvalRequested(HttpTool().requiresApproval(for: notesPost.input)!.with(id: notesPost.toolUseId))))
+        // issues — wait:false: the row returns the envelope at once, the child runs on
+        t.apply(.toolStarted(issuesUse)); t.apply(.childStarted(i)); t.apply(.childStatus(id: i.id, .background))
+        t.apply(.toolResult(ToolResult(toolUseId: issuesUse.toolUseId, name: "use_agent", content: "{\"pending\":true,\"id\":\"agent_i\"}", durationMs: 4)))
+        t.apply(.child(id: i.id, .startEventLoop(cycle: 1)))
+        t.apply(.child(id: i.id, .modelMessage(.assistant(text: "", toolUses: [issuesHttp]))))
+        t.apply(.child(id: i.id, .toolStarted(issuesHttp)))
+        guard finished else { return }   // mid-flight: parent still running on the notes row
+        // --design-agents finished: the human denied the POST → notes failed; the parent answered; issues finished → wake → second answer.
+        t.apply(.child(id: n.id, .approvalResolved(id: notesPost.toolUseId, .deny(reason: "not now"))))
+        t.apply(.child(id: n.id, .forceStop("the note was not approved")))
+        t.apply(.child(id: n.id, done("Not posted — you declined the request.", stop: .cancelled)))
+        t.apply(.childStatus(id: n.id, .failed)); endAgent(&t, n.id, at: t0.addingTimeInterval(21))
+        t.apply(.toolResult(ToolResult(toolUseId: notesUse.toolUseId, name: "use_agent", status: .error, content: "{\"id\":\"agent_n\",\"status\":\"failed\",\"result\":\"Not posted — you declined the request.\"}", durationMs: 21_000)))
+        t.apply(.startEventLoop(cycle: 2))
+        let answer1 = "Hoboken is at **17 °C**, partly cloudy. The note was not posted — you declined it. The issue summary is still running in the background; I'll follow up when it lands."
+        t.apply(.text(answer1))
+        t.apply(done(answer1))
+        t.apply(.child(id: i.id, .toolResult(ToolResult(toolUseId: issuesHttp.toolUseId, name: "http", content: "{\"status\":200,\"body\":[{\"number\":118,\"title\":\"composer: mic on the right\"},{\"number\":116,\"title\":\"Models: storage line\"},{\"number\":115,\"title\":\"Settings rows at AX-XL\"}]}", durationMs: 688))))
+        t.apply(.child(id: i.id, .startEventLoop(cycle: 2)))
+        t.apply(.child(id: i.id, .text(issuesSummary)))
+        t.apply(.child(id: i.id, done(issuesSummary)))
+        t.apply(.childStatus(id: i.id, .done)); endAgent(&t, i.id, at: t0.addingTimeInterval(74))
+        t.note(wakeLine(i, status: .done, result: issuesSummary, endedAt: t0.addingTimeInterval(74)))
+        t.isRunning = true
+        t.apply(.startEventLoop(cycle: 1))
+        t.apply(.text(issuesSummary))
+        t.apply(done(issuesSummary))
+    }
+
+    /// The agents story over time: children stream their text, one waits for the human (auto-approved after 4 s so the
+    /// loop runs unattended), the background one finishes after the parent answered and wakes it.
+    @MainActor static func replayAgents(_ engine: Engine, loop: Bool) async {
+        func sleep(_ s: Double) async { try? await Task.sleep(for: .seconds(s)) }
+        func ev(_ e: AgentEvent) { _ = engine.transcript.apply(e) }
+        func stream(_ text: String, child: String? = nil, cps: Double = 28) async {
+            for word in text.split(separator: " ", omittingEmptySubsequences: false) {
+                let piece = String(word) + " "
+                if let child { ev(.child(id: child, .text(piece))) } else { ev(.text(piece)) }
+                await sleep(1 / cps)
+            }
+        }
+        repeat {
+            engine.transcript.clear()
+            await sleep(1.0)
+            engine.transcript.user(agentsPrompt); engine.haptics.emit(.send)
+            await sleep(0.8)
+            ev(.startEventLoop(cycle: 1))
+            await stream("I'll run two helpers in parallel and start the issue summary in the background.")
+            ev(.modelMessage(.assistant(text: "I'll run two helpers in parallel and start the issue summary in the background.", toolUses: [weatherUse, notesUse, issuesUse])))
+            await sleep(0.3)
+            let w = agentInfo("agent_w", weatherUse, startedAt: Date())
+            ev(.toolStarted(weatherUse)); ev(.childStarted(w)); ev(.childStatus(id: w.id, .running)); engine.haptics.emit(.toolStart)
+            await sleep(0.4)
+            let n = agentInfo("agent_n", notesUse, startedAt: Date())
+            ev(.toolStarted(notesUse)); ev(.childStarted(n)); ev(.childStatus(id: n.id, .running)); engine.haptics.emit(.toolStart)
+            await sleep(0.4)
+            let i = agentInfo("agent_i", issuesUse, startedAt: Date())
+            ev(.toolStarted(issuesUse)); ev(.childStarted(i)); ev(.childStatus(id: i.id, .background))
+            await sleep(0.2)
+            ev(.toolResult(ToolResult(toolUseId: issuesUse.toolUseId, name: "use_agent", content: "{\"pending\":true,\"id\":\"agent_i\"}", durationMs: 4)))
+            // weather streams and finishes
+            ev(.child(id: w.id, .startEventLoop(cycle: 1)))
+            await stream("Fetching the current conditions.", child: w.id)
+            ev(.child(id: w.id, .modelMessage(.assistant(text: "Fetching the current conditions.", toolUses: [weatherHttp]))))
+            ev(.child(id: w.id, .toolStarted(weatherHttp)))
+            // notes asks for its approval meanwhile
+            ev(.child(id: n.id, .startEventLoop(cycle: 1)))
+            await stream("Posting the note now.", child: n.id)
+            ev(.child(id: n.id, .modelMessage(.assistant(text: "Posting the note now.", toolUses: [notesPost]))))
+            ev(.child(id: n.id, .approvalRequested(HttpTool().requiresApproval(for: notesPost.input)!.with(id: notesPost.toolUseId)))); engine.haptics.emit(.approvalNeeded)
+            await sleep(1.2)
+            ev(.child(id: w.id, .toolResult(ToolResult(toolUseId: weatherHttp.toolUseId, name: "http", content: "{\"status\":200,\"body\":{\"current\":{\"temperature_2m\":17.4,\"weather_code\":2}}}", durationMs: 412))))
+            ev(.child(id: w.id, .startEventLoop(cycle: 2)))
+            await stream("Hoboken: **17 °C**, partly cloudy.", child: w.id)
+            ev(.child(id: w.id, done("Hoboken: **17 °C**, partly cloudy."))); ev(.childStatus(id: w.id, .done))
+            ev(.toolResult(ToolResult(toolUseId: weatherUse.toolUseId, name: "use_agent", content: "{\"id\":\"agent_w\",\"status\":\"done\",\"result\":\"Hoboken: 17 °C, partly cloudy.\"}", durationMs: 6_200))); engine.haptics.emit(.toolFinish)
+            // the issues child works in the background
+            ev(.child(id: i.id, .startEventLoop(cycle: 1)))
+            ev(.child(id: i.id, .modelMessage(.assistant(text: "", toolUses: [issuesHttp]))))
+            ev(.child(id: i.id, .toolStarted(issuesHttp)))
+            // the human approves (scripted after 4 s unless they tapped — the card's own buttons route through Engine.resolve)
+            await sleep(4)
+            if engine.transcript.agents.first(where: { $0.info.id == n.id })?.transcript.pendingApprovals.isEmpty == false {
+                ev(.child(id: n.id, .approvalResolved(id: notesPost.toolUseId, .approve)))
+            }
+            ev(.child(id: n.id, .toolStarted(notesPost)))
+            await sleep(0.9)
+            ev(.child(id: n.id, .toolResult(ToolResult(toolUseId: notesPost.toolUseId, name: "http", content: "{\"status\":201,\"body\":{\"id\":\"n_8821\"}}", durationMs: 640))))
+            ev(.child(id: n.id, .startEventLoop(cycle: 2)))
+            await stream("Posted — note n_8821.", child: n.id)
+            ev(.child(id: n.id, done("Posted — note n_8821."))); ev(.childStatus(id: n.id, .done))
+            ev(.toolResult(ToolResult(toolUseId: notesUse.toolUseId, name: "use_agent", content: "{\"id\":\"agent_n\",\"status\":\"done\",\"result\":\"Posted — note n_8821.\"}", durationMs: 9_100))); engine.haptics.emit(.toolFinish)
+            ev(.startEventLoop(cycle: 2))
+            await sleep(0.4)
+            let answer1 = "Hoboken is at **17 °C**, partly cloudy, and the note is posted. The issue summary is still running in the background — I'll follow up when it lands."
+            await stream(answer1)
+            ev(done(answer1))
+            await sleep(3)
+            ev(.child(id: i.id, .toolResult(ToolResult(toolUseId: issuesHttp.toolUseId, name: "http", content: "{\"status\":200,\"body\":[{\"number\":118},{\"number\":116},{\"number\":115}]}", durationMs: 688))))
+            ev(.child(id: i.id, .startEventLoop(cycle: 2)))
+            await stream(issuesSummary, child: i.id)
+            ev(.child(id: i.id, done(issuesSummary))); ev(.childStatus(id: i.id, .done))
+            await sleep(0.6)
+            engine.transcript.note(wakeLine(i, status: .done, result: issuesSummary, endedAt: Date())); engine.transcript.isRunning = true; engine.haptics.emit(.toolFinish)
+            ev(.startEventLoop(cycle: 1))
+            await sleep(0.5)
+            await stream(issuesSummary)
+            ev(done(issuesSummary))
+            await sleep(4)
+        } while loop && !Task.isCancelled
     }
 
     /// `history` scene: fixed ids so the UITest and the proof push are reproducible run to run.
@@ -518,6 +700,10 @@ enum DesignFixture {
 
     @MainActor static func resolve(_ engine: Engine, _ req: ApprovalRequest, _ decision: ApprovalDecision) async {
         func sleep(_ s: Double) async { try? await Task.sleep(for: .seconds(s)) }
+        // A child's card answered (agents scene): the decision goes to THAT child, the way the parent Agent bubbles it live.
+        if let run = engine.transcript.agents.first(where: { $0.transcript.pendingApprovals.contains { $0.id == req.id } }) {
+            await resolveChild(engine, run: run, req, decision); return
+        }
         _ = engine.transcript.apply(.approvalResolved(id: req.id, decision))
         let use = ToolUse(toolUseId: req.id, name: req.toolName, input: decision.input(default: req.input) ?? req.input)
         await sleep(0.35)
@@ -539,6 +725,42 @@ enum DesignFixture {
             for w in "Okay — I won't post it. Tell me if you'd like it changed first.".split(separator: " ") { _ = engine.transcript.apply(.text(String(w) + " ")); await sleep(0.04) }
         }
         _ = engine.transcript.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("done"), metrics: EventLoopMetrics())))
+    }
+
+    /// `agents` scene: the notes child after its POST card is answered — approve → posts, deny → the child stops (failed) —
+    /// then the parent's row returns and the parent answers.
+    @MainActor static func resolveChild(_ engine: Engine, run: SubAgentRun, _ req: ApprovalRequest, _ decision: ApprovalDecision) async {
+        func sleep(_ s: Double) async { try? await Task.sleep(for: .seconds(s)) }
+        func ev(_ e: AgentEvent) { _ = engine.transcript.apply(e) }
+        let id = run.info.id, parent = run.info.parentToolUseId
+        ev(.child(id: id, .approvalResolved(id: req.id, decision)))
+        let use = ToolUse(toolUseId: req.id, name: req.toolName, input: decision.input(default: req.input) ?? req.input)
+        await sleep(0.35)
+        let summary: String
+        if decision.isApproved {
+            ev(.child(id: id, .toolStarted(use))); engine.haptics.emit(.toolStart)
+            await sleep(0.9)
+            ev(.child(id: id, .toolResult(ToolResult(toolUseId: use.toolUseId, name: use.name, content: "{\"status\":201,\"body\":{\"id\":\"n_8821\"}}", durationMs: 640))))
+            ev(.child(id: id, .startEventLoop(cycle: 2)))
+            summary = "Posted — note n_8821."
+            for w in summary.split(separator: " ") { ev(.child(id: id, .text(String(w) + " "))); await sleep(0.04) }
+            ev(.child(id: id, done(summary))); ev(.childStatus(id: id, .done))
+            ev(.toolResult(ToolResult(toolUseId: parent, name: "use_agent", content: "{\"id\":\"\(id)\",\"status\":\"done\",\"result\":\"\(summary)\"}", durationMs: 9_100)))
+        } else {
+            ev(.child(id: id, .forceStop("the note was not approved")))
+            summary = "Not posted — you declined the request."
+            ev(.child(id: id, done(summary, stop: .cancelled))); ev(.childStatus(id: id, .failed))
+            ev(.toolResult(ToolResult(toolUseId: parent, name: "use_agent", status: .error, content: "{\"id\":\"\(id)\",\"status\":\"failed\",\"result\":\"\(summary)\"}", durationMs: 9_100)))
+        }
+        engine.haptics.emit(.toolFinish)
+        await sleep(0.5)
+        ev(.startEventLoop(cycle: 2))
+        await sleep(0.3)
+        let answer = decision.isApproved
+            ? "Hoboken is at **17 °C**, partly cloudy, and the note is posted. The issue summary is still running in the background — I'll follow up when it lands."
+            : "Hoboken is at **17 °C**, partly cloudy. The note was not posted — you declined it. The issue summary is still running in the background; I'll follow up when it lands."
+        for w in answer.split(separator: " ") { ev(.text(String(w) + " ")); await sleep(0.04) }
+        ev(done(answer))
     }
 
     /// The `edit` scene has no agent: script the regenerated answer to an edited / retried user turn.
