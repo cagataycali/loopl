@@ -29,7 +29,7 @@ The loop is model → tools → model, until the model answers. No iteration cap
 |---|---|
 | `Loopl` | `Agent`, `Tool`, `Model`, hooks, structured output, checkpoints, tracing — Foundation only |
 | `LooplRuntimes` | MLX (Metal, vision), llama.cpp (GGUF), Apple Foundation Models |
-| `LooplAppleTools` | `generate_image`, `generate_voice`, `transcribe`, `translate`, `read_text`, `describe_image`, `flashlight`, `vibrate`, `open_app` |
+| `LooplAppleTools` | `generate_image`, `generate_voice`, `transcribe`, `translate`, `describe_image`, `flashlight`, `vibrate`, `open_app` |
 | `LooplUI` | SwiftUI transcript, tool rows, approval card |
 
 Qwen3-1.7B on an iPhone 16 Pro: **41 tok/s** (MLX 4-bit), **33 tok/s** (llama.cpp Q4_K_M).

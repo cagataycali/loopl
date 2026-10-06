@@ -78,9 +78,8 @@ hide:
 <div class="l-tool"><code>flashlight</code><p>Torch on, off or dimmed.</p></div>
 <div class="l-tool"><code>vibrate</code><p>Haptic patterns: tap, success, heartbeat…</p></div>
 <div class="l-tool"><code>generate_voice</code><p>Speaks with on-device voices, Personal Voice included.</p></div>
-<div class="l-tool"><code>transcribe</code><p>Speech to text, offline.</p></div>
+<div class="l-tool"><code>transcribe</code><p>Speech to text, offline — record a take in the composer.</p></div>
 <div class="l-tool"><code>translate</code><p>Apple's offline translation packs.</p></div>
-<div class="l-tool"><code>read_text</code><p>OCR on an attached photo.</p></div>
 <div class="l-tool"><code>describe_image</code><p>Scene labels, faces, barcodes — Vision.</p></div>
 <div class="l-tool"><code>remember</code> · <code>recall</code><p>Notes the agent keeps between chats.</p></div>
 <div class="l-tool"><code>http</code><em>asks first</em><p>Any HTTPS request, behind a human approval card.</p></div>
