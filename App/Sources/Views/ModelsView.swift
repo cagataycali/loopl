@@ -17,11 +17,14 @@ struct ModelsView: View {
     /// The loopl collection (Models › "loopl models", top). Its tapped row → repo sheet, presented here like Mine's.
     @State private var collection = CollectionModel()
     @State private var collectionSelected: HubCatalog.Hit?
+    /// "More models" (the curated catalog beyond the featured loopl models) starts folded.
+    @State private var showMore = false
     @Namespace private var zoom
     @Namespace private var loadedMark
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    /// On this device (loaded first) · From Hugging Face · Recommended · Recommended GGUF.
+    /// On this device (loaded first) · From Hugging Face · More models (· GGUF when Settings shows them).
+    /// The loopl models themselves are the collection section above; their curated models.json twins are the bundled fallback only.
     private var sections: [(String, [ModelSpec])] {
         var out: [(String, [ModelSpec])] = []
         let available = store.catalog.models.filter { $0.runtime != .appleFM || AppleFoundationModel.availability().available }
@@ -39,10 +42,12 @@ struct ModelsView: View {
         let gguf = rest.filter { !$0.isFromHub && $0.runtime == .gguf }
         if !here.isEmpty { out.append((store.storage.volumes.isEmpty ? "On this device" : "Downloaded", here)) }
         if !hub.isEmpty { out.append(("From Hugging Face", hub)) }
-        if !curated.isEmpty { out.append(("Recommended", curated)) }
-        if !gguf.isEmpty { out.append(("Recommended · GGUF", gguf)) }
+        if !curated.isEmpty { out.append(("More models", curated)) }
+        if settings.showGGUF, showMore, !gguf.isEmpty { out.append(("More models · GGUF", gguf)) }
         return out
     }
+    /// "More models" folds the catalog depth behind one row; the other sections are always open.
+    private func folded(_ title: String) -> Bool { title.hasPrefix("More models") && !showMore }
 
     var body: some View {
         NavigationStack {
@@ -78,9 +83,38 @@ struct ModelsView: View {
                 MineSection(engine: engine, store: store, settings: settings, hf: engine.hf, mine: mine, selected: $mineSelected, zoom: zoom)
                 ForEach(sections, id: \.0) { title, rows in
                     Section {
-                        ForEach(rows) { spec in row(spec) }
-                    } header: { Text(title) } footer: {
-                        if title == "Recommended" { Text("Tap a model to use it — it downloads once, then runs offline. Context and output length are set to the model's recommended maximum automatically.") }
+                        if title.hasPrefix("More models") {
+                            if title == "More models" {
+                                Button {
+                                    LooplDesign.haptic(1)
+                                    withAnimation(LooplDesign.Motion.faded(LooplDesign.Motion.spring, reduceMotion)) { showMore.toggle() }
+                                } label: {
+                                    HStack {
+                                        Label {
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text("More models").font(.body.weight(.medium))
+                                                Text(showMore ? "Qwen3, Qwen3-VL, Llama 3.2, Gemma 3, Phi-4 mini, SmolLM, DeepSeek — the models loopl is tested with"
+                                                              : "\(rows.count) more the app is tested with — Qwen3, Llama 3.2, Gemma 3, Phi-4 mini…").font(.caption).foregroundStyle(.secondary)
+                                            }
+                                        } icon: { Image(systemName: "square.stack.3d.up").foregroundStyle(LooplDesign.accent) }
+                                        Spacer()
+                                        Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+                                            .rotationEffect(.degrees(showMore ? 90 : 0))
+                                    }
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityIdentifier("models-more")
+                                .accessibilityAddTraits(.isButton)
+                            }
+                            if !folded(title) { ForEach(rows) { spec in row(spec) } }
+                        } else {
+                            ForEach(rows) { spec in row(spec) }
+                        }
+                    } header: {
+                        if title == "More models · GGUF" { Text("GGUF · llama.cpp") } else if title != "More models" { Text(title) }
+                    } footer: {
+                        if title == "More models", showMore { Text("Tap a model to use it — it downloads once, then runs offline. Context and output length are set to the model's recommended maximum automatically.") }
                         if title == "From Hugging Face" { Text("Added from Browse. Swipe left to remove a row and its weights.") }
                     }
                 }

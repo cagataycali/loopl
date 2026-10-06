@@ -20,11 +20,13 @@ The first section of the tab is the [loopl collection on Hugging Face](https://h
 
 ## First launch
 
-Three cards — **Qwen3 0.6B** (fastest), **Qwen3.5 0.8B** (small, sees pictures), **Qwen3.5 2B** (smartest of the three, about 3 GB of memory). The line under them says what the download costs on the network you are on (Wi‑Fi, cellular, offline). On iOS 26 with Apple Intelligence on, *Use Apple Intelligence instead* skips the download. Skippable; the download carries on in the background.
+The mark draws itself, then three short pages show what you are about to get — an answer with the network off, an approval card you tap yourself, a photo and a recording turning into tool calls. They are the app's real components, not pictures; swipe or tap *Continue*, or *Skip* at any point.
 
-## The catalog
+Then three cards — **Qwen3 0.6B** (fastest), **Qwen3.5 0.8B** (small, sees pictures), **Qwen3.5 2B** (smartest of the three, about 3 GB of memory). The line under them says what the download costs on the network you are on (Wi‑Fi, cellular, offline). On iOS 26 with Apple Intelligence on, *Use Apple Intelligence instead* skips the download. While the first model downloads you can sign in to Hugging Face (optional — it unlocks your private models and *Train your own*) or tap *Later*. The download carries on in the background if you leave. *Settings › About › Show intro again* replays the whole thing.
 
-The models loopl is tested with — Qwen3, Qwen3.5, Qwen3‑VL, Llama 3.2, Gemma 3, Phi‑4 mini, SmolLM, as MLX 4‑bit and GGUF — listed with sizes on [Models](../models.md). The app checks memory and free space (on the phone or the [drive](storage.md) you download to) and says why when a model won't fit.
+## More models
+
+The rest of the catalog — the models loopl is tested with: Qwen3, Qwen3.5, Qwen3‑VL, Llama 3.2, Gemma 3, Phi‑4 mini, SmolLM, DeepSeek, listed with sizes on [Models](../models.md) — sits behind one **More models** row so the tab leads with the loopl models and Apple Intelligence. GGUF (llama.cpp, text only) builds are off the list until **Settings › Look & feel › Show GGUF builds**; anything already downloaded always stays under *On this device*. The app checks memory and free space (on the phone or the [drive](storage.md) you download to) and says why when a model won't fit.
 
 ## Browse Hugging Face
 

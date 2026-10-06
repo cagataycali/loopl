@@ -17,6 +17,9 @@ final class CollectionModel {
     /// Why the Hub could not be asked this time — shown quietly in the footer, the rows stay.
     var error: String?
     private(set) var loadedFor: String?
+    /// Bumped per load: a cancelled/stale load (the `.task(id: hf.author)` re-fires when the token resolves a moment after
+    /// launch) must not write its error or rows over the newer one's — the footer once said "updated now · couldn't reach".
+    private var generation = 0
     private let hub = HubCatalog(token: HFAccount.shared.provider)
     /// DEBUG `--design-collection bundled`: never touch the network (fixtures, UI tests, screenshots).
     static var bundledOnly: Bool {
@@ -38,12 +41,18 @@ final class CollectionModel {
         if Self.bundledOnly { return }
         let key = author ?? ""
         if !force, loadedFor == key, error == nil { return }
+        generation += 1
+        let mine = generation
         loading = true; error = nil
-        defer { loading = false }
+        defer { if mine == generation { loading = false } }
         do {
             let l = try await hub.collectionListing()
+            guard mine == generation else { return }
             listing = l; loadedFor = key
+        } catch is CancellationError {
+            return
         } catch {
+            guard mine == generation, !Task.isCancelled else { return }
             self.error = Self.quiet(error)
             loadedFor = key
         }
@@ -82,7 +91,7 @@ struct CollectionSection: View {
         if let listing = model.listing, !listing.rows.isEmpty {
             Section {
                 ForEach(listing.mlx) { row(row: $0) }
-                if !listing.gguf.isEmpty {
+                if settings.showGGUF, !listing.gguf.isEmpty {
                     DisclosureGroup(isExpanded: $showGGUF) {
                         ForEach(listing.gguf) { row(row: $0) }
                     } label: {
