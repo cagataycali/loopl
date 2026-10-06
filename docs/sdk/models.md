@@ -56,7 +56,22 @@ let hits = try await hub.search("qwen3", kind: .mlx)          // .gguf for GGUF 
 let spec = try await hub.resolve(hits[0].id)                 // runtime, size, context, RAM need
 ```
 
-`ModelSpec.minRAMGB` and `ctxUsable8GB` are what the app checks before a download. The bundled `Catalog` is listed on [Models](../models.md).
+`ModelSpec.minRAMGB` and `ctxUsable8GB` are what the app checks before a download.
+
+## Private repos
+
+Hand both a token provider and the same calls reach the user's private repos. `HFTokenProvider` is a closure, read per request, so signing out takes effect at once; `HFAccount` keeps one token in the Keychain.
+
+```swift
+// snippet: compile(wrap)
+let account = HFAccount.shared                                   // try account.setToken("hf_…") once
+let hub = HubCatalog(token: account.provider)
+let downloader = HFDownloader(token: account.provider)
+let mine = try await hub.mine(author: account.username ?? "me")  // MLX + GGUF, private ones included
+_ = (mine, downloader)
+```
+
+Without a token both stay anonymous. A redirect to the CDN drops the authorization header. The bundled `Catalog` is listed on [Models](../models.md).
 
 A repo exported with transformers 5 names a `tokenizer_class` the Swift tokenizer has never heard of (`Qwen3_5Tokenizer`). The MLX runtime loads it anyway — the BPE in `tokenizer.json` is the same — and when a load still fails on those files, `HFDownloader.repairSmallFiles` refreshes only the small files whose git blob hash differs from the Hub's; the weights stay. `TokenizerFiles.audit(dir)` tells you beforehand.
 
@@ -70,6 +85,20 @@ local `config.json` (`LocalModelFiles.hasVisionTower`), so the composer's photo 
 `cagataydev/loopl-*` (and any repo tagged `loopl`, including one you trained from the app) carry `ModelSpec.persona == .loopl`.
 They were trained with `LooplPersona.systemPrompt` as their system turn, so the app sends it first and your own system prompt
 after it — the text is in Settings › System prompt, under *loopl identity (built in)*.
+
+## Where the weights live
+
+A model directory can sit on an external drive. `ModelLocation` is `.internalStorage` or a folder on a volume the user picked (`StorageBookmark`, a security-scoped bookmark); `StorageManifest` records which model lives where. `ExternalStorage.move(directory:to:)` copies, checks sizes and SHA-256, then deletes the source — and rolls back on failure. `ExternalStorage.ensureSpace(need:at:volumeName:)` refuses a download that would leave less than 200 MB.
+
+## See what the model saw
+
+`MLXModel.setTrace` reports each generation as a `GenerationTrace`: the prompt after the chat template (special tokens kept), the raw output before any parsing, and the tool calls the runtime's own detector accepted or rejected.
+
+```swift
+// snippet: compile(wrap,runtimes)
+let model = MLXModel()
+await model.setTrace { t in print(t.promptTokens, t.nativeToolCalls, t.raw.prefix(80)) }
+```
 
 ## Speed
 
