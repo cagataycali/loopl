@@ -272,8 +272,9 @@ public struct TrainingPlan: Hashable, Sendable, Codable {
         case .fixed(let n): passes = "in \(n) pass\(n == 1 ? "" : "es")"
         }
         let how = method == .full ? "Every weight is updated" : "A small LoRA adapter is trained and merged in"
+        let article = flavor.label.first.map { "AEFHILMNORSX".contains($0) ? "an" : "a" } ?? "a"   // "an A10G", "an H200", "a T4"
         let formats = skipMLX ? "." : (skipGGUF ? ", ready for your iPhone." : ", ready for your iPhone and as GGUF.")
-        return "\(start) and \(what) \(passes). \(how) on a \(flavor.label) at Hugging Face; the result is saved privately as \(outputRepo(user: user))\(formats)"
+        return "\(start) and \(what) \(passes). \(how) on \(article) \(flavor.label) at Hugging Face; the result is saved privately as \(outputRepo(user: user))\(formats)"
     }
 }
 
