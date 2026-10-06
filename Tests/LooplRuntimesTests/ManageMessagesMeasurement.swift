@@ -80,8 +80,11 @@ final class ManageMessagesMeasurement: XCTestCase {
                 let rec = ToolCallAuditTests.Recorder(); await model.setTrace { rec.trace($0) }
                 let tools: [any Tool] = [CurrentTimeTool(), CalculatorTool(), MemoryToolsAuditTests.DeviceInfoStandIn(), RememberTool(), RecallTool(), HttpTool(), ManageMessagesTool()]
                 let history = sc.seeded ? Self.seededHistory() : []
+                // The cap counts assistant turns in the WHOLE history, so it is offset by the seed; no sliding window → the seed is what the model sees.
                 let agent = Agent(model: model, tools: tools, systemPrompt: MemoryToolsAuditTests.systemPrompt, messages: history,
-                                  hooks: [ApprovalPolicy(mode: .mutating), ToolCallAuditTests.CycleCap(maxCycles: 4)], retryStrategy: nil)
+                                  conversationManager: NullConversationManager(),
+                                  hooks: [ApprovalPolicy(mode: .mutating), ToolCallAuditTests.CycleCap(maxCycles: 4 + history.filter { $0.role == .assistant }.count)],
+                                  retryStrategy: nil)
                 var answer = "", status = "none", edited = false
                 let t0 = Date()
                 do {
