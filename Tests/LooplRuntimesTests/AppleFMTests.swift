@@ -290,7 +290,7 @@ final class AppleFMTests: XCTestCase {
         XCTAssertEqual(built.mode, .call)
         XCTAssertEqual(built.prompt, "what time is it in Istanbul?")
         XCTAssertTrue(built.instructions.hasPrefix("Be brief."))
-        XCTAssertTrue(built.instructions.contains("- current_time(timezone?: string) — Current date and time"))
+        XCTAssertTrue(built.instructions.contains("- current_time — Current date and time, optionally in a given IANA timezone. Arguments: timezone (string, optional)."), built.instructions)
     }
 
     func testToolDocsAreCompactAndOrderRequiredFirst() {
@@ -298,7 +298,8 @@ final class AppleFMTests: XCTestCase {
                             inputSchema: ToolSchema.object(["url": ToolSchema.string("the URL"),
                                                             "method": ToolSchema.string("GET/POST")],
                                                            required: ["url"]))
-        XCTAssertEqual(AppleFMPrompt.toolDocs([spec]), "- http(url: string, method?: string) — Makes a request.")
+        XCTAssertEqual(AppleFMPrompt.toolDocs([spec]), "- http — Makes a request. Arguments: url (string), method (string, optional).")
+        XCTAssertFalse(AppleFMPrompt.toolDocs([spec]).contains("http("), "no signature shape — FM mimics it as a pseudo-call")
     }
 
     // MARK: - the guard itself

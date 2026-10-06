@@ -14,6 +14,17 @@ public protocol Tool: Sendable {
     /// agent's schema pre-check (`ToolValidation`) then leaves the input alone.
     /// Default `false`.
     var validatesOwnInput: Bool { get }
+    /// A runtime this tool merely wraps. When the agent's model *is* that runtime
+    /// the tool is not offered (and not run): asking Apple Intelligence to call an
+    /// `apple_intelligence` tool makes a 3B model summarise "hey" in a loop.
+    /// Default `nil` — offered to every model.
+    var redundantWithRuntime: RuntimeKind? { get }
+}
+
+extension Tool {
+    public var redundantWithRuntime: RuntimeKind? { nil }
+    /// Whether this tool is offered to a model of `kind` (see `redundantWithRuntime`).
+    public func isOffered(to kind: RuntimeKind) -> Bool { redundantWithRuntime != kind }
 }
 
 public struct ToolError: LocalizedError, Sendable {

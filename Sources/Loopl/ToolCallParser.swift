@@ -158,7 +158,7 @@ public struct ToolCallParser: Sendable {
         if let fn = obj?["function"]?.objectValue { obj = fn }
         guard let obj, let name = obj["name"]?.stringValue, !name.isEmpty else { return nil }
         var args = obj["arguments"] ?? obj["parameters"] ?? obj["args"] ?? .object([:])
-        if let s = args.stringValue, let parsed = JSONValue.parse(s) { args = parsed }
+        if let s = args.stringValue { args = JSONValue.parse(s) ?? .object(["_": .string(s)]) }   // a bare string → `_` (ToolValidation lifts it into the lone required key)
         let id = obj["id"]?.stringValue ?? ToolUse.makeId()
         return ToolUse(toolUseId: id, name: name, input: args.objectValue ?? [:])
     }

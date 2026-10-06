@@ -52,19 +52,28 @@ public enum AppleFMPrompt {
         var out = ""
         if let s = systemPrompt, !s.isEmpty { out += s + "\n\n" }
         guard !toolSpecs.isEmpty else { return out.trimmingCharacters(in: .whitespacesAndNewlines) }
-        out += "You can use these tools:\n\(toolDocs(toolSpecs))\n\n"
-        out += "To use a tool, reply with ONLY a JSON object inside a ```json fence: {\"name\": \"<tool>\", \"arguments\": {...}}.\n"
+        // Measured on the real model (macOS 26.4.1, 2026-10-06, 3 runs each): with the
+        // previous wording "hey" became a fenced tool call 3/3 (and `{"name": "hello"}`
+        // 1/2 with no such tool). This wording: greetings/small talk → prose 6/6, the
+        // time question → exactly one `current_time` call 3/3, arithmetic → one
+        // `calculator` call 3/3. Order matters: "answer directly" comes before the tools.
+        out += "Answer the user directly in plain text. Greetings, small talk and anything you already know need no tool.\n\n"
+        out += "Tools you may call ONLY when the request genuinely needs one:\n\(toolDocs(toolSpecs))\n\n"
+        out += "To call a tool, reply with ONLY this, nothing else: ```json\n{\"name\": \"<one of the tool names above>\", \"arguments\": {...}}\n```\n"
         switch mode {
         case .call:
-            out += "When the result arrives you will be asked to answer in plain text."
+            out += "Never invent a tool name. Never answer in JSON. When a result arrives you will be asked to answer in plain text."
         case .answer:
-            out += "A result that is already in the conversation has ALREADY been produced for you — never ask for that tool again. Use the values you were given and answer in plain text."
+            out += "Never answer in JSON. A result that is already in the conversation has ALREADY been produced for you — never ask for that tool again. Use the values you were given and answer in plain text."
         }
         return out
     }
 
-    /// One compact line per tool: `- name(arg: type, opt?: type) — description`.
-    /// Deliberately not JSON — see the note on `tokengeneration Code=10`.
+    /// One compact line per tool: `- name — description. Arguments: a (type), b (type, optional).`
+    /// Deliberately not JSON — see the note on `tokengeneration Code=10` — and deliberately
+    /// not a signature: shown `current_time(timezone?: string)`, FM wrote
+    /// `current_time("Europe/Istanbul")` as its answer 1–2 times in 6 (a pseudo-call no
+    /// parser should accept); the prose form produced the JSON call 6/6.
     public static func toolDocs(_ specs: [ToolSpec]) -> String {
         specs.map { spec in
             let schema = spec.inputSchema.objectValue ?? [:]
@@ -77,13 +86,32 @@ public enum AppleFMPrompt {
             let args = order.map { key -> String in
                 let p = props[key]?.objectValue ?? [:]
                 let type = p["type"]?.stringValue ?? "string"
-                return "\(key)\(required.contains(key) ? "" : "?"): \(type)"
+                return "\(key) (\(type)\(required.contains(key) ? "" : ", optional"))"
             }.joined(separator: ", ")
-            var line = "- \(spec.name)(\(args))"
+            var line = "- \(spec.name)"
             let d = spec.description.trimmingCharacters(in: .whitespacesAndNewlines)
             if !d.isEmpty { line += " — \(d)" }
+            if !args.isEmpty { line += (line.hasSuffix(".") ? " " : ". ") + "Arguments: \(args)." }
             return line
         }.joined(separator: "\n")
+    }
+
+    // MARK: pseudo-calls
+
+    /// `current_time("Europe/Istanbul")`, `current_time "Europe/Istanbul"` or
+    /// `current_time -- timezone=Europe/Istanbul` as the whole reply: the model meant a
+    /// tool call and wrote a signature instead (seen 1–2 times in 8 with a terse system
+    /// prompt). Returns the tool name when `text` is one short line that starts with a
+    /// known tool name followed by anything but a letter (so "current_time is a tool…"
+    /// stays prose), and the runtime re-asks once, insisting.
+    public static func pseudoCall(in text: String, toolNames: [String]) -> String? {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty, t.count <= 160, !t.contains("\n") else { return nil }
+        for name in toolNames where t.hasPrefix(name) {
+            let rest = t.dropFirst(name.count).drop(while: { $0 == " " })
+            if let c = rest.first, !c.isLetter { return name }
+        }
+        return nil
     }
 
     // MARK: prompt
@@ -92,8 +120,13 @@ public enum AppleFMPrompt {
         switch mode {
         case .call:
             let lines = transcript(messages)
-            if lines.count == 1, case .user(let text) = lines[0] { return text }   // single question: ask it bare
-            return lines.map(\.rendered).joined(separator: "\n")
+            var out: String
+            if lines.count == 1, case .user(let text) = lines[0] { out = text }   // single question: ask it bare
+            else { out = lines.map(\.rendered).joined(separator: "\n") }
+            if insisting {
+                out += "\n\n(If a tool is needed, reply with ONLY the JSON object in a ```json fence exactly as instructed — a tool is never used by writing its name. Otherwise answer in plain text.)"
+            }
+            return out
         case .answer:
             let results = messages.last?.toolResults ?? []
             let history = transcript(messages.dropLast())

@@ -88,6 +88,20 @@ public actor AppleFoundationModel: Model {
                         stats = attempt.stats
                     }
 
+                    // `current_time("Europe/Istanbul")` as the whole reply: a call written as a
+                    // signature. Re-ask once, insisting on the JSON shape; the UI's text is replaced.
+                    if built.mode == .call, !attempt.sawToolUse,
+                       AppleFMPrompt.pseudoCall(in: attempt.visibleText, toolNames: toolSpecs.map(\.name)) != nil {
+                        if attempt.textOpened { continuation.yield(.contentBlockDelta(.textReplace(""))) }
+                        let insisted = AppleFMPrompt.build(messages: messages, toolSpecs: toolSpecs,
+                                                           systemPrompt: systemPrompt, insisting: true)
+                        attempt = try await self.generate(instructions: insisted.instructions, prompt: insisted.prompt,
+                                                          params: params, repeatGuard: repeatGuard,
+                                                          started: started, stats: stats,
+                                                          emit: { continuation.yield($0) }, suppressMessageStart: true)
+                        stats = attempt.stats
+                    }
+
                     if attempt.emptyRepeat {
                         // Twice in a row (or in `call` mode with nothing else to say): present what
                         // the tools produced rather than recurse for ever or invent a sentence.
@@ -120,6 +134,11 @@ public actor AppleFoundationModel: Model {
         var finishEvents: [StreamEvent]
         /// Every tool call this turn produced was a repeat, and it said nothing else.
         var emptyRepeat: Bool
+        /// The text the UI has (deltas + replaces), after `finish()`.
+        var visibleText: String
+        var sawToolUse: Bool
+        /// A text content block was opened towards the UI during this attempt.
+        var textOpened: Bool
     }
 
     private func generate(instructions: String, prompt: String, params: GenerationParams,
@@ -132,54 +151,121 @@ public actor AppleFoundationModel: Model {
                                               maxTokens: params.maxTokens)
         let guardCopy = repeatGuard
         var gate = ToolCallStreamGate(family: .generic, suppress: { guardCopy.isRepeat($0) })
-        // REPLACE semantics. `LanguageModelSession.streamResponse` yields the whole response
-        // so far, and a snapshot is NOT guaranteed to extend the previous one (the model may
-        // revise what it has written). Treating a non-extending snapshot as "skip" silently
-        // DROPPED that text; the newest snapshot is always the truth, so keep it and parse once.
-        var latest = ""
+        var emitted = ""
+        var visibleText = ""
+        var sawToolUse = false
+        var textOpened = false
         var first: Date?
+
+        func classify(_ events: [StreamEvent]) {
+            for e in events {
+                if case .contentBlockDelta(.text(let t)) = e { visibleText += t }
+                if case .contentBlockDelta(.textReplace(let t)) = e { visibleText = t }
+                if case .contentBlockStart(.toolUse) = e { sawToolUse = true }
+                if case .contentBlockStart(.text) = e { textOpened = true }
+            }
+        }
 
         for try await snapshot in session.snapshots(prompt: prompt) {
             try Task.checkCancellation()
-            guard snapshot != latest else { continue }
-            latest = snapshot
+            guard snapshot != emitted else { continue }
+            if !snapshot.hasPrefix(emitted) {
+                // A snapshot that does not extend the previous one (FM revised what it
+                // had said). Re-run a fresh gate over the whole snapshot and tell the
+                // UI the text is now exactly that — never drop it, never duplicate it.
+                var fresh = ToolCallStreamGate(family: .generic, suppress: { guardCopy.isRepeat($0) })
+                let replay = fresh.feed(snapshot)
+                let wasOpen = gate.isTextBlockOpen
+                emitted = snapshot
+                gate = fresh
+                var replaced: [StreamEvent] = []
+                if gate.isTextBlockOpen {
+                    if !wasOpen { replaced.append(.contentBlockStart(.text)) }
+                    replaced.append(.contentBlockDelta(.textReplace(gate.visibleText)))
+                } else if wasOpen {
+                    replaced.append(.contentBlockDelta(.textReplace("")))
+                }
+                for e in replay where !isMessageStart(e) {         // a tool block opening mid-replay is forwarded as-is
+                    if case .contentBlockStart(.toolUse) = e { replaced.append(e) }
+                }
+                visibleText = gate.visibleText
+                classify(replaced)
+                for e in replaced { emit(e) }
+                emit(.metadata(stats))
+                continue
+            }
+            let delta = String(snapshot.dropFirst(emitted.count))
+            emitted = snapshot
+            if delta.isEmpty { continue }
             if first == nil { first = Date(); stats.ttftMs = first!.timeIntervalSince(started) * 1000 }
-            stats.generatedTokens = latest.count / 4
+            stats.generatedTokens = emitted.count / 4
             stats.contextUsed = stats.promptTokens + stats.generatedTokens
             if let f = first { let dt = Date().timeIntervalSince(f); if dt > 0.05 { stats.tokensPerSecond = Double(stats.generatedTokens) / dt } }
-            emit(.metadata(stats))          // the UI keeps its live pulse; the text waits (see below)
+            let live = gate.feed(delta)
+            classify(live)
+            for e in live where !(suppressMessageStart && isMessageStart(e)) { emit(e) }
+            emit(.metadata(stats))
         }
 
-        // PROSE IS HELD until the whole turn is known. A ~3B model happily writes the answer
-        // AND another tool call in one turn; streaming that prose would print an answer before
-        // the tool result exists — and then again after it. Parsed once, at the end, the turn is
-        // unambiguous: prose + a surviving call ⇒ the prose was thinking-out-loud (`reasoning`),
-        // prose alone ⇒ the answer.
-        var events = gate.feed(latest)
-        events += gate.finish()
-        var visibleText = ""
-        var sawToolUse = false
-        for e in events {
-            if case .contentBlockDelta(.text(let t)) = e { visibleText += t }
-            if case .contentBlockStart(.toolUse) = e { sawToolUse = true }
+        let textOpenedLive = gate.isTextBlockOpen          // a text block the UI already has open
+        var finishEvents = gate.finish()
+        classify(finishEvents)
+        if suppressMessageStart { finishEvents.removeAll(where: isMessageStart) }
+
+        // Prose that came WITH a tool call is thinking-out-loud, not the answer (the real answer
+        // arrives one cycle later, once the result exists). It was streamed live — so retract it
+        // from the text block and keep it as reasoning, exactly where #41 puts it (nothing is
+        // lost, nothing is shown twice). Prose alone streams and stays the answer.
+        if sawToolUse, !visibleText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            var rewritten: [StreamEvent] = finishEvents.filter(isMessageStart)
+            if textOpenedLive {
+                rewritten.append(.contentBlockDelta(.textReplace("")))
+                rewritten.append(.contentBlockStop)
+            }
+            rewritten.append(.contentBlockStart(.reasoning))
+            rewritten.append(.contentBlockDelta(.reasoning(visibleText)))
+            rewritten.append(.contentBlockStop)
+            rewritten += Self.withoutTextBlock(finishEvents, openedLive: textOpenedLive)
+            finishEvents = rewritten
+            visibleText = ""
         }
-        if sawToolUse, !visibleText.isEmpty { events = events.map(Self.textAsReasoning) }
-        if suppressMessageStart { events.removeAll(where: isMessageStart) }
+
+        // `{"status": "completed", "message": "…"}` as the whole answer → the sentence inside.
+        if !sawToolUse, let prose = AppleFMAnswer.unwrap(visibleText) {
+            let stop = finishEvents.last(where: { if case .messageStop = $0 { return true }; return false })
+            var rewritten: [StreamEvent] = finishEvents.filter(isMessageStart)
+            if !textOpenedLive { rewritten.append(.contentBlockStart(.text)) }
+            rewritten.append(.contentBlockDelta(.textReplace(prose)))
+            rewritten.append(.contentBlockStop)
+            rewritten.append(stop ?? .messageStop(.endTurn))
+            finishEvents = rewritten
+            visibleText = prose
+        }
 
         let emptyRepeat = !sawToolUse
             && visibleText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !gate.suppressedCalls.isEmpty
-        return Attempt(stats: stats, finishEvents: events, emptyRepeat: emptyRepeat)
+        return Attempt(stats: stats, finishEvents: finishEvents, emptyRepeat: emptyRepeat,
+                       visibleText: visibleText, sawToolUse: sawToolUse, textOpened: textOpened)
     }
 
-    /// Prose that came with a tool call is commentary, not the answer — keep it in the
-    /// transcript as reasoning so the UI never shows an answer twice.
-    private nonisolated static func textAsReasoning(_ e: StreamEvent) -> StreamEvent {
-        switch e {
-        case .contentBlockStart(.text): return .contentBlockStart(.reasoning)
-        case .contentBlockDelta(.text(let t)): return .contentBlockDelta(.reasoning(t))
-        default: return e
+    /// `finish()`'s events minus the text block (its start, deltas and closing stop) and
+    /// the messageStart — leaving the tool blocks and the messageStop. When the text block
+    /// was opened live, its closer is the first `contentBlockStop` before any block start.
+    private nonisolated static func withoutTextBlock(_ events: [StreamEvent], openedLive: Bool) -> [StreamEvent] {
+        var out: [StreamEvent] = []
+        var inText = openedLive
+        for e in events {
+            switch e {
+            case .messageStart: continue
+            case .contentBlockStart(.text): inText = true
+            case .contentBlockDelta(.text), .contentBlockDelta(.textReplace): continue
+            case .contentBlockStop where inText: inText = false
+            case .contentBlockStart: inText = false; out.append(e)
+            default: out.append(e)
+            }
         }
+        return out
     }
 
     private nonisolated func isMessageStart(_ e: StreamEvent) -> Bool {

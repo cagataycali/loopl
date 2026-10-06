@@ -32,7 +32,7 @@ struct SettingsView: View {
                     Text("The loop runs until the model stops calling tools or you tap stop. Context and output length follow the model's recommended maximum.")
                 }
 
-                AppleToolsSection()
+                AppleToolsSection(activeRuntime: engine.loadedModel?.runtime)
 
                 Section {
                     Toggle(isOn: $settings.offline) { Label("Offline mode", systemImage: LooplDesign.iconOffline) }

@@ -11,6 +11,7 @@ public enum AgentEvent: Sendable {
     case startEventLoop(cycle: Int)                              // StartEvent + StartEventLoopEvent
     case modelStreamChunk(StreamEvent)                           // ModelStreamChunkEvent (raw)
     case text(String)                                            // TextStreamEvent
+    case textReplace(String)                                     // loopl: the assistant text streamed so far is now exactly this (cumulative-snapshot runtimes)
     case reasoning(String)                                       // ReasoningTextStreamEvent
     case toolUseStream(name: String, toolUseId: String, partialInput: String)   // ToolUseStreamEvent
     case modelMessage(Message)                                   // ModelMessageEvent (assembled assistant turn, appended)
@@ -71,9 +72,12 @@ public struct AgentResult: Sendable, Hashable {
 ///     let result = try await agent("what time is it in Istanbul and what is 23*47?")
 ///     for try await event in agent.stream("…") { … }
 ///
-/// There is no iteration cap and no loop detector: the loop runs until the
-/// model stops calling tools, the caller cancels the task, or the context
-/// cannot be reduced any further (`ContextWindowOverflowError`).
+/// There is no iteration cap: the loop runs until the model stops calling
+/// tools, the caller cancels the task, or the context cannot be reduced any
+/// further (`ContextWindowOverflowError`). The one thing it refuses is a
+/// *verbatim* repeat — the same tool with the identical input in two
+/// consecutive cycles — because that call already has its answer in the
+/// conversation (`RepeatBreaker`).
 public actor Agent {
     public let model: any Model
     public private(set) var tools: [any Tool]
@@ -111,6 +115,16 @@ public actor Agent {
     }
     /// `.stop` mode only: tool calls that raised an interrupt instead of producing a result.
     private var interrupted = InterruptedToolUses()
+    /// Identical-call detector for this invocation (see `RepeatBreaker`).
+    private var repeatBreaker = RepeatBreaker()
+
+    /// The tools this model is actually offered: `tools` minus the ones that
+    /// merely wrap the active runtime (`Tool.redundantWithRuntime`).
+    public var offeredTools: [any Tool] { tools.filter { $0.isOffered(to: model.kind) } }
+    /// Names in `tools` that are withheld from this model, with the runtime they duplicate.
+    public var withheldTools: [(name: String, runtime: RuntimeKind)] {
+        tools.compactMap { t in t.isOffered(to: model.kind) ? nil : (t.name, model.kind) }
+    }
 
     /// - Parameters:
     ///   - conversationManager: default `SlidingWindowConversationManager()` — the only limiter.
@@ -329,6 +343,7 @@ public actor Agent {
             return result
         }
         for m in before.messages { try await appendMessage(m) }
+        repeatBreaker = RepeatBreaker()
         yield(.initEventLoop)
         do {
             let result = try await executeEventLoopCycle(yield)
@@ -412,7 +427,7 @@ public actor Agent {
     private func handleModelExecution(_ yield: @Sendable @escaping (AgentEvent) -> Void) async throws -> (StopReason, Message) {
         while true {
             try Task.checkCancellation()
-            let specs = tools.map(\.toolSpec)
+            let specs = offeredTools.map(\.toolSpec)
             let contextWindow = await model.contextWindow     // per-runtime: Apple FM 4096, MLX/GGUF their real ctx
             var before = BeforeModelCallEvent(messages: messages, systemPrompt: systemPrompt,
                                               projectedInputTokens: projectedInputTokens(toolSpecs: specs),
@@ -440,6 +455,7 @@ public actor Agent {
                             switch e {
                             case .chunk(let c): yield(.modelStreamChunk(c)); if case .metadata(let m) = c { yield(.metrics(m)) }
                             case .text(let t): yield(.text(t))
+                            case .textReplace(let s): yield(.textReplace(s))
                             case .reasoning(let r): yield(.reasoning(r))
                             case .toolUse(let name, let id, let partial): yield(.toolUseStream(name: name, toolUseId: id, partialInput: partial))
                             }
@@ -517,11 +533,17 @@ public actor Agent {
         } else {
             // Strands `validate_and_prepare_tools`: a toolUse the model broke never reaches a tool —
             // it gets an error result and keeps its place in the result list.
-            let validation = ToolValidation.validateAndPrepare(toolUses: toolUses, tools: tools)
+            let validation = ToolValidation.validateAndPrepare(toolUses: toolUses, tools: offeredTools)
             validation.results.forEach { yield(.toolResult($0)) }
             results += validation.results
+            // A call identical to one in the previous cycle is not executed again: it has its
+            // answer already. The model is told so; a different call always goes through.
+            let repeated = repeatBreaker.observe(validation.valid)
             let executed = await toolExecutor.execute(validation.valid,
-                                                      run: { [self] use in await self.runTool(use, yield) },
+                                                      run: { [self] use in
+                                                          if repeated.contains(use.toolUseId) { return RepeatBreaker.result(for: use) }
+                                                          return await self.runTool(use, yield)
+                                                      },
                                                       emit: { r in if !interrupted.contains(r.toolUseId) { yield(.toolResult(r)) } })
             results += executed.filter { !interrupted.contains($0.toolUseId) }
         }
@@ -554,6 +576,16 @@ public actor Agent {
         if requestState["stopEventLoop"] == .bool(true) || requestState["stop_event_loop"] == .bool(true) {
             return AgentResult(stopReason: .toolUse, message: message, metrics: eventLoopMetrics)
         }
+        if repeatBreaker.exhausted {
+            // Told twice that the call was already answered and still repeating it: the
+            // model is stuck, not working. End the turn with the best text there is.
+            let summary = Message.assistant(repeatBreaker.bestText(messages: messages))
+            try await appendMessage(summary)
+            yield(.textReplace(summary.text))
+            yield(.modelMessage(summary))
+            yield(.forceStop(RepeatBreaker.stopMessage))
+            return AgentResult(stopReason: .endTurn, message: summary, metrics: eventLoopMetrics)
+        }
 
         return try await recurseEventLoop(yield)
     }
@@ -578,7 +610,7 @@ public actor Agent {
     private func runTool(_ use: ToolUse, _ yield: @Sendable @escaping (AgentEvent) -> Void) async -> ToolResult {
         let t0 = Date()
         let scope = "tool:\(use.toolUseId)"
-        let selected = tools.first { $0.name == use.name }
+        let selected = offeredTools.first { $0.name == use.name }
         var approval = selected?.requiresApproval(for: use.input)
         approval?.id = use.toolUseId; approval?.toolName = use.name
         if approval?.input.isEmpty == true { approval?.input = use.input }
@@ -664,7 +696,7 @@ public actor Agent {
                 }
             }
         } else {
-            result = .error(toolUse, "Unknown tool: \(toolUse.name). Available tools: \(tools.map(\.name).sorted().joined(separator: ", "))",
+            result = .error(toolUse, "Unknown tool: \(toolUse.name). Available tools: \(offeredTools.map(\.name).sorted().joined(separator: ", "))",
                             durationMs: Date().timeIntervalSince(t0) * 1000)
         }
         var after = AfterToolCallEvent(toolUse: toolUse, selectedTool: before.selectedTool, result: result, error: thrown)
