@@ -16,6 +16,9 @@ public final class AppSettings {
     public var enabledTools: Set<String> { didSet { UserDefaults.standard.set(Array(enabledTools), forKey: "loopl.tools") } }
     /// Settings › Show performance details — OFF by default; one quiet footer line when on.
     public var showPerformance: Bool { didSet { UserDefaults.standard.set(showPerformance, forKey: "loopl.perf") } }
+    /// Settings › Show GGUF builds — OFF by default: the Models tab leads with the MLX models; llama.cpp builds (text only) appear when on.
+    /// Downloaded GGUF models always stay listed under "On this device".
+    public var showGGUF: Bool { didSet { UserDefaults.standard.set(showGGUF, forKey: "loopl.gguf") } }
     /// Catalog id of the model to load at launch (the last one the user picked).
     public var lastModelId: String? { didSet { UserDefaults.standard.set(lastModelId, forKey: "loopl.lastModel") } }
     /// Settings › Ask before: which `http` calls show an approval card (SDK `ApprovalPolicy.Mode`). Read by the policy hook on every call.
@@ -43,6 +46,7 @@ public final class AppSettings {
         enabledTools = saved
         askBefore = ApprovalPolicy.Mode(rawValue: d.string(forKey: Self.askBeforeKey) ?? "") ?? .mutating
         showPerformance = d.bool(forKey: "loopl.perf")
+        showGGUF = d.bool(forKey: "loopl.gguf") || CommandLine.arguments.contains("--design-gguf")
         lastModelId = d.string(forKey: "loopl.lastModel")
         haptics = d.object(forKey: "loopl.haptics") == nil ? true : d.bool(forKey: "loopl.haptics")
         appearance = Appearance(rawValue: d.string(forKey: "loopl.appearance") ?? "") ?? .system

@@ -22,6 +22,7 @@
     },
     {
       "id": "apple-fm",
+      "featured": true,
       "name": "Apple Intelligence (on-device)",
       "repo": "",
       "runtime": "appleFM",
@@ -367,6 +368,7 @@
     },
     {
       "id": "loopl-0.8b-4bit",
+      "featured": true,
       "name": "loopl 0.8B",
       "repo": "cagataydev/loopl-0.8b-4bit",
       "runtime": "mlx",
@@ -404,6 +406,7 @@
     },
     {
       "id": "loopl-2b-4bit",
+      "featured": true,
       "name": "loopl 2B",
       "repo": "cagataydev/loopl-2b-4bit",
       "runtime": "mlx",
@@ -441,6 +444,7 @@
     },
     {
       "id": "loopl-4b-4bit",
+      "featured": true,
       "name": "loopl 4B",
       "repo": "cagataydev/loopl-4b-4bit",
       "runtime": "mlx",

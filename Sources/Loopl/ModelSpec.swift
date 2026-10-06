@@ -28,15 +28,20 @@ public struct ModelSpec: Sendable, Codable, Hashable, Identifiable {
     /// `true` when the checkpoint has a vision tower loopl can drive (Qwen3-VL, Qwen2.5-VL, Qwen3.5, Gemma 3, SmolVLM…, MLX runtime).
     /// Gates the composer's attach button; images sent to a text model are dropped with a notice.
     public var vision: Bool? = nil
+    /// `true` for the handful of rows the app leads with (the loopl models + Apple Intelligence): the Models tab shows the rest
+    /// under "More models", onboarding picks from these. nil/false = catalog depth, not a recommendation.
+    public var featured: Bool? = nil
     public init(id: String, name: String, repo: String, runtime: RuntimeKind, family: ToolFamily, paramsB: Double, sizeBytes: Int64,
                 ctxNominal: Int, ctxUsable8GB: Int, minRAMGB: Double, gated: Bool = false, notes: String? = nil, revision: String? = nil,
                 file: String? = nil, temperature: Float? = nil, chatTemplateKwargs: [String: JSONValue]? = nil, toolsUnverified: Bool? = nil,
-                vision: Bool? = nil) {
+                vision: Bool? = nil, featured: Bool? = nil) {
         self.id = id; self.name = name; self.repo = repo; self.runtime = runtime; self.family = family; self.paramsB = paramsB
         self.sizeBytes = sizeBytes; self.ctxNominal = ctxNominal; self.ctxUsable8GB = ctxUsable8GB; self.minRAMGB = minRAMGB
         self.gated = gated; self.notes = notes; self.revision = revision; self.file = file; self.temperature = temperature
-        self.chatTemplateKwargs = chatTemplateKwargs; self.toolsUnverified = toolsUnverified; self.vision = vision
+        self.chatTemplateKwargs = chatTemplateKwargs; self.toolsUnverified = toolsUnverified; self.vision = vision; self.featured = featured
     }
+    /// Leads the Models tab and onboarding (`featured: true` in models.json).
+    public var isFeatured: Bool { featured == true }
 
     /// Can this model look at pictures? (`vision` flag; only the MLX runtime has a VLM path today.)
     public var supportsVision: Bool { vision == true && runtime == .mlx }
@@ -45,7 +50,7 @@ public struct ModelSpec: Sendable, Codable, Hashable, Identifiable {
     public var isFromHub: Bool { id.hasPrefix("hub:") }
 
     enum CodingKeys: String, CodingKey {
-        case id, name, repo, runtime, family, gated, notes, revision, file, temperature, vision
+        case id, name, repo, runtime, family, gated, notes, revision, file, temperature, vision, featured
         case chatTemplateKwargs = "chat_template_kwargs", toolsUnverified = "tools_unverified"
         case paramsB = "params_b", sizeBytes = "size_bytes", ctxNominal = "ctx_nominal"
         case ctxUsable8GB = "ctx_usable_8gb", minRAMGB = "min_ram_gb"
@@ -92,6 +97,8 @@ public struct ModelSpec: Sendable, Codable, Hashable, Identifiable {
 
 /// The bundled model list (`models.json`): version, date and rows.
 public struct Catalog: Sendable, Codable {
+    /// The rows the app leads with (loopl 0.8B / 2B / 4B + Apple Intelligence), catalog order — onboarding's model pick reads this.
+    public var featured: [ModelSpec] { models.filter(\.isFeatured) }
     public var version: Int
     public var updated: String
     public var models: [ModelSpec]

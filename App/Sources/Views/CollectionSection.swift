@@ -82,7 +82,7 @@ struct CollectionSection: View {
         if let listing = model.listing, !listing.rows.isEmpty {
             Section {
                 ForEach(listing.mlx) { row(row: $0) }
-                if !listing.gguf.isEmpty {
+                if settings.showGGUF, !listing.gguf.isEmpty {
                     DisclosureGroup(isExpanded: $showGGUF) {
                         ForEach(listing.gguf) { row(row: $0) }
                     } label: {

@@ -8,7 +8,7 @@ import XCTest
 final class CollectionUITests: XCTestCase {
     func testCollectionSectionListsTheLooplModelsFirst() throws {
         let app = XCUIApplication()
-        app.launchArguments = ["--design-fixture", "empty", "--design-tab", "models", "--design-collection", "bundled"]
+        app.launchArguments = ["--design-fixture", "empty", "--design-tab", "models", "--design-collection", "bundled", "--design-gguf"]
         app.launch()
         let four = app.descendants(matching: .any).matching(identifier: "collection-row-cagataydev/loopl-4b-4bit").firstMatch
         XCTAssertTrue(four.waitForExistence(timeout: 10), "loopl 4B row from the bundled collection snapshot")
@@ -44,10 +44,14 @@ final class CollectionUITests: XCTestCase {
         XCTAssertFalse(ggufRow.label.contains("vision"), "GGUF is text only")
         shoot(app, "collection-gguf")
 
-        // Dedupe: the curated models.json loopl rows are not repeated under Recommended.
+        // Dedupe: the curated models.json loopl rows are not repeated under More models.
         app.swipeUp(); app.swipeUp()
+        let more = app.descendants(matching: .any).matching(identifier: "models-more").firstMatch
+        XCTAssertTrue(more.waitForExistence(timeout: 5), "More models row")
+        more.tap()
+        _ = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Qwen3-1.7B'")).firstMatch.waitForExistence(timeout: 5)
         let curatedTwin = app.staticTexts.matching(NSPredicate(format: "label == 'loopl 0.8B'")).count
-        XCTAssertLessThanOrEqual(curatedTwin, 1, "the models.json twin must not appear a second time under Recommended")
+        XCTAssertLessThanOrEqual(curatedTwin, 1, "the models.json twin must not appear a second time under More models")
 
         // Row → the same repo sheet Browse uses (private + anonymous: the sheet says so, nothing crashes).
         app.swipeDown(); app.swipeDown(); app.swipeDown()
@@ -56,6 +60,28 @@ final class CollectionUITests: XCTestCase {
         let sheetTitle = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'loopl-4b-4bit'")).firstMatch
         XCTAssertTrue(sheetTitle.waitForExistence(timeout: 10), "repo sheet for the tapped collection row")
         shoot(app, "collection-sheet")
+    }
+
+    /// Owner 15:5xZ: fewer, quality models — GGUF builds out of the main list (Settings › Show GGUF builds), the curated catalog folded
+    /// behind one "More models" row, Apple Intelligence + the loopl models as the featured set (`featured` in models.json).
+    func testShortlistFoldsTheCatalogAndHidesGGUFByDefault() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--design-fixture", "empty", "--design-tab", "models", "--design-collection", "bundled"]
+        app.launch()
+        let four = app.descendants(matching: .any).matching(identifier: "collection-row-cagataydev/loopl-4b-4bit").firstMatch
+        XCTAssertTrue(four.waitForExistence(timeout: 10))
+        XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "collection-gguf").firstMatch.exists, "GGUF disclosure hidden until Settings › Show GGUF builds")
+        app.swipeUp()
+        let more = app.descendants(matching: .any).matching(identifier: "models-more").firstMatch
+        XCTAssertTrue(more.waitForExistence(timeout: 5), "More models row")
+        let q17 = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Qwen3-1.7B'")).firstMatch
+        XCTAssertFalse(q17.exists, "catalog depth folded by default")
+        shoot(app, "shortlist-folded")
+        more.tap()
+        XCTAssertTrue(q17.waitForExistence(timeout: 5) || { app.swipeUp(); return q17.waitForExistence(timeout: 3) }(), "More models opens the curated catalog")
+        app.swipeUp(); app.swipeUp(); app.swipeUp()
+        XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'llama.cpp'")).firstMatch.exists, "no GGUF rows without the switch")
+        shoot(app, "shortlist-open")
     }
 
     private func shoot(_ app: XCUIApplication, _ name: String) {
