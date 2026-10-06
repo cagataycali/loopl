@@ -5,6 +5,7 @@ import Loopl
 /// (Fixtures/hub/hf-*.json; secrets/avatars scrubbed, throwaway repo deleted afterwards):
 ///   hf-whoami.json            GET  /api/whoami-v2
 ///   hf-models-author.json     GET  /api/models?author=cagataydev&limit=50&sort=lastModified
+///   hf-datasets-author.json   GET  /api/datasets?author=cagataydev&limit=50&sort=lastModified
 ///   hf-repo-create.json       POST /api/repos/create {type:dataset,name:loopl-hub-client-fixture,private:true}
 ///   hf-commit.json            POST /api/datasets/cagataydev/loopl-hub-client-fixture/commit/main (ndjson, 1 base64 file)
 ///   hf-tree-after-commit.json GET  /api/datasets/cagataydev/loopl-hub-client-fixture/tree/main/data
@@ -133,6 +134,18 @@ final class HFHubClientTests: XCTestCase {
         XCTAssertEqual(q.first { $0.name == "author" }?.value, "cagataydev")
         XCTAssertEqual(q.first { $0.name == "limit" }?.value, "50")
         XCTAssertEqual(q.first { $0.name == "sort" }?.value, "lastModified")
+    }
+
+    func testDatasetsByAuthorFlagLooplRepos() async throws {
+        let t = ReplayTransport(); t.on("GET", "/api/datasets", try fixture("hf-datasets-author"))
+        let ds = try await client(t).datasets(author: "cagataydev")
+        XCTAssertGreaterThanOrEqual(ds.count, 2)
+        let test = try XCTUnwrap(ds.first { $0.id == "cagataydev/loopl-app-conversations-test" })
+        XCTAssertTrue(test.isPrivate); XCTAssertTrue(test.isLoopl); XCTAssertEqual(test.name, "loopl-app-conversations-test")
+        // The curated training set is tagged `loopl` as well — it must NOT look like a share target.
+        let train = try XCTUnwrap(ds.first { $0.id == "cagataydev/loopl-train" })
+        XCTAssertTrue(train.isPrivate); XCTAssertTrue(train.isLoopl); XCTAssertFalse(train.isLooplShare)
+        XCTAssertFalse(ds.contains(where: \.isLooplShare), "fixture predates the loopl-conversations tag")
     }
 
     // MARK: repos + commits

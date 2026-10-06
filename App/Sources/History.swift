@@ -17,12 +17,17 @@ struct SavedConversation: Codable, Identifiable, Hashable {
     var items: [Item]
     /// Set when the thread was rewritten (a message edited, retried, or cut) — optional so 0.1 files still decode.
     var editedAt: Date?
+    /// Phase 5 (Share to Hugging Face): the Hub id of the model that answered and the tools the thread OFFERED
+    /// (OpenAI function specs). Optional + tolerant — files saved before this field exist decode as nil.
+    var modelId: String?
+    var tools: [ToolSpec]?
 
-    init(id: UUID, title: String, updated: Date, modelName: String?, items: [Item], editedAt: Date? = nil) {
-        self.id = id; self.title = title; self.updated = updated; self.modelName = modelName; self.items = items; self.editedAt = editedAt
+    init(id: UUID, title: String, updated: Date, modelName: String?, items: [Item], editedAt: Date? = nil, modelId: String? = nil, tools: [ToolSpec]? = nil) {
+        self.id = id; self.title = title; self.updated = updated; self.modelName = modelName; self.items = items
+        self.editedAt = editedAt; self.modelId = modelId; self.tools = tools
     }
 
-    static func from(_ t: Transcript, id: UUID, modelName: String?, editedAt: Date? = nil) -> SavedConversation? {
+    static func from(_ t: Transcript, id: UUID, modelName: String?, editedAt: Date? = nil, modelId: String? = nil, tools: [ToolSpec]? = nil) -> SavedConversation? {
         let items: [Item] = t.items.compactMap {
             switch $0.kind {
             case .user(let s): .user(s)
@@ -40,7 +45,7 @@ struct SavedConversation: Codable, Identifiable, Hashable {
         }
         guard items.contains(where: { if case .user = $0 { return true }; return false }) else { return nil }
         let first = items.compactMap { if case .user(let s) = $0 { return s }; return nil }.first ?? "Conversation"
-        return SavedConversation(id: id, title: String(first.prefix(60)), updated: Date(), modelName: modelName, items: items, editedAt: editedAt)
+        return SavedConversation(id: id, title: String(first.prefix(60)), updated: Date(), modelName: modelName, items: items, editedAt: editedAt, modelId: modelId, tools: tools)
     }
 
     /// Everything strictly before the item at `index` (History-level "delete from here" / the kept half of an edit).
@@ -59,6 +64,25 @@ struct SavedConversation: Codable, Identifiable, Hashable {
         c.items.append(.user(text))
         if index == 0 { c.title = String(text.prefix(60)) }
         return c
+    }
+
+    /// What `ConversationExport` needs: the transcript as agent messages. Each tool row becomes an
+    /// assistant tool call + its result turn; rows without a result (interrupted) and notes are not learnable and are skipped.
+    func exportThread() -> ConversationExport.Thread {
+        var messages: [Message] = []
+        for item in items {
+            switch item {
+            case .user(let s): messages.append(.user(s))
+            case .assistant(let s): messages.append(.assistant(s))
+            case .tool(let name, let args, let result, let isError, let ms):
+                guard let result else { continue }
+                let use = ToolUse(name: name, input: args)
+                messages.append(.assistant(text: "", toolUses: [use]))
+                messages.append(.toolResults([ToolResult(toolUseId: use.toolUseId, name: name, status: isError ? .error : .success, content: result, durationMs: ms)]))
+            case .note: continue
+            }
+        }
+        return ConversationExport.Thread(id: id.uuidString, title: title, messages: messages, tools: tools ?? [], modelId: modelId ?? modelName, updated: updated)
     }
 
     func transcript() -> Transcript {
@@ -119,9 +143,15 @@ struct HistoryList: View {
     @Binding var selection: RootView.Pane
     var dismiss: (() -> Void)? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    // Edit mode: multi-select → "Share to Hugging Face" (Phase 5). `selecting` is the only state the
+    // normal list path reads, so nothing changes for the tap-to-open flow.
+    @State private var selecting = false
+    @State private var selected = Set<UUID>()
+    @State private var sharing: ShareBatch? = nil
+    struct ShareBatch: Identifiable { let id = UUID(); var conversations: [SavedConversation] }
 
     var body: some View {
-        List {
+        List(selection: $selected) {
             Section {
                 Button {
                     engine.newConversation(); selection = .chat; dismiss?()
@@ -132,6 +162,7 @@ struct HistoryList: View {
                 Section("History") {
                     ForEach(engine.archive.conversations) { c in
                         Button {
+                            if selecting { toggle(c.id); return }
                             LooplDesign.haptic(); engine.open(c); selection = .chat; dismiss?()
                         } label: {
                             VStack(alignment: .leading, spacing: 3) {
@@ -143,12 +174,15 @@ struct HistoryList: View {
                                 }.font(.caption).foregroundStyle(.secondary).lineLimit(1)
                             }
                         }
-                        .listRowBackground(engine.currentId == c.id ? LooplDesign.accent.opacity(0.1) : nil)
+                        .tag(c.id)
+                        .listRowBackground(engine.currentId == c.id && !selecting ? LooplDesign.accent.opacity(0.1) : nil)
                         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                             Button(role: .destructive) { withAnimation(reduceMotion ? nil : LooplDesign.spring) { engine.delete(c) } } label: { Label("Delete", systemImage: "trash") }
                         }
                         .contextMenu {
                             Button("Copy transcript", systemImage: "doc.on.doc") { copyTranscript(c) }
+                            Button("Share to Hugging Face", systemImage: "square.and.arrow.up") { LooplDesign.haptic(); sharing = ShareBatch(conversations: [c]) }
+                            Button("Select", systemImage: "checkmark.circle") { beginSelecting(c.id) }
                             Button("Delete", systemImage: "trash", role: .destructive) { engine.delete(c) }
                         }
                         .accessibilityLabel("\(c.title), \(c.updated.formatted(.relative(presentation: .named)))")
@@ -167,13 +201,70 @@ struct HistoryList: View {
         // in either case, so only the home-indicator air applies.
         .looplBottomBar(false)
         .looplScrollClearance()
-        .navigationTitle("loopl")
+        .navigationTitle(selecting ? "\(selected.count) selected" : "loopl")
+        .environment(\.editMode, .constant(selecting ? .active : .inactive))
+        .toolbar {
+            if !engine.archive.conversations.isEmpty {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button(selecting ? "Cancel" : "Select") {
+                        LooplDesign.haptic()
+                        withAnimation(LooplDesign.Motion.reduced(LooplDesign.Motion.snappy, reduceMotion)) { selecting.toggle(); if !selecting { selected.removeAll() } }
+                    }
+                    .accessibilityIdentifier("history.select")
+                    .accessibilityHint(selecting ? "leaves selection mode" : "select conversations to share to Hugging Face")
+                }
+            }
+        }
+        .safeAreaInset(edge: .bottom) {
+            if selecting {
+                HStack(spacing: 12) {
+                    Button(selected.count == engine.archive.conversations.count ? "Deselect all" : "Select all") {
+                        LooplDesign.haptic()
+                        if selected.count == engine.archive.conversations.count { selected.removeAll() } else { selected = Set(engine.archive.conversations.map(\.id)) }
+                    }
+                    .font(.footnote)
+                    .accessibilityIdentifier("history.selectAll")
+                    Spacer()
+                    Button {
+                        LooplDesign.haptic(1)
+                        sharing = ShareBatch(conversations: engine.archive.conversations.filter { selected.contains($0.id) })
+                    } label: {
+                        Label("Share to Hugging Face", systemImage: "square.and.arrow.up").font(.body.weight(.semibold))
+                    }
+                    .buttonStyle(.borderedProminent).tint(LooplDesign.accent)
+                    .disabled(selected.isEmpty)
+                    .accessibilityIdentifier("history.share")
+                    .accessibilityHint("exports the selected conversations to a private dataset in your Hugging Face account")
+                }
+                .padding(.horizontal, LooplDesign.gutter).padding(.vertical, 10)
+                .background(.bar)
+                .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .sheet(item: $sharing) { batch in
+            HubShareView(share: HubShare(conversations: batch.conversations)) {
+                sharing = nil
+                withAnimation(LooplDesign.Motion.reduced(LooplDesign.Motion.snappy, reduceMotion)) { selecting = false; selected.removeAll() }
+            }
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+        }
         .overlay {
             if engine.archive.conversations.isEmpty {
                 ContentUnavailableView { LooplMark().frame(width: 56, height: 56) } description: { Text("Conversations you finish appear here.") }
                     .allowsHitTesting(false)
             }
         }
+    }
+
+    private func toggle(_ id: UUID) {
+        LooplDesign.haptic()
+        if selected.contains(id) { selected.remove(id) } else { selected.insert(id) }
+    }
+
+    private func beginSelecting(_ id: UUID) {
+        LooplDesign.haptic()
+        withAnimation(LooplDesign.Motion.reduced(LooplDesign.Motion.snappy, reduceMotion)) { selecting = true; selected = [id] }
     }
 
     private func copyTranscript(_ c: SavedConversation) {

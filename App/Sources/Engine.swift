@@ -213,7 +213,8 @@ public final class Engine {
     }
 
     private func archiveCurrent() {
-        if let saved = SavedConversation.from(transcript, id: currentId, modelName: loadedModel?.name, editedAt: currentEditedAt) { archive.upsert(saved) }
+        if let saved = SavedConversation.from(transcript, id: currentId, modelName: loadedModel?.name, editedAt: currentEditedAt,
+                                              modelId: loadedModel.map { $0.repo.isEmpty ? $0.id : $0.repo }, tools: activeTools.map(\.toolSpec)) { archive.upsert(saved) }
     }
 
     // MARK: - Hold a message: Edit · Delete from here · Retry

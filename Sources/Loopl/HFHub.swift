@@ -182,6 +182,36 @@ public struct HFHubClient: Sendable {
         return try Self.parseModels(data)
     }
 
+    /// `GET /api/datasets?author=<author>` — the user's dataset repos (private ones included with a token), newest first.
+    public struct DatasetSummary: Sendable, Hashable, Decodable, Identifiable {
+        public var id: String
+        public var isPrivate: Bool
+        public var tags: [String]
+        public var lastModified: String?
+        public var author: String { id.split(separator: "/").first.map(String.init) ?? "" }
+        public var name: String { id.split(separator: "/").last.map(String.init) ?? id }
+        /// Carries loopl's README tag (training sets, app shares, …) — shown as a badge.
+        public var isLoopl: Bool { tags.contains("loopl") }
+        /// Made by the app's Share to Hugging Face (README tag `loopl-conversations`) — the ONLY kind that is
+        /// picked as the default target: a curated training set tagged `loopl` must never receive shares by default.
+        public var isLooplShare: Bool { tags.contains("loopl-conversations") }
+        enum CodingKeys: String, CodingKey { case id, isPrivate = "private", tags, lastModified }
+        public init(from decoder: any Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            id = try c.decode(String.self, forKey: .id)
+            isPrivate = try c.decodeIfPresent(Bool.self, forKey: .isPrivate) ?? false
+            tags = try c.decodeIfPresent([String].self, forKey: .tags) ?? []
+            lastModified = try c.decodeIfPresent(String.self, forKey: .lastModified)
+        }
+    }
+
+    public static func parseDatasets(_ data: Data) throws -> [DatasetSummary] { try decode([DatasetSummary].self, data, what: "datasets") }
+
+    public func datasets(author: String, limit: Int = 100) async throws -> [DatasetSummary] {
+        let (data, _) = try await send(get("/api/datasets", query: [("author", author), ("limit", String(limit)), ("sort", "lastModified"), ("direction", "-1")]))
+        return try Self.parseDatasets(data)
+    }
+
     // MARK: Repos
 
     public struct CreatedRepo: Sendable, Hashable, Decodable {

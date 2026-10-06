@@ -154,7 +154,9 @@ nav:
       - Checkpoints: sdk/checkpoints.md
       - Tracing: sdk/tracing.md
   - Models: models.md
-  - App: app/index.md
+  - App:
+      - Overview: app/index.md
+      - Share to Hugging Face: app/share-to-hugging-face.md
   - Privacy: privacy.md
   - FAQ: faq.md
   - Changelog: changelog.md

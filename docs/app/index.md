@@ -43,6 +43,7 @@ Free, no sign-in, no analytics. The first launch fetches a small model; from the
 | **Chat** | a document, not bubbles: streaming text, folded thinking, tool rows with timing, image attachments, Stop. |
 | **Models** | the catalog plus **Browse Hugging Face** — search, see size, context and whether it fits, download. Apple's model on iOS 26. |
 | **Settings** | system prompt, which tools, what asks first, **offline mode**. |
+| **History** | finished conversations. Select a few → [Share to Hugging Face](share-to-hugging-face.md): reviewed, redacted, into a private dataset of yours. |
 
 ## Requirements
 
