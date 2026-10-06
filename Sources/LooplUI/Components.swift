@@ -560,7 +560,7 @@ public struct ModelPickerRow: View {
                     if spec.supportsVision {
                         meta("·")
                         Label("vision", systemImage: "eye").font(.caption2.weight(.semibold)).foregroundStyle(LooplDesign.accent)
-                            .labelStyle(.titleAndIcon).accessibilityLabel("sees pictures")
+                            .labelStyle(.titleAndIcon).fixedSize().lineLimit(1).accessibilityLabel("sees pictures")
                     }
                     if spec.toolsUnverified == true {
                         meta("·")

@@ -70,7 +70,7 @@
     },
     {
       "id": "qwen3.5-0.8b-4bit",
-      "name": "Qwen3.5 0.8B · vision",
+      "name": "Qwen3.5 0.8B",
       "repo": "mlx-community/Qwen3.5-0.8B-4bit",
       "runtime": "mlx",
       "family": "hermes",
@@ -88,7 +88,7 @@
     },
     {
       "id": "qwen3.5-2b-4bit",
-      "name": "Qwen3.5 2B · vision",
+      "name": "Qwen3.5 2B",
       "repo": "mlx-community/Qwen3.5-2B-4bit",
       "runtime": "mlx",
       "family": "hermes",
