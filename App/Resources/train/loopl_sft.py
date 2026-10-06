@@ -66,7 +66,7 @@ import sys
 import time
 from pathlib import Path
 
-SCRIPT_VERSION = "1.2.2"
+SCRIPT_VERSION = "1.2.3"
 LLAMA_TAG_DEFAULT = "b11401"  # the llama.cpp build the loopl app vendors (scripts/fetch-llama-xcframework.sh)
 
 BASES = {"0.8b": "Qwen/Qwen3.5-0.8B", "2b": "Qwen/Qwen3.5-2B", "4b": "Qwen/Qwen3.5-4B"}
@@ -1242,8 +1242,13 @@ def main():
     if eval_ds is not None:
         metrics.update(trainer.evaluate())
         scorecard["eval_loss_tuned"] = round(metrics.get("eval_loss", float("nan")), 4)
-        scorecard["eval_history"] = [{k: round(v, 4) if isinstance(v, float) else v for k, v in h.items() if k in ("epoch", "eval_loss")}
-                                     for h in trainer.state.log_history if "eval_loss" in h]
+        # one entry per training epoch — the trainer's final evaluate() (after load_best_model_at_end) lands in log_history at the
+        # last epoch too; that number is eval_loss_tuned, not a second epoch (job 6ac5234f showed "e3 0.2188, e3 0.2153")
+        hist: list[dict] = []
+        for h in trainer.state.log_history:
+            if "eval_loss" in h and h.get("epoch") is not None and round(h["epoch"]) not in {round(x["epoch"]) for x in hist}:
+                hist.append({"epoch": round(h["epoch"]), "eval_loss": round(h["eval_loss"], 4)})
+        scorecard["eval_history"] = hist
         scorecard["best_checkpoint"] = trainer.state.best_model_checkpoint
         if scorecard["eval_history"]:
             best = min(scorecard["eval_history"], key=lambda h: h["eval_loss"])
