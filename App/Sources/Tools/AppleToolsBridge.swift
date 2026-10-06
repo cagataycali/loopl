@@ -7,8 +7,9 @@ import LooplAppleTools
 
 /// Which on-device Apple tools the user has switched on. Separate from
 /// `AppSettings.enabledTools` so an existing install (whose saved list predates
-/// these tools) gets them ON by default; unavailable tools are never sent to the
-/// model whatever the toggle says.
+/// these tools) gets the DEFAULT-ON ones switched on (`AppleTool.defaultOn`; the
+/// rest stay off — fewer tools help small models); unavailable tools are never
+/// sent to the model whatever the toggle says.
 @MainActor @Observable
 public final class AppleToolPrefs {
     public static let shared = AppleToolPrefs()
@@ -21,8 +22,8 @@ public final class AppleToolPrefs {
         let d = UserDefaults.standard
         let names = Set(AppleTools.names)
         let seen = Set((d.array(forKey: Self.seenKey) as? [String]) ?? [])
-        var set = Set((d.array(forKey: "loopl.appleTools") as? [String]) ?? AppleTools.names)
-        set.formUnion(names.subtracting(seen))     // new in this build → on by default
+        var set = Set((d.array(forKey: "loopl.appleTools") as? [String]) ?? AppleTools.defaultOnNames)
+        set.formUnion(names.subtracting(seen).filter(AppleTools.isDefaultOn))     // new in this build → on only when the tool is default-on
         set.formIntersection(names)                // removed tools (apple_intelligence) drop out of the saved list
         enabled = set
         openAppSchemes = Set(OpenAppTool.allowedSchemes)
@@ -59,6 +60,10 @@ struct AppleToolsSection: View {
                             }
                         }
                         Text(a.available ? type(of: tool).onDeviceCopy : a.reason).font(.caption).foregroundStyle(.secondary)
+                        if !type(of: tool).defaultOn, !prefs.enabled.contains(tool.name) {
+                            Text("Off by default — fewer tools help small models.").font(.caption2).foregroundStyle(.tertiary)
+                                .accessibilityIdentifier("appleTool.\(tool.name).offByDefault")
+                        }
                         if redundant {
                             Text("Not offered to \(activeRuntime?.label ?? "this model") — it is \(activeRuntime?.label ?? "this model"). Other models get it.")
                                 .font(.caption2).foregroundStyle(.tertiary)

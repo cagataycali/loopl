@@ -147,7 +147,7 @@ final class DeviceToolsTests: XCTestCase {
 
     func testNoneOfTheDeviceToolsAreCalledAppleIntelligence() {
         XCTAssertFalse(AppleTools.names.contains("apple_intelligence"))
-        XCTAssertEqual(AppleTools.names.suffix(3), ["flashlight", "vibrate", "open_app"])
+        XCTAssertEqual(Array(AppleTools.names.filter { ["flashlight", "vibrate", "open_app"].contains($0) }), ["flashlight", "vibrate", "open_app"])
         // flashlight / vibrate never need approval; open_app does by default.
         XCTAssertNil(FlashlightTool().requiresApproval(for: ["state": .string("on")]))
         XCTAssertNil(VibrateTool().requiresApproval(for: ["pattern": .string("tap")]))

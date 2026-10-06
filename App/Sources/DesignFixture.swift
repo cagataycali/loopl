@@ -6,7 +6,7 @@ import LooplAppleTools
 
 /// `--design-fixture [scene]` (DEBUG only): fills the chat with a fixed
 /// transcript so screenshots and design work need no model. Scenes:
-/// `empty` · `streaming` (default) · `tool` · `offline` · `downloading` · `approval` (a POST waiting
+/// `empty` · `streaming` (default) · `tool` · `offline` · `downloading` · `clipboard` (read row + COPY card) · `approval` (a POST waiting
 /// for the human; tapping Approve/Deny scripts the follow-up) · `live` (a scripted
 /// replay streamed over ~8 s — text chunks, two tool calls, final answer — for motion
 /// captures; `--design-loop` repeats it). Never a runtime —
@@ -200,6 +200,26 @@ enum DesignFixture {
             t.apply(.startEventLoop(cycle: 2))
             t.apply(.text("It's **06:14** on Sunday morning in Istanbul, and 23 × 47 = **1081**."))
             t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("It's **06:14** on Sunday morning in Istanbul, and 23 × 47 = **1081**."), metrics: EventLoopMetrics())))
+        case "clipboard":
+            // TOOLS-EXPAND: the clipboard tool both ways — a read row (what the user copied), then a write that
+            // stops at the COPY approval card quoting the text. `--design-clipboard-approved` settles the card.
+            t.user("What did I copy? Then copy a Turkish version of it for me.")
+            t.apply(.startEventLoop(cycle: 1))
+            let r = ToolUse(toolUseId: "tooluse_cb1", name: "clipboard", input: ["action": .string("read")])
+            t.apply(.modelMessage(.assistant(text: "", toolUses: [r])))
+            t.apply(.toolStarted(r)); t.apply(.toolResult(ToolResult(toolUseId: "tooluse_cb1", name: "clipboard", content: "clipboard: text (14 characters)\nSee you at six", durationMs: 0.6)))
+            t.apply(.startEventLoop(cycle: 2))
+            t.apply(.text("You copied *See you at six*. Copying the Turkish now."))
+            let w = ToolUse(toolUseId: "tooluse_cb2", name: "clipboard", input: ["action": .string("write"), "text": .string("Altıda görüşürüz")])
+            t.apply(.modelMessage(.assistant(text: "You copied *See you at six*. Copying the Turkish now.", toolUses: [w])))
+            if CommandLine.arguments.contains("--design-clipboard-approved") {
+                t.apply(.toolStarted(w)); t.apply(.toolResult(ToolResult(toolUseId: "tooluse_cb2", name: "clipboard", content: "clipboard: replaced with 16 characters", durationMs: 0.4)))
+                t.apply(.startEventLoop(cycle: 3))
+                t.apply(.text("Done — **Altıda görüşürüz** is on your clipboard."))
+                t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("Done — **Altıda görüşürüz** is on your clipboard."), metrics: EventLoopMetrics())))
+            } else {
+                t.apply(.approvalRequested(ClipboardTool().requiresApproval(for: w.input)!.with(id: w.toolUseId)))
+            }
         case "edit":
             // Hold-to-edit (lane EDIT-MESSAGE): a settled two-turn thread; holding "And in Tokyo?" → Edit /
             // Copy / Delete from here, holding an answer → Copy / Retry. Save & regenerate and Retry are

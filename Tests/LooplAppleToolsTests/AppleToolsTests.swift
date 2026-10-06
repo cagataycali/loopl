@@ -24,7 +24,7 @@ final class AppleToolsTests: XCTestCase {
     func testNamesAreUniqueSnakeCaseAndStable() {
         let names = AppleTools.names
         XCTAssertEqual(Set(names).count, names.count)
-        XCTAssertEqual(names, ["generate_image", "generate_voice", "describe_image", "translate", "transcribe", "flashlight", "vibrate", "open_app"])
+        XCTAssertEqual(names, ["generate_image", "generate_voice", "describe_image", "translate", "transcribe", "flashlight", "vibrate", "open_app", "clipboard"])
         for n in names { XCTAssertTrue(n.allSatisfy { $0.isLowercase || $0 == "_" }, n) }
     }
 
