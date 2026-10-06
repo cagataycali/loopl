@@ -11,7 +11,6 @@ hide:
 
 <div class="l-home" markdown>
 
-# loopl
 
 <section class="l-hero l-hero--v2">
 <div class="l-hero__text">
@@ -28,7 +27,7 @@ hide:
 <div class="l-phone l-phone--hero" role="img" aria-label="The loopl app on an iPhone: a model answers with two on-device tool calls">
 <div class="l-phone__screen">
 <picture class="l-phone__poster"><source srcset="assets/app2/hero-dark-poster.jpg" media="(prefers-color-scheme: dark)"><img src="assets/app2/hero-light-poster.jpg" alt="" width="393" height="852" fetchpriority="high" decoding="async"></picture>
-<video class="l-phone__video" autoplay muted loop playsinline preload="metadata" data-light="assets/app2/hero-light" data-dark="assets/app2/hero-dark" width="393" height="852"><source src="assets/app2/hero-dark.webm" type="video/webm"><source src="assets/app2/hero-dark.mp4" type="video/mp4"></video>
+<video class="l-phone__video" tabindex="-1" autoplay muted loop playsinline preload="metadata" data-light="assets/app2/hero-light" data-dark="assets/app2/hero-dark" width="393" height="852"><source src="assets/app2/hero-dark.webm" type="video/webm"><source src="assets/app2/hero-dark.mp4" type="video/mp4"></video>
 </div>
 </div>
 </section>
@@ -174,7 +173,7 @@ func ask(_ model: any Model) async throws -> String {
 
 <footer class="l-foot">
 <span>© 2026 Çağatay Çalı · open source · no data collected</span>
-<nav aria-label="Footer"><a href="start/">Start</a><a href="sdk/agent/">SDK</a><a href="models/">Models</a><a href="app/">App</a><a href="privacy/">Privacy</a><a href="faq/">FAQ</a><a href="changelog/">Changelog</a><a href="api/">API</a><a href="https://github.com/cagataycali/loopl">GitHub</a></nav>
+<nav aria-label="Footer"><a href="start/">Get started</a><a href="sdk/agent/">SDK</a><a href="models/">Models</a><a href="app/">App</a><a href="privacy/">Privacy</a><a href="faq/">FAQ</a><a href="changelog/">Changelog</a><a href="api/">API</a><a href="https://github.com/cagataycali/loopl">GitHub</a></nav>
 </footer>
 
 </div>

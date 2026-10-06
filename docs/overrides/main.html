@@ -1,4 +1,8 @@
 {% extends "base.html" %}
+{% block htmltitle %}
+  {% if page.is_homepage %}<title>{{ page.meta.title }}</title>{% else %}{{ super() }}{% endif %}
+{% endblock %}
+
 {% block extrahead %}
   {% if page.is_homepage %}
   <meta property="og:type" content="website" />
