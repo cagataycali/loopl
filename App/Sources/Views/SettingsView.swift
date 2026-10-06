@@ -45,6 +45,8 @@ struct SettingsView: View {
                     Text(askBeforeFooter)
                 }
 
+                HuggingFaceSection(hf: engine.hf, settings: settings)
+
                 Section {
                     Toggle("Show performance details", isOn: $settings.showPerformance)
                 } footer: {

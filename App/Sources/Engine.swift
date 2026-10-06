@@ -65,6 +65,8 @@ public enum Readiness: Hashable, Sendable {
 public final class Engine {
     public let settings: AppSettings
     public let store: ModelStore
+    /// Hugging Face sign-in state (Settings › Hugging Face, Models › Mine). The token itself stays in `HFAccount.shared`.
+    public let hf = HFSession()
     public var transcript = Transcript()
     public var readiness: Readiness = .idle
     public var lastError: String?

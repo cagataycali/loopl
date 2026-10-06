@@ -119,11 +119,11 @@ public final class ModelStore {
     public func download(_ spec: ModelSpec) {
         guard spec.isDownloadable, tasks[spec.id] == nil else { return }
         if NetworkPolicy.isOffline { states[spec.id] = .failed(HFDownloader.DLError.offline.localizedDescription); return }
-        if spec.gated { states[spec.id] = .failed("gated repository — loopl only downloads public models"); return }
+        if spec.gated, HFAccount.shared.token == nil { states[spec.id] = .failed(HFDownloader.DLError.signInRequired(spec.repo).localizedDescription); return }
         states[spec.id] = .downloading(done: 0, total: spec.sizeBytes, filesDone: 0, files: 0)
         let dir = Self.directory(for: spec)
         tasks[spec.id] = Task {
-            let dl = HFDownloader()
+            let dl = HFDownloader(token: HFAccount.shared.provider)   // anonymous until a token is pasted in Settings
             do {
                 let files = try await dl.files(for: spec)
                 let total = files.reduce(Int64(0)) { $0 + $1.size }

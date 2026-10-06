@@ -10,6 +10,7 @@ struct ModelsView: View {
     @Bindable var store: ModelStore
     @Bindable var settings: AppSettings
     @State private var confirmDelete: ModelSpec?
+    @State private var mine = MineModel()
     @Namespace private var zoom
     @Namespace private var loadedMark
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -42,13 +43,14 @@ struct ModelsView: View {
                         Label {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Browse Hugging Face").font(.body.weight(.medium))
-                                Text("Any public MLX or GGUF repo — no account").font(.caption).foregroundStyle(.secondary)
+                                Text(engine.hf.isSignedIn ? "Any MLX or GGUF repo — yours too, private included" : "Any public MLX or GGUF repo — no account needed").font(.caption).foregroundStyle(.secondary)
                             }
                         } icon: { Image(systemName: "magnifyingglass").foregroundStyle(LooplDesign.accent) }
                         .matchedTransitionSource(id: "browse", in: zoom)
                     }
                     .accessibilityIdentifier("models-browse-hub")
                 }
+                MineSection(engine: engine, store: store, settings: settings, hf: engine.hf, mine: mine)
                 ForEach(sections, id: \.0) { title, rows in
                     Section {
                         ForEach(rows) { spec in row(spec) }
@@ -74,7 +76,7 @@ struct ModelsView: View {
             .animation(LooplDesign.Motion.faded(LooplDesign.Motion.spring, reduceMotion), value: engine.loadedModel?.id)
             .animation(LooplDesign.Motion.crossfade, value: engine.readiness.isBusy)
             .navigationTitle("Models")
-            .refreshable { store.refresh() }
+            .refreshable { store.refresh(); await mine.load(author: engine.hf.author, force: true) }
             .onAppear { store.refresh() }
             .confirmationDialog("\(confirmDelete?.isFromHub == true ? "Remove" : "Delete") \(confirmDelete?.name ?? "") from this device?", isPresented: Binding(get: { confirmDelete != nil }, set: { if !$0 { confirmDelete = nil } }), titleVisibility: .visible) {
                 Button(confirmDelete?.isFromHub == true ? "Remove" : "Delete", role: .destructive) { if let s = confirmDelete { delete(s) } }
