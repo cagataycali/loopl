@@ -80,7 +80,9 @@ struct SavedConversation: Codable, Identifiable, Hashable {
         var messages: [Message] = []
         for item in items {
             switch item {
-            case .user(let s, _): messages.append(.user(s))     // the dataset schema is text-only; thumbnails are not training data
+            // Pictures go along (as the ≤ 512 px thumbnails History keeps) — ConversationExport writes them to images/<sha>.png
+            // unless the person ticks "Remove pictures". Dropping them here made every shared dataset text-only (TRAIN-E2E-VISION).
+            case .user(let s, let images): messages.append(images.map { $0.isEmpty ? .user(s) : .user(s, images: $0) } ?? .user(s))
             case .assistant(let s): messages.append(.assistant(s))
             case .tool(let name, let args, let result, let isError, let ms, _):
                 guard let result else { continue }
