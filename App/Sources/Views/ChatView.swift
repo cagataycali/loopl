@@ -211,6 +211,10 @@ struct Composer: View {
     @State private var attachError: String?
 
     static let maxAttachments = 4
+    /// The round buttons grow with the text (so the glyph never outgrows its circle at accessibility sizes) but stop
+    /// at 56 pt, which keeps the bar one line on an SE at AX-XL.
+    @ScaledMetric(relativeTo: .callout) private var scaledSide: CGFloat = 40
+    private var side: CGFloat { min(scaledSide, 56) }
 
     static let maxClips = 3
 
@@ -277,7 +281,7 @@ struct Composer: View {
             Button { paste() } label: { Label("Paste Image", systemImage: "doc.on.clipboard") }
                 .disabled(!ImageAttachment.pasteboardHasImage)
         } label: {
-            Image(systemName: "plus").font(.callout.weight(.bold)).frame(width: 40, height: 40)
+            Image(systemName: "plus").font(.callout.weight(.bold)).frame(width: side, height: side)
                 .background(Color(.secondarySystemBackground), in: Circle())
                 .foregroundStyle(attachments.count >= Self.maxAttachments ? Color.secondary : Color.primary)
         }
@@ -339,7 +343,7 @@ struct Composer: View {
             focused.wrappedValue = false
             Task { await recorder.start(in: attachmentsDir()) }
         } label: {
-            Image(systemName: "mic").font(.callout.weight(.bold)).frame(width: 40, height: 40)
+            Image(systemName: "mic").font(.callout.weight(.bold)).frame(width: side, height: side)
                 .background(Color(.secondarySystemBackground), in: Circle())
                 .foregroundStyle(clips.count >= Self.maxClips ? Color.secondary : Color.primary)
         }
@@ -355,7 +359,7 @@ struct Composer: View {
                 LooplDesign.haptic()
                 recorder.cancel()
             } label: {
-                Image(systemName: "xmark").font(.callout.weight(.bold)).frame(width: 40, height: 40)
+                Image(systemName: "xmark").font(.callout.weight(.bold)).frame(width: side, height: side)
                     .background(Color(.secondarySystemBackground), in: Circle()).foregroundStyle(Color.primary)
             }
             .accessibilityLabel("Cancel recording")
@@ -375,7 +379,7 @@ struct Composer: View {
             Button {
                 finishRecording()
             } label: {
-                Image(systemName: "checkmark").font(.callout.weight(.bold)).frame(width: 40, height: 40)
+                Image(systemName: "checkmark").font(.callout.weight(.bold)).frame(width: side, height: side)
                     .background(LooplDesign.accent, in: Circle()).foregroundStyle(Color.white)
             }
             .accessibilityLabel("Finish recording")
@@ -417,14 +421,14 @@ struct Composer: View {
             Group {
                 if generating {
                     Button(action: stop) {
-                        Image(systemName: "stop.fill").font(.callout.weight(.bold)).frame(width: 40, height: 40)
+                        Image(systemName: "stop.fill").font(.callout.weight(.bold)).frame(width: side, height: side)
                             .background(Color.primary.opacity(0.85), in: Circle()).foregroundStyle(Color(.systemBackground))
                     }
                     .accessibilityLabel("Stop generating")
                     .transition(.scale.combined(with: .opacity))
                 } else {
                     Button(action: send) {
-                        Image(systemName: "arrow.up").font(.callout.weight(.bold)).frame(width: 40, height: 40)
+                        Image(systemName: "arrow.up").font(.callout.weight(.bold)).frame(width: side, height: side)
                             .background(sendable ? LooplDesign.accent : Color(.tertiarySystemFill), in: Circle())
                             .foregroundStyle(sendable ? Color.white : Color.secondary)
                     }

@@ -334,8 +334,10 @@ public struct ToolRow: View {
             .accessibilityHint(expanded ? "collapses the details" : "shows arguments and result")
 
             if result == nil, !expanded {
-                // Running: a thin sweep under the row, never a spinner.
-                IndeterminateBar().padding(.leading, 24).padding(.trailing, 20).transition(.opacity)
+                // Running: a thin sweep under the row, never a spinner. It leaves the instant the result lands —
+                // a fade-out here used to overlap the ✓ for a frame or two (a "done" row with a sweep under it).
+                IndeterminateBar().padding(.leading, 24).padding(.trailing, 20)
+                    .transition(.asymmetric(insertion: .opacity, removal: .identity))
             }
             if expanded { ToolCallCard(call: call, result: result).transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top))) }
             // A picture the tool made is the result — shown folded or not.
@@ -498,11 +500,23 @@ public struct AgentTranscriptView<Empty: View, Banner: View>: View {
                 LazyVStack(alignment: .leading, spacing: 18) {
                     banner()
                     if transcript.items.isEmpty {
-                        empty().frame(maxWidth: .infinity).padding(.top, 80)
+                        // Centred in the free space (the banner, when there is one, sits above): the scroll view's
+                        // own height is the measure, so the mark does not hang high with a blank lower half.
+                        empty().frame(maxWidth: .infinity)
+                            .containerRelativeFrame(.vertical, alignment: .center) { h, _ in max(0, h - 160) }
+                            // Leaves quickly when the first turn arrives: the tall centred block fading on the spring
+                            // ghosted under the new row for half a second.
+                            .transition(.opacity.animation(.easeOut(duration: 0.15)))
                     }
                     ForEach(transcript.items) { item in
                         row(item)
                             .id(item.id)
+                            .transition(reduceMotion ? .opacity : .asymmetric(insertion: .move(edge: .bottom).combined(with: .opacity), removal: .opacity))
+                    }
+                    if Self.showsPending(transcript) {
+                        // Between the send and the first token (or tool) there was nothing on screen but the ■:
+                        // the mark breathes where the answer will land, and leaves with the first delta.
+                        PendingRow().id("loopl.pending")
                             .transition(reduceMotion ? .opacity : .asymmetric(insertion: .move(edge: .bottom).combined(with: .opacity), removal: .opacity))
                     }
                     if showPerformance, !transcript.items.isEmpty { TokenMeter(transcript.metrics).padding(.top, -6) }
@@ -511,6 +525,7 @@ public struct AgentTranscriptView<Empty: View, Banner: View>: View {
                 .padding(.horizontal, LooplDesign.gutter)
                 .padding(.top, 12).padding(.bottom, 16)
                 .animation(reduceMotion ? nil : LooplDesign.spring, value: transcript.items.count)
+                .animation(LooplDesign.Motion.faded(LooplDesign.Motion.spring, reduceMotion), value: Self.showsPending(transcript))
             }
             // Follow generation by ANCHORING, not by scrolling: while the reader is pinned the scroll view keeps
             // its bottom edge glued to the content as the content grows, in the same layout pass. The pre-fix
@@ -553,6 +568,17 @@ public struct AgentTranscriptView<Empty: View, Banner: View>: View {
                 }
             }
             .animation(LooplDesign.Motion.faded(LooplDesign.Motion.snappy, reduceMotion), value: pinned)
+        }
+    }
+
+    /// The agent is running and nothing of its answer has arrived yet: the last item is still the user's turn
+    /// (or a resolved approval / a note — anything that is not the model speaking or a tool in flight).
+    nonisolated public static func showsPending(_ t: Transcript) -> Bool {
+        guard t.isRunning, let last = t.items.last else { return false }
+        switch last.kind {
+        case .user, .note: return true
+        case .approval(_, let d): return d != nil
+        case .assistant, .toolUse, .reasoning: return false
         }
     }
 
@@ -631,6 +657,20 @@ public extension AgentTranscriptView where Empty == AnyView, Banner == EmptyView
         self.init(transcript, showPerformance: showPerformance, banner: { EmptyView() }) {
             AnyView(EmptyState(hint: emptyHint))
         }
+    }
+}
+
+/// Where the answer will land, before its first token: the mark breathing and a quiet "…". Reduce Motion: static.
+public struct PendingRow: View {
+    public init() {}
+    public var body: some View {
+        HStack(spacing: 10) {
+            PulsingMark().frame(width: 16, height: 16)
+            Text("…").font(.body).foregroundStyle(.tertiary)
+        }
+        .padding(.top, 2)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("loopl is thinking")
     }
 }
 
