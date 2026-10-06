@@ -38,6 +38,7 @@ Tools you need now and then stay **off** until you switch them on in **Settings 
 |---|---|
 | `calendar_events` · `calendar_create` | what is on your calendar for the coming days; adding an event asks first (EventKit) |
 | `reminders_due` · `reminders_create` | open reminders due today or soon; adding one asks first |
+| `location` | your city and rough coordinates (about 1 km) — exact only when the model asks for `precise` and you allow it; the model chains it into `http` for local weather |
 
 Reads and creates are separate tools on purpose: with one tool carrying both verbs a 0.8B model turned "what did I copy?" into a write 4 times in 6. The create tools' descriptions carry today's date, so "tomorrow at 12:30" becomes a real timestamp without a second tool call.
 

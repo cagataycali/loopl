@@ -72,6 +72,8 @@ targets:
         # calendar_events / calendar_create / reminders_due / reminders_create tools (off by default; asked just in time).
         NSCalendarsFullAccessUsageDescription: Let the model read your calendar and add events you approve. Nothing leaves this device.
         NSRemindersFullAccessUsageDescription: Let the model read your reminders and add ones you approve. Nothing leaves this device.
+        # location tool (off by default): city-level by default, exact only when the model asks and you allow it.
+        NSLocationWhenInUseUsageDescription: Tell the model where you are when it asks — your city by default, exact position only when you allow it. Nothing leaves this device.
         # open_app tool: schemes canOpenURL may answer for (UIApplication.open reports truthfully for any scheme).
         LSApplicationQueriesSchemes:
         - shortcuts
