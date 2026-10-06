@@ -29,9 +29,6 @@ public struct ToolCallStreamGate: Sendable {
     private var reasoningOpen = false
     private var inThink = false
     private let parser: ToolCallParser
-    private let suppress: (@Sendable (ToolUse) -> Bool)?
-    /// Calls `suppress` rejected at `finish()` — a provider may react (see `AppleFoundationModel`).
-    public private(set) var suppressedCalls: [ToolUse] = []
     /// A text content block is open (a provider replacing text mid-stream needs to know).
     public var isTextBlockOpen: Bool { textBlockOpen }
     /// Text sent as deltas so far.
@@ -39,13 +36,11 @@ public struct ToolCallStreamGate: Sendable {
     /// Characters of a fenced JSON body without a `"name"` key after which it is clearly not a call.
     public static let heldJSONLimit = 160
 
-    /// - Parameter suppress: optional veto on a parsed tool call, applied at
-    ///   `finish()`. Providers that prompt tools manually use it to drop a call
-    ///   the model merely echoed back (see `ToolCallRepeatGuard`); `nil` (the
-    ///   default) keeps every call, which is what the MLX and GGUF runtimes do.
-    public init(family: ToolFamily, suppress: (@Sendable (ToolUse) -> Bool)? = nil) {
+    /// Every parsed call is kept: the gate has no veto. Deciding what to do
+    /// with a call — including one the model has made before — is the model's
+    /// job, informed by the tool results it reads (faithful Strands).
+    public init(family: ToolFamily) {
         self.family = family
-        self.suppress = suppress
         parser = ToolCallParser(family: family)
     }
 
@@ -149,13 +144,6 @@ public struct ToolCallStreamGate: Sendable {
         }
         var uses = native
         for c in parsed.calls where !uses.contains(where: { $0.name == c.name && $0.input == c.input }) { uses.append(c) }
-        if let suppress {
-            let vetoed = uses.filter(suppress)
-            if !vetoed.isEmpty {
-                suppressedCalls += vetoed
-                uses.removeAll(where: suppress)
-            }
-        }
         for u in uses {
             out.append(.contentBlockStart(.toolUse(toolUseId: u.toolUseId, name: u.name)))
             out.append(.contentBlockDelta(.toolUse(input: JSONValue.object(u.input).compact)))

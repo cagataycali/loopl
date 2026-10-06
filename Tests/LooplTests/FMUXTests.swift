@@ -136,7 +136,7 @@ final class FMUXTests: XCTestCase {
         XCTAssertEqual(mlxOffered, ["apple_intelligence"])
     }
 
-    // MARK: repeat breaker — identical consecutive calls only
+    // MARK: no repeat heuristics — every call the model makes is run (faithful Strands)
 
     final class Counter: Tool, @unchecked Sendable {
         let name = "current_time"
@@ -147,61 +147,45 @@ final class FMUXTests: XCTestCase {
         func call(_ args: [String: JSONValue]) async throws -> String { n.withLock { $0 += 1 }; return "03:29" }
     }
 
-    func testIdenticalCallInConsecutiveCyclesIsRefusedThenTheLoopEndsWithBestText() async throws {
+    /// OWNER DECISION 2026-10-06: no RepeatBreaker, no repeat guard. The same call in
+    /// consecutive cycles is executed each time and the model sees each honest result;
+    /// stopping, or changing the arguments, is the model's decision — never a heuristic's.
+    func testIdenticalCallsInConsecutiveCyclesAreExecutedEveryTime() async throws {
         let use = ToolUse(toolUseId: "t1", name: "current_time", input: ["timezone": "Europe/Istanbul"])
         let again = ToolUse(toolUseId: "t2", name: "current_time", input: ["timezone": "Europe/Istanbul"])
         let third = ToolUse(toolUseId: "t3", name: "current_time", input: ["timezone": "Europe/Istanbul"])
         let tool = Counter()
-        let model = FakeModel(turns: [.toolUse(text: "Let me check.", [use]), .toolUse([again]), .toolUse([third]), .text("never reached")])
+        let model = FakeModel(turns: [.toolUse(text: "Let me check.", [use]), .toolUse([again]), .toolUse([third]), .text("It is 03:29 in Istanbul.")])
         let agent = Agent(model: model, tools: [tool], retryStrategy: nil)
         var events: [AgentEvent] = []
         for try await e in agent.stream("what time is it in Istanbul?") { events.append(e) }
 
-        XCTAssertEqual(tool.calls, 1, "executed once; the two verbatim repeats were refused")
+        XCTAssertEqual(tool.calls, 3, "every call runs — there is no repeat heuristic")
         let results = events.compactMap { if case .toolResult(let r) = $0 { return r }; return nil }
         XCTAssertEqual(results.count, 3)
-        XCTAssertEqual(results[0].status, .success)
-        XCTAssertEqual(results[1].status, .error)
-        XCTAssertTrue(results[1].content.contains("Already called"), results[1].content)
-        XCTAssertEqual(results[2].status, .error)
+        XCTAssertTrue(results.allSatisfy { $0.status == .success && $0.content == "03:29" })
         let final = events.compactMap { if case .result(let r) = $0 { return r }; return nil }.first
         XCTAssertEqual(final?.stopReason, .endTurn)
-        XCTAssertEqual(final?.text, "Let me check.", "the best text so far ends the turn")
-        XCTAssertTrue(events.contains { if case .forceStop = $0 { return true }; return false })
+        XCTAssertEqual(final?.text, "It is 03:29 in Istanbul.")
+        XCTAssertFalse(events.contains { if case .forceStop = $0 { return true }; return false }, "nothing forces the loop to stop")
         let prompts = await model.seenPrompts.count
-        XCTAssertEqual(prompts, 3, "no fourth model call")
+        XCTAssertEqual(prompts, 4, "the model is asked after every result")
     }
 
-    func testBestTextFallsBackToToolResultsWhenTheModelNeverSpoke() async throws {
-        let use = ToolUse(toolUseId: "t1", name: "current_time", input: [:])
-        let model = FakeModel(turns: [.toolUse([use]), .toolUse([ToolUse(toolUseId: "t2", name: "current_time", input: [:])]),
-                                      .toolUse([ToolUse(toolUseId: "t3", name: "current_time", input: [:])])])
-        let agent = Agent(model: model, tools: [Counter()], retryStrategy: nil)
-        let r = try await agent("time?")
-        XCTAssertEqual(r.text, "current_time: 03:29")
-    }
-
-    func testDifferentArgumentsAreNeverRefused() async throws {
+    func testDifferentArgumentsOverManyCyclesAllRun() async throws {
         let tool = Counter()
         let zones = ["Europe/Istanbul", "Asia/Tokyo", "America/New_York", "Europe/Paris", "Australia/Sydney"]
         var turns: [FakeModel.Turn] = zones.enumerated().map { i, z in .toolUse([ToolUse(toolUseId: "t\(i)", name: "current_time", input: ["timezone": .string(z)])]) }
         turns.append(.text("done"))
         let agent = Agent(model: FakeModel(turns: turns), tools: [tool], retryStrategy: nil)
         let r = try await agent("times?")
-        XCTAssertEqual(tool.calls, 5, "five different calls over five cycles — no cap, no refusal")
+        XCTAssertEqual(tool.calls, 5, "five calls over five cycles — no cap, no refusal")
         XCTAssertEqual(r.text, "done")
     }
 
-    func testRepeatAfterAGapIsNotConsecutiveAndRuns() async throws {
-        let tool = Counter()
-        let a = { (id: String) in ToolUse(toolUseId: id, name: "current_time", input: ["timezone": "Europe/Istanbul"]) }
-        let b = ToolUse(toolUseId: "b", name: "current_time", input: ["timezone": "Asia/Tokyo"])
-        let agent = Agent(model: FakeModel(turns: [.toolUse([a("1")]), .toolUse([b]), .toolUse([a("2")]), .text("ok")]), tools: [tool], retryStrategy: nil)
-        _ = try await agent("x")
-        XCTAssertEqual(tool.calls, 3, "only *consecutive* identical calls are refused")
-    }
-
-    func testIdenticalCallAfterAnErrorIsRetriedNotRefused() async throws {
+    /// An errored call retried verbatim is the model reading the error and trying again —
+    /// exactly the behaviour the owner wants the loop to leave to the model.
+    func testIdenticalCallAfterAnErrorIsRetried() async throws {
         final class Flaky: Tool, @unchecked Sendable {
             let name = "http"; let description = "h"; let parameters: JSONValue = ToolSchema.object([:])
             private let n = Mutex(0)
@@ -215,17 +199,14 @@ final class FMUXTests: XCTestCase {
         let tool = Flaky()
         let a = { (id: String) in ToolUse(toolUseId: id, name: "http", input: ["url": "https://x"]) }
         let agent = Agent(model: FakeModel(turns: [.toolUse([a("1")]), .toolUse([a("2")]), .text("done")]), tools: [tool], retryStrategy: nil)
-        let r = try await agent("fetch")
-        XCTAssertEqual(tool.calls, 2, "a call that errored may be retried verbatim")
-        XCTAssertEqual(r.text, "done")
-    }
-
-    func testBreakerResetsPerInvocation() async throws {
-        let tool = Counter()
-        let a = { (id: String) in ToolUse(toolUseId: id, name: "current_time", input: [:]) }
-        let agent = Agent(model: FakeModel(turns: [.toolUse([a("1")]), .text("one"), .toolUse([a("2")]), .text("two")]), tools: [tool], retryStrategy: nil)
-        _ = try await agent("x"); _ = try await agent("y")
-        XCTAssertEqual(tool.calls, 2, "a new question may ask the same thing again")
+        var events: [AgentEvent] = []
+        for try await e in agent.stream("fetch") { events.append(e) }
+        let results = events.compactMap { if case .toolResult(let r) = $0 { return r }; return nil }
+        XCTAssertEqual(tool.calls, 2)
+        XCTAssertEqual(results.map(\.status), [.error, .success], "the model saw the honest error before retrying")
+        XCTAssertTrue(results[0].content.contains("timeout"), results[0].content)
+        let final = events.compactMap { if case .result(let r) = $0 { return r }; return nil }.first
+        XCTAssertEqual(final?.text, "done")
     }
 
     // MARK: lone string argument
