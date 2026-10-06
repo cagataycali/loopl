@@ -537,11 +537,12 @@ struct Composer: View {
 
     private var bar: some View {
         HStack(alignment: .bottom, spacing: compactControls ? 8 : 10) {
+            // Order (owner, 2026-10-06 21:0xZ): + on the left, the field, then mic and send together on the right —
+            // the things that FINISH a message sit under the thumb, the one that adds to it sits apart.
             if compactControls {
                 compactMenu
-            } else {
-                if canAttach { attachButton }
-                micButton
+            } else if canAttach {
+                attachButton
             }
             // No fill behind the field: a second rounded shape here fought the keyboard's own corner radius right
             // above it (owner, 2026-10-06). The field sits straight on the bar's material, so composer + keyboard read
@@ -559,6 +560,7 @@ struct Composer: View {
                 // priority key command; a plain Return still inserts a newline.
                 .onReceive(NotificationCenter.default.publisher(for: .looplSendShortcut)) { _ in if sendable { send() } }
                 .accessibilityLabel("Message")
+            if !compactControls { micButton }
             Group {
                 if generating {
                     Button(action: stop) {
