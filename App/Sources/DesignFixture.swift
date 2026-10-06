@@ -37,7 +37,8 @@ enum DesignFixture {
     }
 
     @MainActor static func apply(to engine: Engine, settings: AppSettings) {
-        let spec = engine.store.catalog.models.first { $0.id == "qwen3-0.6b-4bit" } ?? engine.store.catalog.models.first!
+        let specId = scene == "vision" ? "qwen3.5-0.8b-4bit" : "qwen3-0.6b-4bit"
+        let spec = engine.store.catalog.models.first { $0.id == specId } ?? engine.store.catalog.models.first!
         engine.readiness = .ready(spec)
         settings.showPerformance = CommandLine.arguments.contains("--design-perf")
         settings.offline = scene == "offline"
@@ -77,6 +78,19 @@ enum DesignFixture {
             t.apply(.startEventLoop(cycle: 2))
             t.apply(.text("It's **06:14** on Sunday morning in Istanbul, and 23 × 47 = **1081**."))
             t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("It's **06:14** on Sunday morning in Istanbul, and 23 × 47 = **1081**."), metrics: EventLoopMetrics())))
+        case "vision":
+            // The exact exchange the macOS proof produced with Qwen3.5-0.8B-4bit on Tests/…/Fixtures/vision-test.png.
+            let png = Bundle.main.url(forResource: "vision-test", withExtension: "png").flatMap { try? Data(contentsOf: $0) } ?? Data()
+            let img = ImageBlock(data: png, mime: "image/png", width: 640, height: 400, alt: "test card: red circle, blue square, LOOPL 42")
+            t.user("What do you see? Then multiply the number by 3.", images: [img])
+            t.apply(.startEventLoop(cycle: 1))
+            t.apply(.text("A red circle and a blue square on a paper background, with **LOOPL 42** written underneath."))
+            let c = ToolUse(toolUseId: "tooluse_v1", name: "calculator", input: ["expression": .string("42 * 3")])
+            t.apply(.modelMessage(.assistant(text: "A red circle and a blue square on a paper background, with **LOOPL 42** written underneath.", toolUses: [c])))
+            t.apply(.toolStarted(c)); t.apply(.toolResult(ToolResult(toolUseId: "tooluse_v1", name: "calculator", content: "42 * 3 = 126", durationMs: 0.3)))
+            t.apply(.startEventLoop(cycle: 2))
+            t.apply(.text("42 × 3 = **126**."))
+            t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("42 × 3 = **126**."), metrics: EventLoopMetrics())))
         default: // streaming
             t.user("Explain what an agent loop is, in three short points, with a Swift example.")
             t.apply(.startEventLoop(cycle: 1))
