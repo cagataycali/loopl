@@ -131,7 +131,10 @@ final class VisionContentTests: XCTestCase {
         let vl = c.models.filter { $0.supportsVision }
         XCTAssertGreaterThanOrEqual(vl.count, 4)
         XCTAssertTrue(vl.contains { $0.repo == "mlx-community/Qwen3.5-0.8B-4bit" })
-        XCTAssertTrue(vl.allSatisfy { $0.runtime == .mlx && !$0.gated })
+        XCTAssertTrue(vl.allSatisfy { $0.runtime == .mlx }, "only the MLX runtime has a VLM path")
+        // Public vision rows need no token; the loopl rows (mlx_vlm re-exports with the tower) are the one private family.
+        XCTAssertTrue(vl.allSatisfy { !$0.gated || $0.hasLooplPersona })
+        XCTAssertEqual(vl.filter(\.hasLooplPersona).count, 3, "loopl 0.8B / 2B / 4B MLX rows see")
         XCTAssertEqual(c.defaultModelId, "qwen3-0.6b-4bit", "default stays the text model until the owner's post-tuned ones land")
     }
 }
