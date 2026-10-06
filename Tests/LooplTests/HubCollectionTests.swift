@@ -103,7 +103,11 @@ final class HubCollectionTests: XCTestCase {
         guard FileManager.default.fileExists(atPath: url.path) else { throw XCTSkip("App/Resources not available in this test host") }
         let l = try HubCatalog.parseCollectionSnapshot(Data(contentsOf: url))
         XCTAssertEqual(l.collection.slug, LooplCollection.slug)
-        XCTAssertGreaterThanOrEqual(l.mlx.count, 3)
-        XCTAssertGreaterThanOrEqual(l.gguf.count, 3)
+        // Since 2026-10-06 the collection is PUBLIC and holds exactly the six flagship repos: three MLX 4-bit (vision) + three bf16
+        // post-tuning bases. GGUF builds, the LoRA adapter and staging copies stay private and are not in it.
+        XCTAssertFalse(l.collection.isPrivate)
+        XCTAssertEqual(l.mlx.map(\.id), ["cagataydev/loopl-4b-4bit", "cagataydev/loopl-2b-4bit", "cagataydev/loopl-0.8b-4bit"])
+        XCTAssertTrue(l.gguf.isEmpty)
+        XCTAssertTrue(l.rows.allSatisfy { !$0.hit.gated }, "public repos need no token")
     }
 }

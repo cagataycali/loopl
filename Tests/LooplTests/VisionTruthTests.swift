@@ -138,7 +138,7 @@ final class VisionTruthTests: XCTestCase {
         XCTAssertFalse(String(decoding: try JSONEncoder().encode(old), as: UTF8.self).contains("persona"), "nothing re-encodes the dropped key")
     }
 
-    func testBundledLooplRowsAreGatedWithVisionPerRuntime() throws {
+    func testBundledLooplRowsArePublicForMLXGatedForGGUFWithVisionPerRuntime() throws {
         // SwiftPM: Fixtures/models.json via Bundle.module; Xcode-hosted: the app bundle's models.json.
         var url: URL?
         #if SWIFT_PACKAGE
@@ -149,7 +149,8 @@ final class VisionTruthTests: XCTestCase {
         let loopl = catalog.models.filter { $0.repo.hasPrefix("cagataydev/loopl-") }
         XCTAssertEqual(loopl.count, 6)
         for row in loopl {
-            XCTAssertTrue(row.gated, row.id)
+            // PUBLISH-V11 (18:1xZ): the six MLX/bf16 repos are PUBLIC (owner decision) — only the GGUF builds stay private → gated.
+            XCTAssertEqual(row.gated, row.runtime == .gguf, row.id)
             // VISION-EXPORT READY (2026-10-06 13:3xZ): the -4bit repos are mlx_vlm exports WITH the tower (vision_tower.* + processor
             // configs, revs de32efa9 / 8c2afdb4 / 413f2c66); GGUF stays text-only (the GGUF runtime has no image path).
             XCTAssertEqual(row.vision, row.runtime == .mlx, "\(row.id)")

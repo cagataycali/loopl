@@ -73,7 +73,7 @@ final class PromptBuilderTests: XCTestCase {
         // everything else, and always the default, stays public so a signed-out user is never blocked.
         let gated = c.models.filter(\.gated)
         XCTAssertTrue(gated.allSatisfy { $0.id.hasPrefix("loopl-") && $0.repo.hasPrefix("cagataydev/loopl-") },
-                      "only loopl v1 rows may be private: \(gated.map(\.id))")
+                      "only the loopl GGUF rows (private repos) may be gated: \(gated.map(\.id))")
         XCTAssertFalse(try XCTUnwrap(c.defaultModel).gated, "default model must be public")
         XCTAssertEqual(c.defaultModelId, "qwen3-0.6b-4bit")
         XCTAssertEqual(c.models.first?.id, "qwen3-0.6b-4bit")

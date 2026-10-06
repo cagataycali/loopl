@@ -106,11 +106,11 @@ The SDK, shipped as a free iOS app. Everything below runs on the phone.
 | [Qwen3-1.7B](https://huggingface.co/mlx-community/Qwen3-1.7B-4bit) | MLX | 968 MB | ✓ | 41 tok/s on iPhone 16 Pro |
 | [Qwen3 1.7B · Q4_K_M](https://huggingface.co/unsloth/Qwen3-1.7B-GGUF) | GGUF | 1.11 GB | ✓ | 33 tok/s on iPhone 16 Pro |
 | [Qwen3.5 2B](https://huggingface.co/mlx-community/Qwen3.5-2B-4bit) | MLX | 1.75 GB | ✓ | vision |
-| [loopl 4B](https://huggingface.co/cagataydev/loopl-4b-4bit) | MLX | 3.03 GB | ✓ | post-tuned for loopl · vision · gated |
+| [loopl 4B](https://huggingface.co/cagataydev/loopl-4b-4bit) | MLX | 3.03 GB | ✓ | post-tuned for loopl · vision · public |
 
 Up to 4B at 4-bit fits an 8 GB iPhone. Any public MLX or GGUF repo loads the same way. [All models →](https://loopl.dev/models/)
 
-The **loopl** models — Qwen3.5 0.8B/2B/4B post-tuned for this loop, vision kept, with their dataset and cards — are one [Hugging Face collection](https://huggingface.co/collections/cagataydev/loopl-on-device-agents-swift-6ac51395b13a9c41d4932eaf).
+The **loopl** models — Qwen3.5 0.8B/2B/4B post-tuned for this loop, vision kept, with their cards — are public, in one [Hugging Face collection](https://huggingface.co/collections/cagataydev/loopl-on-device-agents-swift-6ac51395b13a9c41d4932eaf).
 
 ## How it works
 
