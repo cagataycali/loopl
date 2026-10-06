@@ -51,7 +51,7 @@ struct SettingsView: View {
                 }
 
                 Section("Storage") {
-                    LabeledContent("Models on device", value: ByteCountFormatter.string(fromByteCount: store.diskUsed, countStyle: .file))
+                    LabeledContent("Models on device", value: ByteSize.label(store.diskUsed))
                     Button("Delete all downloaded models", role: .destructive) { confirmClear = true }
                         .confirmationDialog("Delete every downloaded model?", isPresented: $confirmClear, titleVisibility: .visible) {
                             Button("Delete all", role: .destructive) { Task { await engine.unload() }; store.deleteAll(); settings.lastModelId = nil }

@@ -166,7 +166,7 @@ One `Model` protocol, three engines. Numbers from the app's self-test on real ha
 </div>
 
 <div class="loopl-models">
-<span>Qwen3 0.6B · 1.7B · 4B</span><span>Qwen2.5 1.5B · 3B</span><span>Llama 3.2 1B · 3B</span><span>Gemma 3 1B · 4B</span><span>Phi-4-mini</span><span>SmolLM3</span><span>DeepSeek-R1 1.5B</span><span>Apple Foundation Models</span><span class="more">+ any public Hugging Face repo</span>
+<span>Qwen3 0.6B · 1.7B · 4B</span><span>Llama 3.2 1B · 3B</span><span>Gemma 3 1B · 4B</span><span>Phi-4-mini</span><span>SmolLM3</span><span>DeepSeek-R1 1.5B</span><span>Apple Foundation Models</span><span class="more">+ any public Hugging Face repo</span>
 </div>
 
 [Models & runtimes →](sdk/models.md){ .loopl-btn .loopl-btn--ghost }

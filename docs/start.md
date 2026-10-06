@@ -32,7 +32,7 @@ Add the **Increased Memory Limit** entitlement (`com.apple.developer.kernel.incr
 
 ## 2 · Fetch a model
 
-Public repos only, anonymous, resumable. The bundled catalog lists [21 models](models.md); any Hugging Face repo id works the same way.
+Public repos only, anonymous, resumable. The bundled catalog lists [19 models](models.md); any Hugging Face repo id works the same way.
 
 ```swift
 // snippet: compile(runtimes)

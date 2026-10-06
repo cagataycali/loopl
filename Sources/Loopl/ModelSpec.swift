@@ -45,7 +45,9 @@ public struct ModelSpec: Sendable, Codable, Hashable, Identifiable {
         case ctxUsable8GB = "ctx_usable_8gb", minRAMGB = "min_ram_gb"
     }
 
-    public var sizeLabel: String { ByteCountFormatter.string(fromByteCount: sizeBytes, countStyle: .file) }
+    /// "968.1 MB" — or "size unknown" for a repo whose blob sizes Hugging Face did not report
+    /// (never "Zero KB", see ``ByteSize``). Apple Intelligence rows are not downloadable at all.
+    public var sizeLabel: String { ByteSize.label(sizeBytes, zero: "size unknown") }
 
     /// Apple Intelligence rows have no download.
     public var isDownloadable: Bool { runtime != .appleFM }

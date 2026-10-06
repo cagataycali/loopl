@@ -3,7 +3,7 @@ import Loopl
 import LooplUI
 import LooplRuntimes
 
-/// "Model" — one list: the model in use, the ones on this device, the rest of
+/// "Models" — one list: the model in use, the ones on this device, the rest of
 /// the catalog. Tap to switch (downloads first if needed), swipe left to delete.
 struct ModelsView: View {
     @Bindable var engine: Engine
@@ -58,15 +58,20 @@ struct ModelsView: View {
                     }
                 }
                 Section {
-                    LabeledContent("On this device", value: ByteCountFormatter.string(fromByteCount: store.diskUsed, countStyle: .file))
+                    LabeledContent("On this device", value: ByteSize.label(store.diskUsed))
                     LabeledContent("Memory available to loopl", value: MemoryBudget.label(MemoryBudget.available))
                     if settings.offline { Label("Offline mode is on — downloads are refused, models on the device still load.", systemImage: LooplDesign.iconOffline).font(.footnote).foregroundStyle(.orange) }
-                } footer: { Text("Catalog v\(store.catalog.version) · \(store.catalog.updated)") }
+                } footer: {
+                    // Nothing downloaded yet is an empty shelf, not an error: say so in one line.
+                    Text(store.diskUsed == 0
+                         ? "No weights on this device yet — tap a model above and it downloads once, then runs offline. Catalog v\(store.catalog.version) · \(store.catalog.updated)"
+                         : "Catalog v\(store.catalog.version) · \(store.catalog.updated)")
+                }
             }
             .animation(LooplDesign.Motion.faded(LooplDesign.Motion.spring, reduceMotion), value: sections.map { $0.1.map(\.id) })
             .animation(LooplDesign.Motion.faded(LooplDesign.Motion.spring, reduceMotion), value: engine.loadedModel?.id)
             .animation(LooplDesign.Motion.crossfade, value: engine.readiness.isBusy)
-            .navigationTitle("Model")
+            .navigationTitle("Models")
             .refreshable { store.refresh() }
             .onAppear { store.refresh() }
             .confirmationDialog("\(confirmDelete?.isFromHub == true ? "Remove" : "Delete") \(confirmDelete?.name ?? "") from this device?", isPresented: Binding(get: { confirmDelete != nil }, set: { if !$0 { confirmDelete = nil } }), titleVisibility: .visible) {
