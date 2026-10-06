@@ -132,6 +132,10 @@ public final class Engine {
         Task { [registry, weak self] in
             // On-device tools join the catalog with their availability (unavailable ones are listed, never offered).
             await self?.registerAppleTools()
+            // Measured (ManageToolsMeasurement, 2026-10-06): loopl-0.8b reads "http exists but is not mounted…" and then TELLS
+            // THE USER instead of mounting (0/9 on http/calculator/remember) — its direct call IS its decision, so honour it:
+            // the call mounts the tool for this conversation, the result says so, Settings shows the tag. 2B: 9/12 either way.
+            await registry.setMountOnCall(true)
             await registry.observe { names in Task { @MainActor [weak self] in self?.mountedNow = names } }
             self?.mountedNow = await registry.mountedNames
         }
