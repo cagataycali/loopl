@@ -4,14 +4,13 @@
 
 # loopl
 
-**Agents that run on the iPhone.** A local model, the agent loop, and the phone's own abilities as tools —<br>
+**Agents that run on the iPhone.** A local model, the agent loop, and the phone's own abilities as tools —
 offline, no account, no cloud.
 
 [![TestFlight](https://img.shields.io/badge/TestFlight-join_the_beta-FF7A22?logo=apple&logoColor=white)](https://testflight.apple.com/join/uUNjfzW9)
 [![Swift 6](https://img.shields.io/badge/Swift-6-F05138?logo=swift&logoColor=white)](Package.swift)
 [![iOS 18+](https://img.shields.io/badge/iOS-18%2B-111111?logo=apple&logoColor=white)](Package.swift)
 [![macOS 15+](https://img.shields.io/badge/macOS-15%2B-111111?logo=apple&logoColor=white)](Package.swift)
-[![ci](https://github.com/cagataycali/loopl/actions/workflows/ci.yml/badge.svg)](https://github.com/cagataycali/loopl/actions/workflows/ci.yml)
 [![loopl.dev](https://img.shields.io/badge/docs-loopl.dev-111111)](https://loopl.dev)
 
 <picture>
