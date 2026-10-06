@@ -4,58 +4,12 @@ import Loopl
 import Vision
 #endif
 
-/// `read_text` — Vision `RecognizeTextRequest` (iOS 18 Swift API): OCR on the user's
-/// most recent attached picture. Works offline, on the Simulator too.
-public struct ReadTextTool: AppleTool {
-    public init() {}
-    public let name = "read_text"
-    public let description = "Read the text in a picture the user attached (OCR, on-device). Returns the recognised lines top to bottom. Use for screenshots, signs, receipts, documents."
-    public let parameters: JSONValue = ToolSchema.object([
-        "image_index": ToolSchema.number("Which attached picture: 0 = most recent (default)"),
-        "languages": ToolSchema.string("Comma-separated BCP-47 hints like en-US,tr-TR (default: automatic)"),
-    ])
-    public static let onDeviceCopy = "Reads text in pictures with the Vision framework on your iPhone. Works offline."
-    public static func availability() -> ToolAvailability {
-        #if canImport(Vision) && canImport(ImageIO)
-        return .ok
-        #else
-        return .no(Unavailable.sdk)
-        #endif
-    }
-    public func call(_ args: [String: JSONValue]) async throws -> String {
-        throw ToolError("no image attached — ask the user to attach a picture to their message first")
-    }
-    public func call(_ args: [String: JSONValue], images: [ImageBlock]) async throws -> ToolOutput {
-        let block = try pickImage(images, args: args)
-        #if canImport(Vision) && canImport(ImageIO)
-        let cg = try ImageCodec.cgImage(block)
-        var req = RecognizeTextRequest()
-        req.recognitionLevel = .accurate
-        req.usesLanguageCorrection = true
-        if let langs = args.string("languages")?.split(separator: ",").map({ Locale.Language(identifier: $0.trimmingCharacters(in: .whitespaces)) }), !langs.isEmpty {
-            req.recognitionLanguages = langs
-        } else {
-            req.automaticallyDetectsLanguage = true
-        }
-        let observations = try await req.perform(on: cg)
-        // Top-to-bottom: Vision's origin is bottom-left.
-        let lines = observations
-            .sorted { $0.boundingBox.cgRect.midY > $1.boundingBox.cgRect.midY }
-            .compactMap { $0.topCandidates(1).first?.string }
-        guard !lines.isEmpty else { return ToolOutput(text: "no text found in the picture (\(cg.width)×\(cg.height))") }
-        return ToolOutput(text: "text in the picture (\(lines.count) lines, \(cg.width)×\(cg.height)):\n" + lines.joined(separator: "\n"))
-        #else
-        throw ToolError(Unavailable.sdk)
-        #endif
-    }
-}
-
 /// `describe_image` — Vision `ClassifyImageRequest` + `DetectFaceRectanglesRequest` +
 /// `DetectBarcodesRequest` (iOS 18): what is in the picture, for text-only models.
 public struct DescribeImageTool: AppleTool {
     public init() {}
     public let name = "describe_image"
-    public let description = "Describe what is in a picture the user attached: top scene/object labels with confidence, number of faces, barcode/QR contents (on-device Vision, no text reading — use read_text for that)."
+    public let description = "Describe what is in a picture the user attached: top scene/object labels with confidence, number of faces, barcode/QR contents (on-device Vision)."
     public let parameters: JSONValue = ToolSchema.object([
         "image_index": ToolSchema.number("Which attached picture: 0 = most recent (default)"),
         "max_labels": ToolSchema.number("How many labels to return (default 8)"),

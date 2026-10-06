@@ -28,9 +28,21 @@ public struct TranscribeTool: AppleTool {
         return .no(Unavailable.sdk)
         #endif
     }
+    /// Accepts what the composer writes (`/…/X.m4a`), a `file://` URL (percent-encoded or not), `~/…`, and
+    /// a path a small model wrapped in quotes or backticks.
+    public static func fileURL(_ raw: String) -> URL {
+        var p = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        while let f = p.first, let l = p.last, p.count > 1, "`'\"".contains(f), f == l { p = String(p.dropFirst().dropLast()) }
+        if p.hasPrefix("file://") {
+            if let u = URL(string: p), u.isFileURL { return URL(fileURLWithPath: u.path) }
+            return URL(fileURLWithPath: String(p.dropFirst(7)).removingPercentEncoding ?? String(p.dropFirst(7)))
+        }
+        return URL(fileURLWithPath: (p as NSString).expandingTildeInPath)
+    }
+
     public func call(_ args: [String: JSONValue]) async throws -> String {
         guard let p = args.string("path"), !p.isEmpty else { throw ToolError("path is required") }
-        let url = p.hasPrefix("file://") ? URL(string: p)! : URL(fileURLWithPath: p)
+        let url = Self.fileURL(p)
         guard FileManager.default.fileExists(atPath: url.path) else { throw ToolError("no file at \(url.path)") }
         let a = Self.availability()
         guard a.available else { throw ToolError("transcribe is not available here: \(a.reason)") }

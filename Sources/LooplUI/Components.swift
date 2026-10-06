@@ -242,19 +242,34 @@ public struct UserTurn: View {
         if menu { turn.contextMenu { Button("Copy", systemImage: "doc.on.doc") { copy(text) } } } else { turn }
     }
     private var turn: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        // A recording travels as a marker line in the text (`AudioAttachmentMarker`); it is shown as a chip, not as the line.
+        let parts = AudioAttachmentMarker.split(text)
+        return VStack(alignment: .leading, spacing: 6) {
             Text("You").font(.caption.weight(.semibold)).foregroundStyle(.secondary).textCase(.uppercase).kerning(0.6)
             if !images.isEmpty { ImageStrip(images).padding(.bottom, 2) }
-            if !text.isEmpty {
+            if !parts.clips.isEmpty {
+                HStack(spacing: 8) {
+                    ForEach(parts.clips, id: \.self) { AudioClipChip(url: $0.url, duration: $0.duration) }
+                }
+                .padding(.bottom, 2)
+            }
+            if !parts.text.isEmpty {
                 // With the hold menu the text is NOT selectable: a long-press on selectable text opens the selection UI
                 // and swallows the context menu. Copy is in the menu; Edit gives a real text field to select in.
-                let body = Text(text).font(.body).lineSpacing(4).foregroundStyle(.primary.opacity(0.85))
+                let body = Text(parts.text).font(.body).lineSpacing(4).foregroundStyle(.primary.opacity(0.85))
                 if menu { body.textSelection(.enabled) } else { body }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(images.isEmpty ? "You said: \(text)" : "You sent \(images.count) image\(images.count == 1 ? "" : "s"): \(text)")
+        .accessibilityLabel(accessibilityText(parts))
+    }
+
+    private func accessibilityText(_ parts: (text: String, clips: [AudioAttachmentMarker])) -> String {
+        var sent: [String] = []
+        if !images.isEmpty { sent.append("\(images.count) image\(images.count == 1 ? "" : "s")") }
+        if !parts.clips.isEmpty { sent.append("\(parts.clips.count) recording\(parts.clips.count == 1 ? "" : "s")") }
+        return sent.isEmpty ? "You said: \(parts.text)" : "You sent \(sent.joined(separator: " and ")): \(parts.text)"
     }
 }
 

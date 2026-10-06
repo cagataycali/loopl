@@ -1,4 +1,6 @@
 import Foundation
+import AVFoundation
+import LooplUI
 import Loopl
 import LooplAppleTools
 
@@ -73,8 +75,8 @@ enum DesignFixture {
             t.apply(.modelMessage(.assistant(text: "I'll post it now.", toolUses: [use])))
             t.apply(.approvalRequested(HttpTool().requiresApproval(for: use.input)!.with(id: use.toolUseId)))
         case "apple":
-            // On-device Apple tools: detect_language and generate_voice run FOR REAL through the
-            // tools; generate_image runs for real where ImagePlayground is available (device with
+            // On-device Apple tools: generate_voice runs FOR REAL through the tool;
+            // generate_image runs for real where ImagePlayground is available (device with
             // Apple Intelligence) and otherwise shows the flat ImageCodec fixture, labelled as such.
             engine.transcript = t
             Task { await replayApple(engine) }
@@ -120,6 +122,26 @@ enum DesignFixture {
             t.apply(.startEventLoop(cycle: 2))
             t.apply(.text("42 × 3 = **126**."))
             t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("42 × 3 = **126**."), metrics: EventLoopMetrics())))
+        case "audio":
+            // A recording the user made in the composer travels as one marker line in the text (shown as a chip);
+            // the model reads the path and calls `transcribe` on it. The file is a real AAC take written by
+            // `GenerateVoiceTool`-style synthesis so the chip's play button works in captures.
+            let dir = AudioAttachment.directory(for: engine.currentId)
+            let url = dir.appendingPathComponent("8F2A1B.m4a")
+            let marker = AudioAttachmentMarker(path: url.path, duration: 4.6)
+            t.user("What did I just say? Answer in one line.\n" + marker.line)
+            t.apply(.startEventLoop(cycle: 1))
+            t.apply(.text("Let me listen to the recording."))
+            let c = ToolUse(toolUseId: "tooluse_t1", name: "transcribe", input: ["path": .string(url.path)])
+            t.apply(.modelMessage(.assistant(text: "Let me listen to the recording.", toolUses: [c])))
+            t.apply(.toolStarted(c))
+            t.apply(.toolResult(ToolResult(toolUseId: "tooluse_t1", name: "transcribe", content: "transcript of 8F2A1B.m4a (4.6 s audio, en-US, 1.1 s):\nhello from loopl, this is a recording", durationMs: 1120)))
+            t.apply(.startEventLoop(cycle: 2))
+            t.apply(.text("You said: **\"hello from loopl, this is a recording.\"**"))
+            t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("You said: **\"hello from loopl, this is a recording.\"**"), metrics: EventLoopMetrics())))
+            engine.transcript = t
+            Task { await writeFixtureRecording(to: url) }
+            return
         default: // streaming
             t.user("Explain what an agent loop is, in three short points, with a Swift example.")
             t.apply(.startEventLoop(cycle: 1))
@@ -222,22 +244,45 @@ enum DesignFixture {
         _ = engine.transcript.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant(answer), metrics: EventLoopMetrics())))
     }
 
+    /// Synthesises the `audio` scene's take silently (AVSpeechSynthesizer.write → AAC 16 kHz mono), exactly the
+    /// file the composer would have written, so the chip plays in captures. Idempotent.
+    @MainActor static func writeFixtureRecording(to url: URL) async {
+        guard !FileManager.default.fileExists(atPath: url.path) else { return }
+        let utt = AVSpeechUtterance(string: "hello from loopl, this is a recording")
+        utt.voice = AVSpeechSynthesisVoice(language: "en-US")
+        let synth = AVSpeechSynthesizer()
+        final class Box: @unchecked Sendable { var file: AVAudioFile?; var done = false }
+        let box = Box()
+        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+            synth.write(utt) { buffer in
+                guard let pcm = buffer as? AVAudioPCMBuffer else { return }
+                if pcm.frameLength == 0 { if !box.done { box.done = true; box.file = nil; c.resume() }; return }
+                if box.file == nil {
+                    var settings = AudioAttachment.settings
+                    settings[AVSampleRateKey] = pcm.format.sampleRate   // keep the synthesiser's rate; AAC encodes it fine
+                    box.file = try? AVAudioFile(forWriting: url, settings: settings, commonFormat: pcm.format.commonFormat, interleaved: pcm.format.isInterleaved)
+                }
+                try? box.file?.write(from: pcm)
+            }
+        }
+    }
+
     @MainActor static func replayApple(_ engine: Engine) async {
         func sleep(_ s: Double) async { try? await Task.sleep(for: .seconds(s)) }
         let t0 = Date()
-        engine.transcript.user("Draw a black smart ring on a slate tile, and tell me what language \"Merhaba dünya, bugün hava çok güzel\" is.")
+        engine.transcript.user("Draw a black smart ring on a slate tile, and say \"hello from loopl\" out loud.")
         engine.haptics.emit(.send)
         await sleep(0.8)
         _ = engine.transcript.apply(.startEventLoop(cycle: 1))
-        _ = engine.transcript.apply(.text("On it — drawing the ring and checking the language."))
+        _ = engine.transcript.apply(.text("On it — drawing the ring and saying hello."))
         let c1 = ToolUse(toolUseId: "tooluse_a1", name: "generate_image", input: ["prompt": .string("a black smart ring on a slate tile, studio light"), "style": .string("illustration")])
-        let c2 = ToolUse(toolUseId: "tooluse_a2", name: "detect_language", input: ["text": .string("Merhaba dünya, bugün hava çok güzel")])
-        _ = engine.transcript.apply(.modelMessage(.assistant(text: "On it — drawing the ring and checking the language.", toolUses: [c1, c2])))
+        let c2 = ToolUse(toolUseId: "tooluse_a2", name: "generate_voice", input: ["text": .string("hello from loopl"), "language": .string("en-US")])
+        _ = engine.transcript.apply(.modelMessage(.assistant(text: "On it — drawing the ring and saying hello.", toolUses: [c1, c2])))
         _ = engine.transcript.apply(.toolStarted(c1)); engine.haptics.emit(.toolStart)
         _ = engine.transcript.apply(.toolStarted(c2)); engine.haptics.emit(.toolStart)
-        // detect_language: the real tool.
-        let langText = (try? await DetectLanguageTool().call(c2.input)) ?? "language: undetermined"
-        _ = engine.transcript.apply(.toolResult(ToolResult(toolUseId: c2.toolUseId, name: c2.name, content: langText, durationMs: 3))); engine.haptics.emit(.toolFinish)
+        // generate_voice: the real tool (the Simulator speaks through the Mac).
+        let voiceText = (try? await GenerateVoiceTool().call(c2.input)) ?? "spoke 3 words"
+        _ = engine.transcript.apply(.toolResult(ToolResult(toolUseId: c2.toolUseId, name: c2.name, content: voiceText, durationMs: 1200))); engine.haptics.emit(.toolFinish)
         // generate_image: real when the device can; otherwise the fixture image, labelled.
         var imageResult: ToolResult
         if GenerateImageTool.availability().available, let out = try? await GenerateImageTool().callOutput(c1.input) {
@@ -254,7 +299,7 @@ enum DesignFixture {
         _ = engine.transcript.apply(.toolResult(imageResult)); engine.haptics.emit(imageResult.isError ? .error : .toolFinish)
         await sleep(0.5)
         _ = engine.transcript.apply(.startEventLoop(cycle: 2))
-        let answer = "Here's the ring. The sentence is **Turkish** — \"Hello world, the weather is lovely today.\""
+        let answer = "Here's the ring — and that was me saying hello."
         _ = engine.transcript.apply(.text(answer))
         _ = engine.transcript.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant(answer), metrics: EventLoopMetrics())))
     }

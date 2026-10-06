@@ -40,10 +40,28 @@ Free, no sign-in, no analytics. The first launch fetches a small model; from the
 
 | | |
 |---|---|
-| **Chat** | a document, not bubbles: streaming text, folded thinking, tool rows with timing, image attachments, Stop. |
+| **Chat** | a document, not bubbles: streaming text, folded thinking, tool rows with timing, image attachments, a mic that records a take for `transcribe`, Stop. |
 | **Models** | the catalog plus **Browse Hugging Face** — search, see size, context and whether it fits, download. Apple's model on iOS 26. |
 | **Settings** | system prompt, which tools, what asks first, **offline mode**. |
 | **History** | finished conversations. Select a few → [Share to Hugging Face](share-to-hugging-face.md): reviewed, redacted, into a private dataset of yours. |
+
+## Tools
+
+Fewer tools make a better agent — every tool is one more thing a small model can pick wrongly, so the app ships only what earns its place, one line each. Settings turns any of them off.
+
+| | |
+|---|---|
+| `current_time` · `calculator` | any time zone; exact arithmetic |
+| `remember` · `recall` | notes the agent keeps between chats, on the device |
+| `http` | any HTTPS request — writes ask first |
+| `device_info` | battery, storage, model, OS |
+| `generate_image` | a picture from a prompt (Image Playground) |
+| `generate_voice` | speaks with on-device voices, Personal Voice included |
+| `transcribe` | speech to text, offline. Tap the mic in the composer, record, send — the model sees `[audio attached: …]` and decides to call it; nothing is transcribed behind its back |
+| `translate` | Apple's offline translation packs |
+| `describe_image` | scene labels, faces, barcodes on an attached photo (Vision) |
+| `flashlight` · `vibrate` | torch on/off/dimmed; haptic patterns |
+| `open_app` | another app via deep link, with context — asks first unless allow-listed |
 
 ## Requirements
 
