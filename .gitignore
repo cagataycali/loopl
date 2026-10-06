@@ -10,3 +10,6 @@ DerivedData/
 
 # llama.cpp xcframework (scripts/fetch-llama-xcframework.sh)
 Vendor/
+
+# derived data from the documented gate command (-derivedDataPath .dd)
+.dd*/

@@ -103,7 +103,7 @@ enum DesignFixture {
             engine.readiness = .downloading(spec, done: 162_000_000, total: spec.sizeBytes)
         case "live":
             engine.transcript = t
-            Task { await replayLive(engine, loop: CommandLine.arguments.contains("--design-loop")) }
+            replay = Task { await replayLive(engine, loop: CommandLine.arguments.contains("--design-loop")) }
             return
         case "jump":
             // Streaming-jitter repro: a long Markdown answer in token-sized chunks (~40/s, like Qwen3.5-0.8B on a 16 Pro)
@@ -442,8 +442,11 @@ enum DesignFixture {
 
     /// Streams the `tool` scene over time the way a real run looks: ~30 chunks/s text, two tool
     /// calls that take a moment, a second cycle, the answer. Drives the engine's haptic bus too.
+    /// The running `live` replay — `Engine.stop()` (Stop button / ⌘.) cancels it, so a stop is visible in fixtures too.
+    @MainActor static var replay: Task<Void, Never>?
+
     @MainActor static func replayLive(_ engine: Engine, loop: Bool) async {
-        func sleep(_ s: Double) async { try? await Task.sleep(for: .seconds(s)) }
+        func sleep(_ s: Double) async { try? await Task.sleep(for: .seconds(s)) }   // cancelled → returns at once: the script fast-forwards to its end
         func stream(_ text: String, cps: Double = 30) async {
             var buf = ""
             for word in text.split(separator: " ", omittingEmptySubsequences: false) {
@@ -479,7 +482,7 @@ enum DesignFixture {
             _ = engine.transcript.apply(.metrics(m))
             _ = engine.transcript.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("done"), metrics: EventLoopMetrics())))
             await sleep(3)
-        } while loop
+        } while loop && !Task.isCancelled
     }
 }
 
