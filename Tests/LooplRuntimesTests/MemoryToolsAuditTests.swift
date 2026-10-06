@@ -13,8 +13,9 @@ import LooplAppleTools
 ///       xcodebuild test -scheme Loopl-Package -destination 'platform=macOS,arch=arm64' \
 ///       -only-testing:LooplRuntimesTests/MemoryToolsAuditTests
 final class MemoryToolsAuditTests: XCTestCase {
-    /// `AppSettings.defaultSystemPrompt` — what build 9+ sends (PR #89: nothing in front of it).
-    static let systemPrompt = "You are loopl, a helpful assistant running fully on this device. Use tools when they help; answer concisely."
+    /// `AppSettings.defaultSystemPrompt` — what build 10+ sends (PR #89: nothing in front of it; the memory sentence is this lane's).
+    /// `LOOPL_AUDIT_SYSTEM` overrides it (the build-9 text reproduces the owner's report).
+    static let systemPrompt = ProcessInfo.processInfo.environment["LOOPL_AUDIT_SYSTEM"] ?? "You are loopl, a helpful assistant running fully on this device. Use tools when they help; answer concisely. Your only memory between conversations is the remember and recall tools: when the user asks you to remember something, call remember; before answering anything about the user, call recall."
 
     /// `device_info` lives in the app target (UIKit); the model only sees its spec, so a same-spec stand-in keeps the prompt faithful.
     struct DeviceInfoStandIn: Tool {

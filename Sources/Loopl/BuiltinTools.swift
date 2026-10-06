@@ -52,7 +52,8 @@ public struct RememberTool: Tool {
     public let description = "Save a fact the user wants kept for later: their name, where they live, preferences, anything they say 'remember', 'note' or 'don't forget' about. Notes persist across conversations and app restarts. Put the fact in value; key is an optional short label (name, city, coffee)."
     public let parameters: JSONValue = ["type": "object", "properties": [
         "value": ["type": "string", "description": "the fact to keep, in the user's words"],
-        "key": ["type": "string", "description": "optional short label, e.g. name"]], "required": ["value"]]
+        "key": ["type": "string", "description": "optional short label, e.g. name"],
+        "replace": ["type": "boolean", "description": "true to overwrite a note that already exists under key (only when the user asked to change it)"]], "required": ["value"]]
     public func call(_ args: [String: JSONValue]) async throws -> String {
         // Flat/odd calls from small models: value under note/text/content/fact, or the key alone carrying the fact.
         let value = (args["value"] ?? args["note"] ?? args["text"] ?? args["content"] ?? args["fact"]).map { $0.stringValue ?? $0.compact }?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -63,6 +64,11 @@ public struct RememberTool: Tool {
         }
         var notes = NotesStore.all()
         if key.isEmpty { key = NotesStore.label(for: value, taken: Set(notes.keys)) }
+        // Measured (MemoryToolsAuditTests): asked "what is my name?" the model sometimes WRITES remember{name: "loopl"} or invents
+        // preferences — a silent overwrite would destroy what the user said. Keep the note, hand it back; an explicit replace wins.
+        if let existing = notes[key], existing != value, args["replace"]?.boolValue != true {
+            return "\(key) is already remembered as: \(existing). Kept it. If the user asked to change it, call remember again with replace: true."
+        }
         notes[key] = value
         NotesStore.save(notes)
         return "remembered \(key): \(value) (\(notes.count) note\(notes.count == 1 ? "" : "s") stored)"

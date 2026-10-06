@@ -34,13 +34,20 @@ public final class AppSettings {
     }
     nonisolated public static let askBeforeKey = "loopl.askBefore"
 
-    public static let defaultSystemPrompt = "You are loopl, a helpful assistant running fully on this device. Use tools when they help; answer concisely."
+    /// The default system prompt — yours to edit in Settings; nothing is added in front of it for any model (PR #89).
+    /// The memory sentence is MEASURED (MemoryProbeTests, 2026-10-06): without it Qwen3.5-0.8B never calls remember/recall
+    /// (0/16 greedy) and loopl-0.8b answers "what is my name?" about itself; with it both reach 8/8. Mirrored in
+    /// loopl-train data/system/app-default.md — bump its version when this text changes.
+    public static let defaultSystemPrompt = "You are loopl, a helpful assistant running fully on this device. Use tools when they help; answer concisely. Your only memory between conversations is the remember and recall tools: when the user asks you to remember something, call remember; before answering anything about the user, call recall."
+    /// Build ≤ 9 default — an unedited stored prompt equal to it is upgraded to the current default on launch.
+    public static let legacyDefaultSystemPrompts: Set<String> = ["You are loopl, a helpful assistant running fully on this device. Use tools when they help; answer concisely."]
     public static let allToolNames = ["current_time", "calculator", "device_info", "remember", "recall", "http"]
 
     public init() {
         let d = UserDefaults.standard
         offline = d.bool(forKey: NetworkPolicy.offlineKey)
-        systemPrompt = d.string(forKey: "loopl.system") ?? Self.defaultSystemPrompt
+        let stored = d.string(forKey: "loopl.system")
+        systemPrompt = stored.map { Self.legacyDefaultSystemPrompts.contains($0) ? Self.defaultSystemPrompt : $0 } ?? Self.defaultSystemPrompt
         var saved = Set((d.array(forKey: "loopl.tools") as? [String]) ?? Self.allToolNames)
         if saved.remove("http_get") != nil { saved.insert("http") }     // 0.1 → http (http_get is a deprecated SDK alias)
         enabledTools = saved

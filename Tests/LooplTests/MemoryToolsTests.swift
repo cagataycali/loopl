@@ -49,6 +49,18 @@ final class MemoryToolsTests: XCTestCase {
         XCTAssertTrue(miss.contains("teal") && miss.contains("Çağatay"))
     }
 
+    func testRememberNeverSilentlyOverwrites() async throws {
+        _ = try await RememberTool().call(["key": "name", "value": "Çağatay"])
+        let kept = try await RememberTool().call(["key": "name", "value": "loopl"])            // the model answering about itself
+        XCTAssertTrue(kept.hasPrefix("name is already remembered as: Çağatay. Kept it."), kept)
+        XCTAssertEqual(NotesStore.all()["name"], "Çağatay")
+        let same = try await RememberTool().call(["key": "name", "value": "Çağatay"])          // idempotent
+        XCTAssertTrue(same.hasPrefix("remembered name: Çağatay"), same)
+        let replaced = try await RememberTool().call(["key": "name", "value": "Ada", "replace": true])
+        XCTAssertTrue(replaced.hasPrefix("remembered name: Ada"), replaced)
+        XCTAssertEqual(NotesStore.all()["name"], "Ada")
+    }
+
     func testDescriptionsTellTheModelWhen() {
         XCTAssertTrue(RememberTool().description.contains("'remember'"))
         XCTAssertTrue(RecallTool().description.contains("you have no other memory"))
