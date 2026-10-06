@@ -165,7 +165,7 @@ final class ToolRegistryTests: XCTestCase {
 
     // MARK: manage_tools results (what the model reads)
 
-    func testListDescribeAndHonestCreate() async throws {
+    func testListDescribeAndRefusedActions() async throws {
         let registry = ToolRegistry(catalog: [CalculatorTool(), HttpTool()], mounted: ["calculator"])
         await registry.register(ClosureTool(name: "flashlight", description: "torch") { _ in "" }, source: .app, mounted: false, available: false, reason: "No torch on this device.")
         let t = ManageToolsTool(registry: registry)
@@ -176,10 +176,9 @@ final class ToolRegistryTests: XCTestCase {
         XCTAssertTrue(list.contains("flashlight — cannot run here: No torch on this device."), list)
         let d = try await t.call(["action": "describe", "name": "http"])
         XCTAssertTrue(d.hasPrefix("http [not mounted]"), d); XCTAssertTrue(d.contains("parameters: {"), d)
-        let create = try await t.call(["action": "create", "name": "x", "source": "struct X {}", "language": "swift"])
-        XCTAssertTrue(create.contains("not available on this device yet"), create)
-        let remove = try await t.call(["action": "remove", "name": "x"])
-        XCTAssertTrue(remove.contains("not available on this device yet"), remove)
+        // Owner decision: no create/remove — the model never loads code. Unknown actions name the four real ones.
+        do { _ = try await t.call(["action": "create", "name": "x", "source": "struct X {}"]); XCTFail() }
+        catch let e as ToolError { XCTAssertEqual(e.message, "unknown action \"create\". Use list, mount, unmount or describe.") }
         do { _ = try await t.call(["action": "mount"]); XCTFail("mount without names must error") } catch let e as ToolError { XCTAssertTrue(e.message.contains("needs names")) }
         do { _ = try await t.call(["action": "fly"]); XCTFail() } catch let e as ToolError { XCTAssertTrue(e.message.contains("unknown action")) }
     }
@@ -216,36 +215,5 @@ final class ToolRegistryTests: XCTestCase {
         var r2results: [ToolResult] = []
         for try await e in a2.stream("x") { if case .toolResult(let r) = e { r2results.append(r) } }
         XCTAssertTrue(r2results[0].isError); XCTAssertTrue(r2results[0].content.contains("exists but is not mounted"))
-    }
-
-    func testCreateThroughAPluggedCreator() async throws {
-        struct Creator: ToolCreator {
-            var languages: [String] { ["javascript"] }
-            func create(name: String, source: String, language: String) async throws -> any Tool {
-                guard source.contains("return") else { throw ToolError("no return statement") }
-                return ClosureTool(name: name, description: "created \(language)") { _ in "hi from \(name)" }
-            }
-            func remove(name: String) async throws {}
-            func saved() async -> [(name: String, language: String)] { [] }
-        }
-        let registry = ToolRegistry(catalog: [CalculatorTool()])
-        await registry.setCreator(Creator())
-        let t = ManageToolsTool(registry: registry)
-        do { _ = try await t.call(["action": "create", "name": "greet", "source": "x", "language": "swift"]); XCTFail() }
-        catch let e as ToolError { XCTAssertTrue(e.message.contains("write javascript instead"), e.message) }
-        do { _ = try await t.call(["action": "create", "name": "greet", "source": "x"]); XCTFail() }
-        catch let e as ToolError { XCTAssertEqual(e.message, "no return statement") }
-        let ok = try await t.call(["action": "create", "name": "greet", "source": "return 1"])
-        XCTAssertTrue(ok.hasPrefix("created and mounted \"greet\" (javascript)"), ok)
-        let names = await registry.mountedNames
-        XCTAssertEqual(names, ["calculator", "greet"])
-        let out = try await registry.tool(named: "greet")!.call([:])
-        XCTAssertEqual(out, "hi from greet")
-        do { _ = try await t.call(["action": "remove", "name": "calculator"]); XCTFail() }
-        catch let e as ToolError { XCTAssertTrue(e.message.contains("built in"), e.message) }
-        let removed = try await t.call(["action": "remove", "name": "greet"])
-        XCTAssertEqual(removed, "removed \"greet\".")
-        let after = await registry.names
-        XCTAssertEqual(after, ["calculator"])
     }
 }

@@ -39,7 +39,7 @@ public actor ToolRegistry {
     public enum Source: String, Sendable, Codable, Hashable {
         /// Built into the app (portable + on-device tools).
         case app
-        /// Written by the agent through `manage_tools create` (lane D) and loaded at runtime.
+        /// Registered at runtime by the host from something the user installed (kept for Settings grouping; the model never writes code).
         case created
         /// Registered by the host for one session (tests, fixtures, a sub-agent's extras).
         case session
@@ -63,10 +63,6 @@ public actor ToolRegistry {
     /// default: a mount stays an explicit `manage_tools` call the transcript shows. Measured both ways (ManageToolsMeasurement).
     public var mountOnCall = false
     public func setMountOnCall(_ on: Bool) { mountOnCall = on }
-
-    /// Plug point for `manage_tools create / remove` (lane D: Swift on macOS, JavaScript on iPhone). `nil` → the actions
-    /// answer honestly that creating tools is not available on this device yet.
-    public private(set) var creator: (any ToolCreator)?
 
     private var entries: [String: Entry] = [:]
     /// Catalog order — the order tools were registered; mount order follows it.
@@ -203,8 +199,6 @@ public actor ToolRegistry {
         if !available, e.mounted { e.mounted = false; entries[name] = e; bump() } else { entries[name] = e }
     }
 
-    public func setCreator(_ c: (any ToolCreator)?) { creator = c }
-
     /// Observe mounted-set changes (called with the new mounted names, on the registry's executor).
     @discardableResult
     public func observe(_ f: @Sendable @escaping ([String]) -> Void) -> UUID {
@@ -228,18 +222,4 @@ public actor ToolRegistry {
         public init() {}
         public var isEmpty: Bool { changed.isEmpty && unchanged.isEmpty && unknown.isEmpty && unavailable.isEmpty && pinned.isEmpty }
     }
-}
-
-/// Lane D's half of `manage_tools create / remove`: turn source code the model wrote into a `Tool` (Swift compiled on a
-/// Mac, JavaScript in JavaScriptCore on iPhone), persist it, and hand it to the registry. The registry only knows this
-/// protocol; without an implementation the actions say so.
-public protocol ToolCreator: Sendable {
-    /// Languages this device can load — e.g. `["swift"]` on a Mac, `["javascript"]` on iPhone.
-    var languages: [String] { get }
-    /// Validate + build. Throw `ToolError` with the compiler's/validator's words when the source is not loadable.
-    func create(name: String, source: String, language: String) async throws -> any Tool
-    /// Delete the persisted source of a created tool (the registry unregisters it first).
-    func remove(name: String) async throws
-    /// Created tools saved on this device (name → language), restored at launch by the host.
-    func saved() async -> [(name: String, language: String)]
 }
