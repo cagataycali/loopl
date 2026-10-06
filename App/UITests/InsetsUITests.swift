@@ -1,0 +1,130 @@
+import XCTest
+
+/// Geometry guard for the bug the owner hit on iOS 27.0.1: the bottom tab bar
+/// covered the last row of the scrollable panes — Settings' destructive
+/// "Delete conversation history" and the Models list's last model.
+///
+/// Each test scrolls a pane to its end and asserts, in points, that the last row
+/// clears the tab bar: `tabBar.minY - lastRow.maxY >= 0`, with the measured gap
+/// attached to the result bundle next to a screenshot.
+///
+/// Own scheme (`looplUITests`) so the other lanes' unit-test gate stays untouched.
+/// `TEST_RUNNER_INSETS_BEFORE=1` launches the app with `--design-no-clearance`,
+/// which reproduces the pre-fix geometry — that is how the before/after pairs in
+/// the lane's shots/ were captured from one build.
+final class InsetsUITests: XCTestCase {
+    /// Pre-fix capture mode: measure and screenshot, never fail.
+    private var before: Bool { ProcessInfo.processInfo.environment["INSETS_BEFORE"] == "1" }
+    private var tag: String { before ? "before" : "after" }
+
+    override func setUp() { continueAfterFailure = false }
+
+    private func launch(tab: String, dynamicTypeXL: Bool = false) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments = ["--design-fixture", "empty", "--design-tab", tab]
+        if before { app.launchArguments.append("--design-no-clearance") }
+        if dynamicTypeXL {
+            app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXL"]
+        }
+        app.launch()
+        return app
+    }
+
+    /// The floating tab bar, or nil on iPad (NavigationSplitView — no tab bar).
+    private func tabBar(_ app: XCUIApplication) -> XCUIElement? {
+        let bar = app.tabBars.firstMatch
+        return bar.waitForExistence(timeout: 10) ? bar : nil
+    }
+
+    private func scrollToEnd(_ app: XCUIApplication, times: Int = 16) -> XCUIElement {
+        let scroll = app.collectionViews.firstMatch
+        XCTAssertTrue(scroll.waitForExistence(timeout: 15), "no list in this pane")
+        for _ in 0..<times { scroll.swipeUp(velocity: .fast) }
+        Thread.sleep(forTimeInterval: 1.0)   // let the scroll settle so frames are final
+        return scroll
+    }
+
+    private func lastRow(_ app: XCUIApplication) -> XCUIElement {
+        let cells = app.collectionViews.firstMatch.cells
+        XCTAssertGreaterThan(cells.count, 0, "empty list")
+        return cells.element(boundBy: cells.count - 1)
+    }
+
+    @discardableResult
+    private func check(_ element: XCUIElement, _ app: XCUIApplication, _ label: String,
+                       file: StaticString = #filePath, line: UInt = #line) -> CGFloat {
+        XCTAssertTrue(element.waitForExistence(timeout: 10), "\(label) not found", file: file, line: line)
+        let bar = tabBar(app)
+        let limit = bar?.frame.minY ?? app.windows.firstMatch.frame.maxY
+        let gap = limit - element.frame.maxY
+        let name = "\(label)-\(tag)"
+        XCTContext.runActivity(named: "\(name): maxY \(element.frame.maxY) · limit \(limit) · gap \(gap)") { a in
+            let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+            shot.lifetime = .keepAlways
+            shot.name = name
+            a.add(shot)
+            let text = XCTAttachment(string: "\(name) maxY=\(element.frame.maxY) limit=\(limit) gap=\(gap)\n")
+            text.lifetime = .keepAlways
+            text.name = "\(name).txt"
+            a.add(text)
+        }
+        if !before {
+            XCTAssertGreaterThanOrEqual(gap, 0, "\(label) is UNDER the bar by \(-gap) pt", file: file, line: line)
+        }
+        return gap
+    }
+
+    // MARK: - Settings
+
+    func testSettingsBottomClearsTabBar() {
+        let app = launch(tab: "settings")
+        _ = scrollToEnd(app)
+        check(lastRow(app), app, "settings-last-row")
+    }
+
+    func testSettingsDeleteHistoryButtonIsHittable() {
+        let app = launch(tab: "settings")
+        _ = scrollToEnd(app)
+        check(app.buttons["Delete conversation history"], app, "settings-delete-history")
+    }
+
+    func testSettingsBottomClearsTabBarAtAccessibilityXL() {
+        let app = launch(tab: "settings", dynamicTypeXL: true)
+        _ = scrollToEnd(app, times: 30)
+        check(lastRow(app), app, "settings-last-row-axXL")
+    }
+
+    // MARK: - Models
+
+    func testModelsBottomClearsTabBar() {
+        let app = launch(tab: "models")
+        _ = scrollToEnd(app, times: 22)
+        check(lastRow(app), app, "models-last-row")
+    }
+
+    func testModelsBottomClearsTabBarAtAccessibilityXL() {
+        let app = launch(tab: "models", dynamicTypeXL: true)
+        _ = scrollToEnd(app, times: 40)
+        check(lastRow(app), app, "models-last-row-axXL")
+    }
+
+    // MARK: - Pushed panes inside a tab (same bar behind them)
+
+    func testToolsEditorBottomClearsTabBar() {
+        let app = launch(tab: "settings")
+        let tools = app.buttons["Tools"].firstMatch
+        XCTAssertTrue(tools.waitForExistence(timeout: 10))
+        tools.tap()
+        _ = scrollToEnd(app, times: 20)
+        check(lastRow(app), app, "tools-last-row")
+    }
+
+    func testHubBrowseBottomClearsTabBar() {
+        let app = launch(tab: "models")
+        let browse = app.descendants(matching: .any)["models-browse-hub"].firstMatch
+        XCTAssertTrue(browse.waitForExistence(timeout: 10))
+        browse.tap()
+        _ = scrollToEnd(app, times: 10)
+        check(lastRow(app), app, "hub-browse-last-row")
+    }
+}

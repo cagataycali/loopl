@@ -68,6 +68,7 @@ struct ModelsView: View {
                          : "Catalog v\(store.catalog.version) · \(store.catalog.updated)")
                 }
             }
+            .looplScrollClearance()
             .animation(LooplDesign.Motion.faded(LooplDesign.Motion.spring, reduceMotion), value: sections.map { $0.1.map(\.id) })
             .animation(LooplDesign.Motion.faded(LooplDesign.Motion.spring, reduceMotion), value: engine.loadedModel?.id)
             .animation(LooplDesign.Motion.crossfade, value: engine.readiness.isBusy)

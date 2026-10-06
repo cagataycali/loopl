@@ -65,6 +65,8 @@ struct RootView: View {
                 Tab("Models", systemImage: LooplDesign.iconModels, value: .models) { ModelsView(engine: engine, store: store, settings: settings) }
                 Tab("Settings", systemImage: LooplDesign.iconSettings, value: .settings) { SettingsView(engine: engine, settings: settings, store: store) }
             }
+            // Every pane's list tops its bottom inset up to clear the tab bar (see looplScrollClearance()).
+            .looplBottomBar()
         }
     }
 }

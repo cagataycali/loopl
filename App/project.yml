@@ -113,6 +113,21 @@ targets:
         # xcodegen derives TEST_HOST from the target name (LooplApp.app); the product is loopl.app.
         TEST_HOST: $(BUILT_PRODUCTS_DIR)/loopl.app/loopl
         BUNDLE_LOADER: $(TEST_HOST)
+  # UI-geometry guard (lane LOOPL-INSETS): scrolls each pane to the end and asserts
+  # the last row clears the floating tab bar. Its OWN scheme (looplUITests) so the
+  # `loopl` scheme's unit-test gate stays fast and unchanged.
+  LooplUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+    - UITests
+    dependencies:
+    - target: LooplApp
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: technology.tiny.loopl.uitests
+        GENERATE_INFOPLIST_FILE: true
+        TEST_TARGET_NAME: LooplApp
 schemes:
   loopl:
     build:
@@ -127,3 +142,14 @@ schemes:
       - LooplTests
     archive:
       config: Release
+  looplUITests:
+    build:
+      targets:
+        LooplApp: all
+        LooplUITests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+      - LooplUITests

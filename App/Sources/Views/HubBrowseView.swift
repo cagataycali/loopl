@@ -91,6 +91,7 @@ struct HubBrowseView: View {
             }
         }
         .listStyle(.insetGrouped)
+        .looplScrollClearance()
         .navigationTitle("Hugging Face")
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search models or paste a repo id")
@@ -321,6 +322,10 @@ struct HubRepoSheet: View {
                 }
             }
             .listStyle(.insetGrouped)
+            // A sheet: no tab bar behind it, and its own Download bar is a safeAreaInset
+            // below this one, so the last row keeps its air either way.
+            .looplBottomBar(false)
+            .looplScrollClearance()
             .navigationTitle(hint?.name ?? repoId.split(separator: "/").last.map(String.init) ?? repoId)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
