@@ -33,6 +33,24 @@ Your conversations → your private dataset → one GPU job → a model that is 
 5. **Job** — the app commits `train/loopl_sft.py` into your dataset repo and launches it with `uv run`. The script trains, merges, scores on held-out conversations, pushes `<you>/<name>` (weights), `-4bit` (MLX, for the phone) and `-GGUF` — all private.
 6. **Result** — eval loss before → after, how often the tuned model picked the right tool, and *Add to Models*. The repos also appear under Models › Mine.
 
+## Keep going — rounds, epochs, stitching
+
+A tuned model is a base too. Three controls on the Recipe card make training a thing you *keep doing* rather than do once:
+
+- **Continue a model.** Pick one of your Mine models and the next job trains on top of it — round 2, round 3… The badge tells you the round; the model card
+  carries the whole lineage (`Qwen3.5-0.8B → loopl-app-sim → loopl-app-sim-r2`). The script trains from the **bf16** twin of the 4-bit model you run on the phone —
+  training from 4-bit weights is refused, and a model without a bf16 twin is named as "can't continue". Round ≥ 2 defaults to LoRA (r32, lr 5e‑5) and
+  **replays every shard** of the dataset so round 1 is not forgotten; turn *Include all previous shards* off to train on the new ones only.
+- **Epochs: Auto (recommended).** Up to 3 passes, scored on held-out conversations after each; the checkpoint with the lowest loss is kept and training stops the
+  moment loss rises. The guide the footnote shows is the one we measured: **under 200 conversations 3–4 · 200–1 000 → 2 · over 1 000 → 1–2.** Pick 1–4 by hand
+  when you know better. The result card draws held-out loss per epoch and marks the epoch that was kept.
+- **Stitch related conversations.** *By day* joins the chats you shared on the same day — oldest first — into longer multi-turn samples (several per day when a day
+  is long), so the model learns to carry context across chats; *By topic* joins chats about the same thing. Tool call / result pairs always travel together; the
+  originals train too. The footnote previews how many stitched samples your dataset yields.
+
+Measured, round 2 from the app: base `loopl-app-sim` (itself trained from the app), 74 conversations stitched by day, epochs auto → 3 trained, best epoch 2 —
+A10G, 334 s, ≈ $0.10, held-out loss 0.58 → 0.22, tool calls 12/12, vision kept. The result lists in Mine as **round 2** and can be continued again.
+
 ## Cost guide
 
 | base | GPU | 200 conversations | 1 000 | 5 000 |
