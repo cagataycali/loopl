@@ -129,6 +129,12 @@ final class TrainingTests: XCTestCase {
                      HubCatalog.OwnedRepo(id: "me/orphan-4bit", library: "mlx")]
         let bases = TrainingTunedBase.fromOwned(runnable: ["me/loopl-app-sim-4bit", "me/loopl-app-sim-GGUF", "me/loopl-2b-r2-4bit", "me/orphan-4bit"], owned: owned)
         XCTAssertEqual(bases.map(\.repo), ["me/loopl-app-sim-4bit", "me/loopl-2b-r2-4bit", "me/orphan-4bit"], "one base per bf16 twin; GGUF twin folds in")
+        XCTAssertEqual(bases[0].name, "loopl-app-sim", "named after the bf16 twin, not the export")
+        // Mine lists GGUF first (lastModified) — the MLX row must still be the face of the base
+        let ggufFirst = TrainingTunedBase.fromOwned(runnable: ["me/loopl-app-sim-GGUF", "me/loopl-app-sim-4bit"], owned: owned)
+        XCTAssertEqual(ggufFirst.map(\.repo), ["me/loopl-app-sim-4bit"]); XCTAssertEqual(ggufFirst[0].name, "loopl-app-sim")
+        let ggufOnly = TrainingTunedBase.fromOwned(runnable: ["me/loopl-app-sim-GGUF"], owned: owned)
+        XCTAssertEqual(ggufOnly[0].name, "loopl-app-sim"); XCTAssertEqual(ggufOnly[0].bf16Repo, "me/loopl-app-sim")
         XCTAssertEqual(bases[0].bf16Repo, "me/loopl-app-sim"); XCTAssertEqual(bases[0].round, 1); XCTAssertEqual(bases[0].size, .b0_8)
         XCTAssertEqual(bases[1].bf16Repo, "me/loopl-2b-r2"); XCTAssertEqual(bases[1].round, 2); XCTAssertEqual(bases[1].size, .b2)
         XCTAssertNil(bases[2].bf16Repo, "no bf16 next to the 4-bit weights → not trainable (the script refuses 4-bit)")
@@ -145,7 +151,7 @@ final class TrainingTests: XCTestCase {
         XCTAssertEqual(plan.method, .lora, "round ≥ 2 defaults to LoRA, like the script")
         XCTAssertEqual(plan.round, 2)
         XCTAssertEqual(plan.outputName, "loopl-app-sim-r2")
-        XCTAssertEqual(plan.baseLabel, "loopl-app-sim-4bit · round 2")
+        XCTAssertEqual(plan.baseLabel, "loopl-app-sim · round 2")
         XCTAssertEqual(plan.scriptArguments(user: "me"),
                        ["--dataset", "me/loopl-app-conversations", "--base", "me/loopl-app-sim", "--out", "me/loopl-app-sim-r2",
                         "--epochs", "auto", "--method", "lora", "--stitch", "day", "--expect-vision"])

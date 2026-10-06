@@ -58,7 +58,8 @@ public struct TrainingTunedBase: Hashable, Sendable, Codable, Identifiable {
     public init(repo: String, bf16Repo: String?, round: Int = 1, size: TrainingBase) {
         self.repo = repo; self.bf16Repo = bf16Repo; self.round = round; self.size = size
     }
-    public var name: String { repo.split(separator: "/").last.map(String.init) ?? repo }
+    /// The model's own name — the bf16 twin's, so "loopl-app-sim" whether Mine listed the -4bit or the -GGUF row.
+    public var name: String { Self.bf16Sibling(of: bf16Repo ?? repo).split(separator: "/").last.map(String.init) ?? repo }
     public var isTrainable: Bool { bf16Repo != nil }
     /// "tuned from loopl-2b · round 2" — Mine's badge and the base picker's subtitle.
     public var roundLabel: String { "round \(round)" }
@@ -88,7 +89,9 @@ public struct TrainingTunedBase: Hashable, Sendable, Codable, Identifiable {
 
     public static func fromMine(runnable: [String], allRepos: [String], rounds: [String: Int] = [:], fallbackSize: TrainingBase = .b0_8) -> [TrainingTunedBase] {
         var seen = Set<String>(), out: [TrainingTunedBase] = []
-        for r in runnable {
+        // Mine sorts by lastModified, which puts a model's GGUF first; the MLX row is what the phone runs → prefer it as the face of the base
+        let ordered = runnable.filter { !$0.lowercased().hasSuffix("-gguf") } + runnable.filter { $0.lowercased().hasSuffix("-gguf") }
+        for r in ordered {
             let bf16 = bf16Sibling(of: r)
             guard !seen.contains(bf16) else { continue }
             seen.insert(bf16)

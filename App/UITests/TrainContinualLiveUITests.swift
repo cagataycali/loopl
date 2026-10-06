@@ -2,33 +2,34 @@ import XCTest
 
 /// The round-2 proof (owner pays, ≈ $0.2–0.3): only when `LOOPL_HF_TOKEN` is set (`TEST_RUNNER_LOOPL_HF_TOKEN`, or simctl
 /// launchctl setenv on the sim). Dataset = a real app share (`LOOPL_TRAIN_DATASET`, default loopl-e2e-vision-20261006: 112 rows with
-/// gen.ts), Continue a model = `LOOPL_CONTINUE` (default loopl-app-sim-4bit → the script trains from its bf16 twin), epochs Auto,
+/// gen.ts), Continue a model = `LOOPL_CONTINUE` (default loopl-app-sim — the base is named after its bf16 twin; the script trains from it), epochs Auto,
 /// Stitch = By day, cheapest cap, output `LOOPL_TRAIN_NAME` (default loopl-app-sim-r2). Confirms on the ApprovalCard — whose body must
 /// show `--base cagataydev/loopl-app-sim`, `--epochs auto`, `--stitch day` — and waits for the first `[loopl]` stage.
 final class TrainContinualLiveUITests: XCTestCase {
     override func setUp() { continueAfterFailure = false }
 
-    private func find(_ app: XCUIApplication, _ id: String, scroll: Int = 2, timeout: TimeInterval = 5) -> XCUIElement {
+    @MainActor private func find(_ app: XCUIApplication, _ id: String, scroll: Int = 2, timeout: TimeInterval = 5) -> XCUIElement {
         let q = app.descendants(matching: .any).matching(identifier: id).firstMatch
         if q.waitForExistence(timeout: timeout) { return q }
         for _ in 0..<scroll { app.swipeUp(); if q.waitForExistence(timeout: 2) { return q } }
         return q
     }
 
-    func testLaunchRoundTwoFromTheApp() throws {
+    @MainActor func testLaunchRoundTwoFromTheApp() throws {
         let env = ProcessInfo.processInfo.environment
         let token = env["LOOPL_HF_TOKEN"] ?? ""
         try XCTSkipIf(token.isEmpty, "set TEST_RUNNER_LOOPL_HF_TOKEN to launch a real (billed) round-2 job")
         let dataset = env["LOOPL_TRAIN_DATASET"] ?? "loopl-e2e-vision-20261006"
-        let continueModel = env["LOOPL_CONTINUE"] ?? "loopl-app-sim-4bit"
+        let continueModel = env["LOOPL_CONTINUE"] ?? "loopl-app-sim"
         let outName = env["LOOPL_TRAIN_NAME"] ?? "loopl-app-sim-r2"
         let app = XCUIApplication()
         app.launchArguments = ["--design-fixture", "empty", "--design-tab", "models"]
         app.launchEnvironment["LOOPL_HF_TOKEN"] = token
         app.launch()
 
-        let row = app.descendants(matching: .any).matching(identifier: "models-train").firstMatch
-        XCTAssertTrue(row.waitForExistence(timeout: 15)); row.tap()
+        // the loopl collection section (#93) sits above it — scroll until the Train row is on screen
+        let row = find(app, "models-train", scroll: 4, timeout: 15)
+        XCTAssertTrue(row.exists, "Models › Train your own row not found"); row.tap()
         XCTAssertTrue(app.staticTexts["Train your own"].waitForExistence(timeout: 10))
 
         let picker = app.descendants(matching: .any).matching(identifier: "train-dataset").firstMatch
@@ -45,7 +46,7 @@ final class TrainContinualLiveUITests: XCTestCase {
         XCTAssertTrue(cont.exists, "'Continue a model' never appeared — no Mine models with a bf16 twin?")
         cont.tap()
         let tuned = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", continueModel + " · round")).firstMatch
-        XCTAssertTrue(tuned.waitForExistence(timeout: 10), "\(continueModel) not offered as a base: \(app.staticTexts.allElementsBoundByIndex.map(\.label).filter { $0.contains("round") })")
+        XCTAssertTrue(tuned.waitForExistence(timeout: 10), "\(continueModel) not offered as a base: \(app.staticTexts.allElementsBoundByIndex.map { $0.label }.filter { $0.contains("round") })")
         let roundLabel = tuned.label
         tuned.tap()
         if app.navigationBars.buttons.firstMatch.exists, !app.staticTexts["Train your own"].exists { app.navigationBars.buttons.firstMatch.tap() }

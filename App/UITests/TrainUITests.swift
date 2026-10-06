@@ -36,7 +36,7 @@ final class TrainUITests: XCTestCase {
         XCTAssertTrue(epochsNote.exists && epochsNote.label.contains("3–4"), "heuristic footnote: \(epochsNote.label)")
         XCTAssertTrue(find(app, "train-stitch", scroll: 1).exists, "stitch picker missing")
         let blocked = find(app, "train-continue-blocked", scroll: 1)
-        XCTAssertTrue(blocked.exists && blocked.label.contains("loopl-old-GGUF"), "a Mine model without a bf16 twin is named as not continuable")
+        XCTAssertTrue(blocked.exists && blocked.label.contains("loopl-old"), "a Mine model without a bf16 twin is named as not continuable")
         shoot(app, "train-form")
         let start = find(app, "train-start")
         XCTAssertTrue(start.exists, "Train button missing")
