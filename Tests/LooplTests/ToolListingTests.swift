@@ -27,6 +27,26 @@ final class ToolListingTests: XCTestCase {
         for n in ["current_time", "calculator", "device_info", "remember", "recall", "http"] { XCTAssertNotNil(ToolListing.coreCopy[n], n) }
     }
 
+    func testConversationTagsAndNote() {
+        // Phase 6: the agent mounted http (switch off) and unmounted calculator (switch on); manage_tools is pinned.
+        let rows: [ToolListing.Row] = [
+            .init(name: "calculator", copy: "", defaultOn: true, enabled: true, mountedHere: false),
+            .init(name: "http", copy: "", defaultOn: true, enabled: false, mountedHere: true),
+            .init(name: "current_time", copy: "", defaultOn: true, enabled: true, mountedHere: true),
+            .init(name: "manage_tools", copy: "", defaultOn: true, enabled: true, mountedHere: true, pinned: true),
+            .init(name: "flashlight", copy: "", defaultOn: true, available: false, reason: "No torch", enabled: true, mountedHere: false),
+        ]
+        XCTAssertEqual(rows[0].conversationTag, "unmounted for this conversation")
+        XCTAssertEqual(rows[1].conversationTag, "mounted for this conversation")
+        XCTAssertNil(rows[2].conversationTag, "switch and conversation agree → no tag")
+        XCTAssertEqual(rows[3].defaultTag, "always on")
+        XCTAssertNil(rows[4].conversationTag, "an unavailable tool is never tagged")
+        XCTAssertEqual(ToolListing(rows).conversationNote, "In this conversation the agent also mounted http · unmounted calculator. A new conversation starts from the switches.")
+        XCTAssertNil(ToolListing([rows[2], rows[3]]).conversationNote)
+        XCTAssertNil(ToolListing.Row(name: "x", copy: "", defaultOn: true, enabled: true).conversationTag, "no conversation state → the toggle is the truth")
+        XCTAssertNotNil(ToolListing.coreCopy["manage_tools"])
+    }
+
     func testSummaryMatchesToolCountSummary() {
         let rows: [ToolListing.Row] = [
             .init(name: "a", copy: "", defaultOn: true, enabled: true), .init(name: "b", copy: "", defaultOn: true, enabled: true),

@@ -16,23 +16,32 @@ struct ToolsSection: View {
 
     private var listing: ToolListing {
         let runtime = engine.loadedModel?.runtime
+        let here = Set(engine.mountedNow)
         let core = engine.allTools.map { t in
-            ToolListing.Row(name: t.name, copy: ToolListing.coreCopy[t.name] ?? t.description, defaultOn: true, enabled: settings.enabledTools.contains(t.name))
+            ToolListing.Row(name: t.name, copy: ToolListing.coreCopy[t.name] ?? t.description, defaultOn: true, enabled: settings.enabledTools.contains(t.name),
+                            mountedHere: here.contains(t.name))
         }
+        let manage = ToolListing.Row(name: ManageToolsTool.toolName, copy: ToolListing.coreCopy[ManageToolsTool.toolName] ?? "", defaultOn: true, enabled: true,
+                                     mountedHere: true, pinned: true)
         let apple = AppleTools.all.map { t -> ToolListing.Row in
             var a = type(of: t).availability()
             if runtime != nil, t.redundantWithRuntime == runtime, a.available {
                 a = .no("Not offered to \(runtime?.label ?? "this model") — it is \(runtime?.label ?? "this model"). Other models get it.")
             }
             return ToolListing.Row(name: t.name, copy: type(of: t).onDeviceCopy, defaultOn: type(of: t).defaultOn, available: a.available, reason: a.reason,
-                                   enabled: prefs.enabled.contains(t.name))
+                                   enabled: prefs.enabled.contains(t.name), mountedHere: here.contains(t.name))
         }
-        return ToolListing(core + apple)
+        return ToolListing(core + [manage] + apple)
     }
 
     var body: some View {
         let listing = self.listing
         DisclosureGroup(isExpanded: $expanded) {
+            if let note = listing.conversationNote {
+                Label(note, systemImage: "wrench.adjustable").font(.footnote).foregroundStyle(.secondary)
+                    .accessibilityElement(children: .ignore).accessibilityLabel(note)
+                    .accessibilityIdentifier("settings-tools-conversation-note")
+            }
             group("On", listing.on, empty: "Nothing — the model answers from what it knows.")
             group("Off", listing.off, empty: "Everything is on.")
         } label: {
@@ -53,8 +62,8 @@ struct ToolsSection: View {
     /// Footer for the section that holds the disclosure — one sentence collapsed, the rules when open.
     static func footer(expanded: Bool) -> String {
         expanded
-        ? "The model only sees the tools under On. Fewer tools help small models — the everyday set is on by default, the rest wait here. Everything runs on this device; on-device tools ask for their iOS permission the first time they run, never at install. Settings › Network › Ask before decides when an approval card is shown."
-        : "The model only sees the tools that are on. Tap Tools to see every one and switch them on or off."
+        ? "The model only sees the tools under On. Fewer tools help small models — the everyday set is on by default, the rest wait here; with manage_tools the model can mount one it needs for the current conversation and it works on its very next step. Everything runs on this device; on-device tools ask for their iOS permission the first time they run, never at install. Settings › Network › Ask before decides when an approval card is shown."
+        : "The model only sees the tools that are on, and can mount others for a conversation with manage_tools. Tap Tools to see every one and switch them on or off."
     }
 
     @ViewBuilder private func group(_ title: String, _ rows: [ToolListing.Row], empty: String) -> some View {
@@ -70,7 +79,7 @@ struct ToolsSection: View {
             Text(empty).font(.footnote).foregroundStyle(.tertiary)
         }
         ForEach(rows) { row in
-            ToolToggleRow(row: row, isOn: binding(row.name)).disabled(!row.available)
+            ToolToggleRow(row: row, isOn: binding(row.name)).disabled(!row.available || row.pinned)
             if row.name == OpenAppTool().name, row.offered {
                 NavigationLink {
                     OpenAppAllowlistEditor()
@@ -93,12 +102,13 @@ struct ToolsSection: View {
     }
 
     private func binding(_ name: String) -> Binding<Bool> {
+        if name == ManageToolsTool.toolName { return .constant(true) }
         if engine.allTools.contains(where: { $0.name == name }) {
             return Binding(get: { settings.enabledTools.contains(name) },
-                           set: { on in if on { settings.enabledTools.insert(name) } else { settings.enabledTools.remove(name) } })
+                           set: { on in if on { settings.enabledTools.insert(name) } else { settings.enabledTools.remove(name) }; engine.settingsToggled(name, on: on) })
         }
         return Binding(get: { prefs.enabled.contains(name) },
-                       set: { on in if on { prefs.enabled.insert(name) } else { prefs.enabled.remove(name) } })
+                       set: { on in if on { prefs.enabled.insert(name) } else { prefs.enabled.remove(name) }; engine.settingsToggled(name, on: on) })
     }
 
     private var allowlistSummary: String {
@@ -125,6 +135,10 @@ struct ToolToggleRow: View {
                 Text(row.available ? row.copy : row.reason).font(.caption).foregroundStyle(.secondary)
                 HStack(spacing: 8) {
                     Text(row.defaultTag).accessibilityIdentifier("tool.\(row.name).default")
+                    if let tag = row.conversationTag {
+                        Text("·").accessibilityHidden(true)
+                        Text(tag).foregroundStyle(LooplDesign.accent).accessibilityIdentifier("tool.\(row.name).conversation")
+                    }
                     if let ask = row.asksFirst {
                         Text("·").accessibilityHidden(true)
                         Label(ask, systemImage: "hand.raised").labelStyle(.titleOnly).accessibilityIdentifier("tool.\(row.name).asksFirst")

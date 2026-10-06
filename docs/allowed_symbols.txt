@@ -84,3 +84,4 @@ SnapshotSessionManager
 # example types that only exist inside a docs snippet
 Weather
 Qwen3_5Tokenizer
+Engine

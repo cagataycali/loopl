@@ -18,14 +18,27 @@ public struct ToolListing: Sendable, Hashable {
         public var enabled: Bool
         /// "Asks before …" when the tool stops at an approval card; `nil` for reads.
         public var asksFirst: String?
-        public init(name: String, copy: String, defaultOn: Bool, available: Bool = true, reason: String = "", enabled: Bool, asksFirst: String? = nil) {
+        /// Phase 6: mounted in the CURRENT conversation (the agent may have changed it with `manage_tools`); `nil` when the
+        /// host has no conversation state — then the toggle is the truth.
+        public var mountedHere: Bool?
+        /// Always on and not switchable (`manage_tools` itself).
+        public var pinned: Bool
+        public init(name: String, copy: String, defaultOn: Bool, available: Bool = true, reason: String = "", enabled: Bool, asksFirst: String? = nil,
+                    mountedHere: Bool? = nil, pinned: Bool = false) {
             self.name = name; self.copy = copy; self.defaultOn = defaultOn; self.available = available; self.reason = reason; self.enabled = enabled
             self.asksFirst = asksFirst ?? ToolListing.approvalNotes[name]
+            self.mountedHere = mountedHere; self.pinned = pinned
+        }
+        /// "mounted for this conversation" / "unmounted for this conversation" when the agent changed this tool's state
+        /// away from the toggle; `nil` when they agree.
+        public var conversationTag: String? {
+            guard let mountedHere, available, mountedHere != enabled else { return nil }
+            return mountedHere ? "mounted for this conversation" : "unmounted for this conversation"
         }
         /// The model is offered this tool this turn.
         public var offered: Bool { enabled && available }
-        /// "on by default" / "off by default".
-        public var defaultTag: String { defaultOn ? "on by default" : "off by default" }
+        /// "on by default" / "off by default" / "always on".
+        public var defaultTag: String { pinned ? "always on" : defaultOn ? "on by default" : "off by default" }
     }
 
     public var on: [Row]
@@ -38,6 +51,18 @@ public struct ToolListing: Sendable, Hashable {
     }
 
     public var all: [Row] { on + off }
+
+    /// One sentence for the section footer when the agent's mounted set differs from the switches, else `nil`:
+    /// "In this conversation the agent also mounted http · unmounted calculator."
+    public var conversationNote: String? {
+        let added = all.filter { $0.conversationTag != nil && $0.mountedHere == true }.map(\.name)
+        let removed = all.filter { $0.conversationTag != nil && $0.mountedHere == false }.map(\.name)
+        guard !added.isEmpty || !removed.isEmpty else { return nil }
+        var parts: [String] = []
+        if !added.isEmpty { parts.append("also mounted \(added.joined(separator: ", "))") }
+        if !removed.isEmpty { parts.append("unmounted \(removed.joined(separator: ", "))") }
+        return "In this conversation the agent " + parts.joined(separator: " · ") + ". A new conversation starts from the switches."
+    }
     /// "9 of 15" or "off" — the label next to the disclosure, same arithmetic as `ToolCountSummary`.
     public var summary: String {
         let offerable = all.filter(\.available).count
@@ -61,6 +86,7 @@ public struct ToolListing: Sendable, Hashable {
         "remember": "Keeps a note between conversations — on this device only.",
         "recall": "Reads those notes back.",
         "http": "Fetches a URL for the model. Refused while offline mode is on.",
+        "manage_tools": "Lets the model add or remove its own tools mid-conversation — a mount works on its very next step.",
         "manage_messages": "Lets the model tidy its own context in a long chat — old tool results go, your messages stay. The chat on screen never changes.",
     ]
 }

@@ -118,6 +118,14 @@ public final class Engine {
     private(set) var continuedHere = false
     private var model: (any Model)?
     private var agent: Agent?
+    /// Phase 6: the catalog of every tool this app knows (portable + on-device, with availability) and the set the model
+    /// is offered IN THIS CONVERSATION. Starts from Settings › Tools; `manage_tools` (pinned) lets the model mount and
+    /// unmount the rest mid-turn — the agent reads it when it builds each model request. One per Engine; the mounted set
+    /// is reset per thread (`newConversation`, `open`) and saved with the thread.
+    public let registry: ToolRegistry
+    /// Tool names mounted for the current conversation, as the registry last reported them (Settings › Tools shows
+    /// the difference to its defaults as "mounted for this conversation").
+    public private(set) var mountedNow: [String] = []
     private var runTask: Task<Void, Never>?
     private var bootstrapTask: Task<Void, Never>?
     /// Sub-agents (`use_agent`): every child of this engine, their envelopes and the detached event stream (SDK SubAgentHub).
@@ -135,6 +143,11 @@ public final class Engine {
         self.store = store
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         self.hub = SubAgentHub(directory: base.appendingPathComponent("agents", isDirectory: true))
+        // The portable catalog = `allTools` (incl. manage_messages and use_agent); `hub` is set above because useAgentTool reads it.
+        let core: [any Tool] = [CurrentTimeTool(), CalculatorTool(), DeviceInfoTool(), RememberTool(), RecallTool(), HttpTool(), ManageMessagesTool(),
+                                UseAgentTool(hub: hub, context: Engine.subAgentContext(for: WeakEngine.pending))]
+        registry = ToolRegistry(catalog: core, mounted: Array(settings.enabledTools), selfManaging: true)
+        mountedNow = core.map(\.name).filter { settings.enabledTools.contains($0) } + [ManageToolsTool.toolName]
         // A background child's events after the parent's turn ended: fold them into the card on screen.
         detachedTask = Task { [weak self] in
             guard let hub = self?.hub else { return }
@@ -147,6 +160,55 @@ public final class Engine {
         Task { [weak self] in
             await hub.setOnFinished { env in Task { @MainActor in self?.childFinished(env) } }
         }
+        WeakEngine.pendingRef?.engine = self; WeakEngine.pendingRef = nil
+        let ref = WeakEngine(self)
+        Task { [registry] in
+            // On-device tools join the catalog with their availability (unavailable ones are listed, never offered).
+            await ref.engine?.registerAppleTools()
+            // Measured (ManageToolsMeasurement, 2026-10-06): loopl-0.8b reads "http exists but is not mounted…" and then TELLS
+            // THE USER instead of mounting (0/9 on http/calculator/remember) — its direct call IS its decision, so honour it:
+            // the call mounts the tool for this conversation, the result says so, Settings shows the tag. 2B: 9/12 either way.
+            await registry.setMountOnCall(true)
+            await registry.observe { names in Task { @MainActor in ref.engine?.mountedNow = names } }
+            ref.engine?.mountedNow = await registry.mountedNames
+        }
+    }
+
+    /// A weak, Sendable handle to the Engine for the registry observer (the Engine itself is main-actor only).
+    private final class WeakEngine: @unchecked Sendable {
+        weak var engine: Engine?
+        init(_ e: Engine) { engine = e }
+        init() {}
+        /// For `init`: the catalog's use_agent is built before `self` is usable; the ref is filled right after.
+        static var pending: WeakEngine { let w = WeakEngine(); pendingRef = w; return w }
+        nonisolated(unsafe) static var pendingRef: WeakEngine?
+    }
+
+    /// Put every on-device tool into the catalog with its current availability and Settings state. Re-run when a
+    /// permission or the hardware situation may have changed (a new conversation).
+    private func registerAppleTools() async {
+        let enabled = AppleToolPrefs.shared.enabled
+        for t in AppleTools.all {
+            let a = type(of: t).availability()
+            await registry.register(t, source: .app, mounted: enabled.contains(t.name), available: a.available, reason: a.reason)
+        }
+    }
+
+    /// The names Settings › Tools switches on — what a NEW conversation starts with.
+    public var defaultMountedNames: Set<String> {
+        Set(allTools.map(\.name).filter { settings.enabledTools.contains($0) }).union(AppleToolPrefs.shared.enabled).union([ManageToolsTool.toolName])
+    }
+
+    /// Settings › Tools toggled: apply to the catalog defaults AND to the current conversation (a user's switch wins over
+    /// what the agent mounted). Called by `ToolsSection` after it updated `settings.enabledTools` / `AppleToolPrefs`.
+    public func settingsToggled(_ name: String, on: Bool) {
+        Task { if on { _ = await registry.mount([name]) } else { _ = await registry.unmount([name]) } }
+    }
+
+    /// Start a thread's mounted set: what was saved with it, else Settings' defaults.
+    private func resetMounted(_ saved: [String]?) {
+        let names = saved.map(Set.init) ?? defaultMountedNames
+        Task { await registerAppleTools(); await registry.setMounted(names) }
     }
 
     /// The child id an event is about (nil for the parent's own events).
@@ -171,12 +233,14 @@ public final class Engine {
     public var allTools: [any Tool] { [CurrentTimeTool(), CalculatorTool(), DeviceInfoTool(), RememberTool(), RecallTool(), HttpTool(), ManageMessagesTool(), useAgentTool] }
     /// `use_agent`: children are built from the parent's model, gate, tools (minus use_agent — depth 1) and approval hook,
     /// read at spawn time so a model switch is honoured.
-    private var useAgentTool: UseAgentTool {
-        UseAgentTool(hub: hub) { [weak self] in
-            await MainActor.run {
-                guard let self, let model = self.model else { return nil }
-                return SubAgentContext(model: model, gate: self.gate, availableTools: self.activeTools, hooks: [self.approvalPolicy])
-            }
+    private var useAgentTool: UseAgentTool { UseAgentTool(hub: hub, context: Engine.subAgentContext(for: WeakEngine(self))) }
+    /// The child's tools are the parent's MOUNTED set, read from the registry at spawn time (Phase 6) — minus use_agent (depth 1).
+    private static func subAgentContext(for ref: WeakEngine) -> @Sendable () async -> SubAgentContext? {
+        { [ref] in
+            guard let engine = await MainActor.run(body: { ref.engine }) else { return nil }
+            let (model, gate, policy, registry) = await MainActor.run { (engine.model, engine.gate, engine.approvalPolicy, engine.registry) }
+            guard let model else { return nil }
+            return SubAgentContext(model: model, gate: gate, availableTools: await registry.mounted, hooks: [policy])
         }
     }
     /// Human-in-the-loop policy: reads Settings › Ask before on every call, so no agent rebuild is needed.
@@ -196,7 +260,13 @@ public final class Engine {
             for id in children where await hub.resolve(child: id, approval: request.id, decision) { return }
         }
     }
-    public var activeTools: [any Tool] { allTools.filter { settings.enabledTools.contains($0.name) } + AppleToolPrefs.shared.active }
+    /// The tools offered in THIS conversation right now (the registry's mounted set, as last reported) — what Share to
+    /// Hugging Face records as the thread's tool specs. Before Phase 6 this was Settings' switches alone.
+    public var activeTools: [any Tool] {
+        let known: [any Tool] = allTools + AppleTools.all.map { $0 as any Tool } + [ManageToolsTool(registry: registry)]
+        let names = Set(mountedNow)
+        return known.filter { names.contains($0.name) }
+    }
     /// Settings' one-line answer to "how many tools does the model get?" — the portable tools AND the
     /// on-device Apple ones that are switched on and runnable here (`ToolCountSummary`). Counting only
     /// `allTools` is what made build 10 say "6 of 6" above eight Apple toggles that were all on.
@@ -354,7 +424,7 @@ public final class Engine {
         if settings.lastModelId == spec.id { settings.lastModelId = nil }
     }
 
-    public func clear() { transcript.clear(); agent = nil; openedUnder = nil; continuedHere = false; stopChildren() }
+    public func clear() { transcript.clear(); agent = nil; openedUnder = nil; continuedHere = false; resetMounted(nil); stopChildren() }
 
     /// A child belongs to the thread that spawned it: leaving the thread (new / open / delete / clear) cancels every live
     /// child and drops wakes that have not run — a finished envelope stays answerable by id for this session.
@@ -369,6 +439,7 @@ public final class Engine {
         archiveCurrent()
         transcript.clear(); agent = nil; currentId = UUID(); currentEditedAt = nil
         openedUnder = nil; continuedHere = false
+        resetMounted(nil)
         stopChildren()
     }
 
@@ -383,6 +454,7 @@ public final class Engine {
         agent = nil
         openedUnder = c.modelName
         continuedHere = false
+        resetMounted(c.mounted)          // the thread's own tool set (Phase 6), else Settings' defaults
         stopChildren()
     }
 
@@ -394,13 +466,14 @@ public final class Engine {
     @discardableResult
     func delete(ids: Set<UUID>) -> Int {
         let n = archive.delete(ids: ids)
-        if ids.contains(currentId) { transcript.clear(); agent = nil; currentId = UUID(); currentEditedAt = nil; openedUnder = nil; continuedHere = false; stopChildren() }
+        if ids.contains(currentId) { transcript.clear(); agent = nil; currentId = UUID(); currentEditedAt = nil; openedUnder = nil; continuedHere = false; resetMounted(nil); stopChildren() }
         return n
     }
 
     private func archiveCurrent() {
         if let saved = SavedConversation.from(transcript, id: currentId, modelName: loadedModel?.name, editedAt: currentEditedAt,
-                                              modelId: loadedModel.map { $0.repo.isEmpty ? $0.id : $0.repo }, tools: activeTools.map(\.toolSpec)) { archive.upsert(saved) }
+                                              modelId: loadedModel.map { $0.repo.isEmpty ? $0.id : $0.repo }, tools: activeTools.map(\.toolSpec),
+                                              mounted: mountedNow) { archive.upsert(saved) }
     }
 
     // MARK: - Hold a message: Edit · Delete from here · Retry
@@ -444,7 +517,7 @@ public final class Engine {
         currentEditedAt = Date()
         lastError = nil
         if let model {
-            let a = Agent(model: model, tools: activeTools, systemPrompt: effectiveSystemPrompt, messages: kept.messages, hooks: [approvalPolicy])
+            let a = Agent(model: model, systemPrompt: effectiveSystemPrompt, messages: kept.messages, hooks: [approvalPolicy], registry: registry)
             agent = a
         } else {
             agent = nil
@@ -476,7 +549,8 @@ public final class Engine {
         haptics.emit(.send)
         continuedHere = true   // #21: from here on the thread also holds this model's answers
         // Generation params are the model's own maxed defaults (spec.defaultParams, set at load): no caps here.
-        let agent = self.agent ?? Agent(model: model, tools: activeTools, systemPrompt: effectiveSystemPrompt, hooks: [approvalPolicy])
+        // Tools come from `registry` (this conversation's mounted set), read by the agent at every model request.
+        let agent = self.agent ?? Agent(model: model, systemPrompt: effectiveSystemPrompt, hooks: [approvalPolicy], registry: registry)
         self.agent = agent
         // A text model cannot see: keep the picture in the transcript (so the user knows what was sent)
         // but tell them, and send the words only — never silently drop or pretend.
@@ -492,10 +566,10 @@ public final class Engine {
 
     /// Run one turn of `agent` on `message`, folding every event into the transcript. Shared by `send` and the wake.
     private func start(_ agent: Agent, _ message: Loopl.Message) {
-        let tools = activeTools, system = effectiveSystemPrompt, gate = self.gate
+        let system = effectiveSystemPrompt, gate = self.gate
         transcript.isRunning = true
         runTask = Task { [weak self] in
-            await agent.setTools(tools); await agent.setSystemPrompt(system); await agent.setModelGate(gate)
+            await agent.setSystemPrompt(system); await agent.setModelGate(gate)      // tools come from `registry` (Phase 6)
             do {
                 for try await event in agent.stream([message]) {
                     guard let self else { return }
