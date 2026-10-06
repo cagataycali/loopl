@@ -14,6 +14,9 @@ struct ModelsView: View {
     @State private var trainFixturePushed = DesignFixture.trainScene != nil
     /// Mine row tapped → repo sheet. Presented HERE, from the List — see MineSection.selected.
     @State private var mineSelected: HubCatalog.Hit?
+    /// The loopl collection (Models › "loopl models", top). Its tapped row → repo sheet, presented here like Mine's.
+    @State private var collection = CollectionModel()
+    @State private var collectionSelected: HubCatalog.Hit?
     @Namespace private var zoom
     @Namespace private var loadedMark
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -27,7 +30,10 @@ struct ModelsView: View {
             return !s.isDownloadable || st.isDownloaded || st.isMoving || st.driveBlocked || engine.loadedModel?.id == s.id
         }
         let here = available.filter(onDevice).sorted { a, b in (engine.loadedModel?.id == a.id) && engine.loadedModel?.id != b.id }
-        let rest = available.filter { !onDevice($0) }
+        // A model never appears twice: curated models.json rows for repos the collection section lists stay as the
+        // bundled fallback only (they still show under "On this device" once downloaded).
+        let inCollection = collection.repoIds
+        let rest = available.filter { !onDevice($0) && !inCollection.contains($0.repo) }
         let hub = rest.filter(\.isFromHub)
         let curated = rest.filter { !$0.isFromHub && $0.runtime != .gguf }
         let gguf = rest.filter { !$0.isFromHub && $0.runtime == .gguf }
@@ -41,6 +47,8 @@ struct ModelsView: View {
     var body: some View {
         NavigationStack {
             List {
+                // The loopl models first: whoever installs the app sees them before anything else.
+                CollectionSection(engine: engine, store: store, settings: settings, hf: engine.hf, model: collection, selected: $collectionSelected, zoom: zoom)
                 Section {
                     NavigationLink {
                         HubBrowseView(engine: engine, store: store, settings: settings)
@@ -99,11 +107,20 @@ struct ModelsView: View {
             .animation(LooplDesign.Motion.faded(LooplDesign.Motion.spring, reduceMotion), value: engine.loadedModel?.id)
             .animation(LooplDesign.Motion.crossfade, value: engine.readiness.isBusy)
             .navigationTitle("Models")
-            .refreshable { store.refresh(); await mine.load(author: engine.hf.author, force: true) }
+            .refreshable {
+                store.refresh()
+                async let a: Void = mine.load(author: engine.hf.author, force: true)
+                async let b: Void = collection.load(author: engine.hf.author, force: true)
+                _ = await (a, b)
+            }
             .onAppear { store.refresh() }
             .sheet(item: $mineSelected) { hit in
                 HubRepoSheet(repoId: hit.id, hint: hit, engine: engine, store: store, settings: settings) {}
                     .navigationTransition(.zoom(sourceID: "mine-\(hit.id)", in: zoom))
+            }
+            .sheet(item: $collectionSelected) { hit in
+                HubRepoSheet(repoId: hit.id, hint: hit, engine: engine, store: store, settings: settings) {}
+                    .navigationTransition(.zoom(sourceID: "collection-\(hit.id)", in: zoom))
             }
             .confirmationDialog("\(confirmDelete?.isFromHub == true ? "Remove" : "Delete") \(confirmDelete?.name ?? "") from this device?", isPresented: Binding(get: { confirmDelete != nil }, set: { if !$0 { confirmDelete = nil } }), titleVisibility: .visible) {
                 Button(confirmDelete?.isFromHub == true ? "Remove" : "Delete", role: .destructive) { if let s = confirmDelete { delete(s) } }
