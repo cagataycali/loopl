@@ -12,6 +12,8 @@ struct ModelsView: View {
     @State private var confirmDelete: ModelSpec?
     @State private var mine = MineModel()
     @State private var trainFixturePushed = DesignFixture.trainScene != nil
+    /// Mine row tapped → repo sheet. Presented HERE, from the List — see MineSection.selected.
+    @State private var mineSelected: HubCatalog.Hit?
     @Namespace private var zoom
     @Namespace private var loadedMark
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -65,7 +67,7 @@ struct ModelsView: View {
                     }
                     .accessibilityIdentifier("models-train")
                 }
-                MineSection(engine: engine, store: store, settings: settings, hf: engine.hf, mine: mine)
+                MineSection(engine: engine, store: store, settings: settings, hf: engine.hf, mine: mine, selected: $mineSelected, zoom: zoom)
                 ForEach(sections, id: \.0) { title, rows in
                     Section {
                         ForEach(rows) { spec in row(spec) }
@@ -99,6 +101,10 @@ struct ModelsView: View {
             .navigationTitle("Models")
             .refreshable { store.refresh(); await mine.load(author: engine.hf.author, force: true) }
             .onAppear { store.refresh() }
+            .sheet(item: $mineSelected) { hit in
+                HubRepoSheet(repoId: hit.id, hint: hit, engine: engine, store: store, settings: settings) {}
+                    .navigationTransition(.zoom(sourceID: "mine-\(hit.id)", in: zoom))
+            }
             .confirmationDialog("\(confirmDelete?.isFromHub == true ? "Remove" : "Delete") \(confirmDelete?.name ?? "") from this device?", isPresented: Binding(get: { confirmDelete != nil }, set: { if !$0 { confirmDelete = nil } }), titleVisibility: .visible) {
                 Button(confirmDelete?.isFromHub == true ? "Remove" : "Delete", role: .destructive) { if let s = confirmDelete { delete(s) } }
             }

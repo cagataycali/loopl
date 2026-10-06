@@ -24,10 +24,12 @@ final class MineDownloadUITests: XCTestCase {
         let hit = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'mine-hit-'")).firstMatch
         XCTAssertTrue(hit.waitForExistence(timeout: 40), "no Mine row — whoami/listing failed or the token is not seen")
         let repo = hit.identifier.replacingOccurrences(of: "mine-hit-", with: "")
+        Thread.sleep(forTimeInterval: 2.0)   // let the list's insert animation settle before presenting the zoom sheet
         hit.tap()
 
         let download = app.buttons["hub-download"]
-        XCTAssertTrue(download.waitForExistence(timeout: 30), "repo sheet did not load")
+        if !download.waitForExistence(timeout: 30) { shoot(app, "mine-download-DEBUG-no-sheet") }
+        XCTAssertTrue(download.exists, "repo sheet did not load")
         download.tap()
 
         // The sheet must NOT dismiss; the reason appears right above the button.
@@ -37,6 +39,7 @@ final class MineDownloadUITests: XCTestCase {
         XCTAssertTrue(refused.label.contains("Not enough space"), refused.label)
         XCTAssertTrue(refused.label.contains("free"), "need vs free missing: \(refused.label)")
         XCTAssertTrue(app.buttons["hub-download-storage"].exists, "Settings › Storage shortcut missing")
+        let reason = refused.label
         shoot(app, "mine-download-refused-sheet")
 
         app.buttons["Close"].firstMatch.tap()
@@ -46,7 +49,7 @@ final class MineDownloadUITests: XCTestCase {
         XCTAssertTrue(rowFail.label.contains("Not enough space"), rowFail.label)
         XCTAssertTrue(app.buttons["mine-retry-\(repo)"].exists, "Retry missing on the Mine row")
         shoot(app, "mine-download-refused-row")
-        print("MINE-DL refusal sheet=\(refused.label)")
+        print("MINE-DL refusal sheet=\(reason)")
     }
 
     private func shoot(_ app: XCUIApplication, _ name: String) {

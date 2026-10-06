@@ -35,8 +35,12 @@ struct MineSection: View {
     @Bindable var settings: AppSettings
     @Bindable var hf: HFSession
     @Bindable var mine: MineModel
-    @State private var selected: HubCatalog.Hit?
-    @Namespace private var zoom
+    /// The tapped repo. OWNED BY ModelsView, which presents the sheet from the List: a `.sheet` attached to a
+    /// `Section` inside a `List` never presented on iOS 26 (with the zoom transition it presented and was torn
+    /// down in the same frame — "Trying to dismiss the presentation controller while transitioning already",
+    /// SIGTRAP). Tapping a Mine row did nothing / crashed; the Download button was never reached.
+    @Binding var selected: HubCatalog.Hit?
+    var zoom: Namespace.ID
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -116,10 +120,6 @@ struct MineSection: View {
         .animation(LooplDesign.Motion.faded(LooplDesign.Motion.spring, reduceMotion), value: mine.hits.map(\.id))
         .animation(LooplDesign.Motion.crossfade, value: mine.loading)
         .task(id: hf.author) { await mine.load(author: hf.author) }
-        .sheet(item: $selected) { hit in
-            HubRepoSheet(repoId: hit.id, hint: hit, engine: engine, store: store, settings: settings) {}
-                .navigationTransition(.zoom(sourceID: "mine-\(hit.id)", in: zoom))
-        }
     }
 
     private func isAdded(_ hit: HubCatalog.Hit) -> Bool {
