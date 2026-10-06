@@ -13,9 +13,20 @@ public final class ModelStore {
         case paused(done: Int64, total: Int64)
         case downloaded(bytes: Int64)
         case failed(String)
+        /// The weights are on a drive that is not plugged in — still ours, not usable right now.
+        case needsDrive(String)
+        /// Being copied between the iPhone and a drive (`to` = the destination's name).
+        case moving(done: Int64, total: Int64, to: String)
         public var isDownloading: Bool { if case .downloading = self { return true }; return false }
         public var isDownloaded: Bool { if case .downloaded = self { return true }; return false }
+        public var isMoving: Bool { if case .moving = self { return true }; return false }
+        public var needsDrive: String? { if case .needsDrive(let n) = self { return n }; return nil }
     }
+
+    /// Drives the user granted + where every model lives (storage.json).
+    public let storage: StorageLocations
+    /// The last failed move, for the Storage screen (a failed move leaves the model where it was).
+    public private(set) var lastMoveError: String?
 
     /// Curated rows shipped in models.json ("Recommended").
     public private(set) var bundled: Catalog
@@ -42,8 +53,9 @@ public final class ModelStore {
 
     static let hubModelsFile = root.appendingPathComponent("hub-models.json")
 
-    public init(catalog: Catalog = .loadBundled()) {
+    public init(catalog: Catalog = .loadBundled(), storage: StorageLocations? = nil) {
         self.bundled = catalog
+        self.storage = storage ?? StorageLocations()
         if let data = try? Data(contentsOf: Self.hubModelsFile), let list = try? JSONDecoder().decode([ModelSpec].self, from: data) {
             hubModels = list.filter(\.isFromHub)
         }
@@ -68,8 +80,11 @@ public final class ModelStore {
         hubModels.removeAll { $0.id == spec.id }
         persistHub()
         let others = catalog.models.filter { $0.repo == spec.repo && $0.id != spec.id }
-        if others.isEmpty { try? FileManager.default.removeItem(at: Self.directory(for: spec)) }
-        else if let f = spec.file { try? FileManager.default.removeItem(at: Self.directory(for: spec).appendingPathComponent(f)) }
+        if let dir = storage.directory(for: spec) {
+            if others.isEmpty { try? FileManager.default.removeItem(at: dir) }
+            else if let f = spec.file { try? FileManager.default.removeItem(at: dir.appendingPathComponent(f)) }
+        }
+        storage.set(location: .internalStorage, for: spec.id)
         states[spec.id] = nil
         refresh()
     }
@@ -78,26 +93,37 @@ public final class ModelStore {
         if let data = try? JSONEncoder().encode(hubModels) { try? data.write(to: Self.hubModelsFile, options: .atomic) }
     }
 
+    /// The model's directory on the iPhone (its location when nothing says otherwise).
     public static func directory(for spec: ModelSpec) -> URL {
         root.appendingPathComponent(spec.repo.replacingOccurrences(of: "/", with: "--"), isDirectory: true)
     }
 
+    /// Where this model's files are right now — on the iPhone or on a connected
+    /// drive — or nil when its drive is away. Loaders open from here.
+    public func directory(for spec: ModelSpec) -> URL? { storage.directory(for: spec) }
+
     public func localDirectory(_ spec: ModelSpec) -> URL? {
-        states[spec.id]?.isDownloaded == true ? Self.directory(for: spec) : nil
+        states[spec.id]?.isDownloaded == true ? storage.directory(for: spec) : nil
     }
+
+    /// Human label for where a model lives ("This iPhone" / the drive's name).
+    public func locationName(_ spec: ModelSpec) -> String { storage.name(of: storage.location(of: spec.id).volumeId) }
 
     /// A model counts as downloaded when its directory holds config.json and
     /// at least one *.safetensors (MLX) — or the single .gguf the spec names —
     /// with no *.part sidecars left.
     public func refresh() {
+        storage.resolveAll()
         var used: Int64 = 0
         var counted: Set<URL> = []   // GGUF quants of one repo share a directory — count the bytes once
         for spec in catalog.models where spec.isDownloadable {
             if tasks[spec.id] != nil { continue }
-            let dir = Self.directory(for: spec)
+            if let drive = storage.missingDrive(for: spec) { states[spec.id] = .needsDrive(drive); continue }
+            guard let dir = storage.directory(for: spec) else { states[spec.id] = .notDownloaded; continue }
+            let external = storage.location(of: spec.id).isExternal
             let files = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.fileSizeKey])) ?? []
             let bytes = files.reduce(Int64(0)) { $0 + Int64((try? $1.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) }
-            if counted.insert(dir).inserted { used += bytes }
+            if !external, counted.insert(dir).inserted { used += bytes }
             let names = Set(files.map(\.lastPathComponent))
             let complete: Bool = if let gguf = spec.file {
                 names.contains(gguf) && !names.contains { $0.hasSuffix(".part") }          // one .gguf file (llama.cpp)
@@ -116,12 +142,30 @@ public final class ModelStore {
         diskUsed = used
     }
 
-    public func download(_ spec: ModelSpec) {
+    /// Downloads `spec` to `volume` (a drive id), or — `volume == nil` — to
+    /// `storage.suggestedTarget`: the chosen drive when it is connected and has
+    /// room, else the iPhone, else any connected drive that fits. A paused
+    /// download resumes where its .part files already are.
+    public func download(_ spec: ModelSpec, to volume: String?? = nil) {
         guard spec.isDownloadable, tasks[spec.id] == nil else { return }
         if NetworkPolicy.isOffline { states[spec.id] = .failed(HFDownloader.DLError.offline.localizedDescription); return }
         if spec.gated, HFAccount.shared.token == nil { states[spec.id] = .failed(HFDownloader.DLError.signInRequired(spec.repo).localizedDescription); return }
+        // Where the bytes go. Resuming keeps the existing location; a fresh download picks the target.
+        let resuming: Bool = if case .paused = states[spec.id] ?? .notDownloaded { true } else { false }
+        let chosen: String? = resuming ? storage.location(of: spec.id).volumeId : (volume ?? storage.suggestedTarget(need: spec.sizeBytes))
+        guard let target = storage.target(chosen, for: spec) else {
+            states[spec.id] = .failed("\(storage.name(of: chosen)) is not plugged in"); return
+        }
+        do {
+            try FileManager.default.createDirectory(at: target.url, withIntermediateDirectories: true)
+            let have = ExternalStorage.size(of: target.url)
+            try ExternalStorage.ensureSpace(need: max(0, spec.sizeBytes - have), at: target.url, volumeName: storage.name(of: chosen))
+        } catch {
+            states[spec.id] = .failed(error.localizedDescription); return
+        }
+        storage.set(location: target.location, for: spec.id)
         states[spec.id] = .downloading(done: 0, total: spec.sizeBytes, filesDone: 0, files: 0)
-        let dir = Self.directory(for: spec)
+        let dir = target.url
         tasks[spec.id] = Task {
             let dl = HFDownloader(token: HFAccount.shared.provider)   // anonymous until a token is pasted in Settings
             do {
@@ -155,16 +199,56 @@ public final class ModelStore {
 
     public func pause(_ spec: ModelSpec) { tasks[spec.id]?.cancel() }
 
+    /// Deletes the weights. A model on a drive that is away cannot be deleted
+    /// from the phone (there is nothing here to delete) — the row says so.
     public func delete(_ spec: ModelSpec) {
+        guard let dir = storage.directory(for: spec) else { return }
         tasks[spec.id]?.cancel(); tasks[spec.id] = nil
         let shared = catalog.models.contains { $0.repo == spec.repo && $0.id != spec.id && $0.file != spec.file && (states[$0.id]?.isDownloaded ?? false) }
-        if shared, let f = spec.file { try? FileManager.default.removeItem(at: Self.directory(for: spec).appendingPathComponent(f)) }
-        else { try? FileManager.default.removeItem(at: Self.directory(for: spec)) }
+        if shared, let f = spec.file { try? FileManager.default.removeItem(at: dir.appendingPathComponent(f)) }
+        else { try? FileManager.default.removeItem(at: dir) }
+        storage.set(location: .internalStorage, for: spec.id)
         states[spec.id] = .notDownloaded
         refresh()
     }
 
     public func deleteAll() { catalog.models.forEach(delete) }
+
+    // MARK: Moving between the iPhone and a drive
+
+    /// Copies a downloaded model to `volume` (nil = the iPhone), verifies every
+    /// file, then removes the original. Progress shows in the row; a failure
+    /// leaves the model exactly where it was and the reason in `lastMoveError`.
+    public func move(_ spec: ModelSpec, to volume: String?) {
+        guard tasks[spec.id] == nil, states[spec.id]?.isDownloaded == true, let src = storage.directory(for: spec) else { return }
+        guard storage.location(of: spec.id).volumeId != volume else { return }
+        guard let target = storage.target(volume, for: spec) else { lastMoveError = "\(storage.name(of: volume)) is not plugged in"; return }
+        lastMoveError = nil
+        let total = ExternalStorage.size(of: src)
+        let name = storage.name(of: volume)
+        states[spec.id] = .moving(done: 0, total: total, to: name)
+        tasks[spec.id] = Task {
+            do {
+                try await ExternalStorage.move(directory: src, to: target.url) { done, total in
+                    Task { @MainActor in
+                        guard self.tasks[spec.id] != nil else { return }
+                        self.states[spec.id] = .moving(done: done, total: total, to: name)
+                    }
+                }
+                self.storage.set(location: target.location, for: spec.id)
+                // GGUF quants of one repo share a directory — they moved together.
+                for twin in self.catalog.models where twin.repo == spec.repo && twin.id != spec.id { self.storage.set(location: target.location, for: twin.id) }
+                self.tasks[spec.id] = nil
+                self.refresh()
+            } catch {
+                self.tasks[spec.id] = nil
+                self.lastMoveError = "\(spec.name): \(error.localizedDescription)"
+                self.refresh()
+            }
+        }
+    }
+
+    public func cancelMove(_ spec: ModelSpec) { if states[spec.id]?.isMoving == true { tasks[spec.id]?.cancel() } }
 }
 
 /// Lock-free-enough running total shared by the per-file progress closures.

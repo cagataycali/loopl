@@ -7,8 +7,6 @@ struct SettingsView: View {
     @Bindable var engine: Engine
     @Bindable var settings: AppSettings
     @Bindable var store: ModelStore
-    @State private var confirmClear = false
-    @State private var confirmHistory = false
 
     var body: some View {
         NavigationStack {
@@ -53,17 +51,18 @@ struct SettingsView: View {
                     Text("A quiet line under the conversation: tokens per second, time to first token, context used.")
                 }
 
-                Section("Storage") {
-                    LabeledContent("Models on device", value: ByteSize.label(store.diskUsed))
-                    Button("Delete all downloaded models", role: .destructive) { confirmClear = true }
-                        .confirmationDialog("Delete every downloaded model?", isPresented: $confirmClear, titleVisibility: .visible) {
-                            Button("Delete all", role: .destructive) { Task { await engine.unload() }; store.deleteAll(); settings.lastModelId = nil }
+                Section {
+                    NavigationLink {
+                        StorageView(engine: engine, settings: settings, store: store)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Label("Storage", systemImage: "externaldrive")
+                            Text(storageSummary).font(.footnote).foregroundStyle(.secondary).lineLimit(2)
                         }
-                    Button("Delete conversation history", role: .destructive) { confirmHistory = true }
-                        .confirmationDialog("Delete all saved conversations?", isPresented: $confirmHistory, titleVisibility: .visible) {
-                            Button("Delete history", role: .destructive) { engine.archive.deleteAll(); engine.clear() }
-                        }
-                        .disabled(engine.archive.conversations.isEmpty)
+                    }
+                    .accessibilityIdentifier("settings-storage")
+                } footer: {
+                    Text("Keep models on the iPhone or on a USB-C drive — plug one in and pick a folder.")
                 }
 
                 Section {
@@ -83,6 +82,12 @@ struct SettingsView: View {
             .accessibilityIdentifier("pane-settings")
             .navigationTitle("Settings")
         }
+    }
+
+    private var storageSummary: String {
+        var parts = ["\(ByteSize.label(store.diskUsed)) on this iPhone"]
+        for v in store.storage.volumes { parts.append(v.connected ? "\(ByteSize.label(v.used)) on \(v.name)" : "\(v.name) not connected") }
+        return parts.joined(separator: " · ")
     }
 
     private var askBeforeFooter: String {
