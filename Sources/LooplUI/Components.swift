@@ -122,23 +122,68 @@ public struct MarkdownBody: View {
     }
 }
 
-/// Monospaced code on a quiet card, horizontally scrollable, with a copy action.
+/// Monospaced code on a quiet card, horizontally scrollable, with a visible Copy action and an edge fade
+/// where a line runs past the card (scroll indicators are hidden, so the fade is the only cue).
 public struct CodeCard: View {
     public var code: String
     public var language: String
+    @State private var copied = false
+    @State private var overflowsRight = false
+    @State private var overflowsLeft = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     public init(code: String, language: String = "") { self.code = code; self.language = language }
+
+    /// Lines of code — the header shows the count when there is no language to name.
+    private var lineCount: Int { code.split(separator: "\n", omittingEmptySubsequences: false).count }
+
     public var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if !language.isEmpty {
-                Text(language).font(.caption2.weight(.medium)).foregroundStyle(.secondary).padding(.horizontal, 12).padding(.top, 8)
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(language.isEmpty ? "\(lineCount) line\(lineCount == 1 ? "" : "s")" : language)
+                    .font(.caption2.weight(.medium)).foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+                Button {
+                    copy(code)
+                    withAnimation(LooplDesign.Motion.faded(LooplDesign.Motion.snappy, reduceMotion)) { copied = true }
+                    Task { try? await Task.sleep(for: .seconds(1.4)); withAnimation(LooplDesign.Motion.faded(LooplDesign.Motion.snappy, reduceMotion)) { copied = false } }
+                } label: {
+                    Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
+                        .font(.caption2.weight(.medium)).labelStyle(.titleAndIcon)
+                        .foregroundStyle(copied ? LooplDesign.accent : Color.secondary)
+                        .contentTransition(.symbolEffect(.replace))
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(LooplDesign.tertiaryFill, in: Capsule())
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(copied ? "Copied" : "Copy code")
             }
+            .padding(.horizontal, 12).padding(.top, 8)
             ScrollView(.horizontal, showsIndicators: false) {
                 Text(code).font(.callout.monospaced()).textSelection(.enabled).padding(12)
             }
+            .onScrollGeometryChange(for: Edges.self) { g in
+                Edges(left: g.contentOffset.x > 2, right: g.contentOffset.x + g.containerSize.width < g.contentSize.width - 2)
+            } action: { _, e in overflowsLeft = e.left; overflowsRight = e.right }
+            .overlay(alignment: .trailing) { fade(.trailing).opacity(overflowsRight ? 1 : 0) }
+            .overlay(alignment: .leading) { fade(.leading).opacity(overflowsLeft ? 1 : 0) }
+            .animation(LooplDesign.Motion.crossfade, value: overflowsRight || overflowsLeft)
         }
         .background(LooplDesign.secondaryBackground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .contextMenu { Button("Copy code", systemImage: "doc.on.doc") { copy(code) } }
+        .accessibilityElement(children: .contain)
         .accessibilityLabel("code block\(language.isEmpty ? "" : ", \(language)")")
+    }
+
+    private struct Edges: Equatable { var left: Bool; var right: Bool }
+
+    /// A 28 pt strip of the card's own colour fading to clear — the line continues under it.
+    private func fade(_ edge: HorizontalEdge) -> some View {
+        LinearGradient(colors: [LooplDesign.secondaryBackground.opacity(0), LooplDesign.secondaryBackground],
+                       startPoint: edge == .trailing ? .leading : .trailing, endPoint: edge == .trailing ? .trailing : .leading)
+            .frame(width: 28)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
 
