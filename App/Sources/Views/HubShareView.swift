@@ -32,6 +32,7 @@ struct HubShareView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(isTerminal ? "Done" : "Cancel") { LooplDesign.haptic(); onDone() }
                         .disabled(isPushing)
+                        .accessibilityIdentifier("hubshare.close")
                 }
             }
             .looplBottomBar(false)
@@ -96,7 +97,7 @@ struct HubShareView: View {
         }
         .looplScrollClearance()
         .safeAreaInset(edge: .bottom) {
-            primaryButton(shard.records.isEmpty ? "Nothing to share" : "Continue", disabled: shard.records.isEmpty) {
+            primaryButton(shard.records.isEmpty ? "Nothing to share" : "Continue", id: "hubshare.continue", disabled: shard.records.isEmpty) {
                 LooplDesign.haptic(); Task { await share.proceed() }
             }
         }
@@ -125,6 +126,7 @@ struct HubShareView: View {
                     .submitLabel(.go)
                     .onSubmit { Task { await share.verify(nil) } }
                     .accessibilityLabel("Hugging Face token")
+                    .accessibilityIdentifier("hubshare.token")
             } header: {
                 Text("Your Hugging Face token")
             } footer: {
@@ -139,7 +141,7 @@ struct HubShareView: View {
             }
         }
         .safeAreaInset(edge: .bottom) {
-            primaryButton("Verify", disabled: !HFAccount.looksLikeToken(share.tokenDraft)) { LooplDesign.haptic(); Task { await share.verify(nil) } }
+            primaryButton("Verify", id: "hubshare.verify", disabled: !HFAccount.looksLikeToken(share.tokenDraft)) { LooplDesign.haptic(); Task { await share.verify(nil) } }
         }
     }
 
@@ -166,11 +168,13 @@ struct HubShareView: View {
                     ForEach(share.datasets) { d in Text(d.name).tag(String?.some(d.id)) }
                 }
                 .pickerStyle(.menu)
+                .accessibilityIdentifier("hubshare.repoPicker")
                 if share.chosenRepo == nil {
                     TextField("loopl-conversations", text: $share.repoName)
                         .autocorrectionDisabled().textInputAutocapitalization(.never)
                         .font(.system(.body, design: .monospaced))
                         .accessibilityLabel("New dataset name")
+                        .accessibilityIdentifier("hubshare.repoName")
                 }
                 if let repo = share.targetRepo {
                     LabeledContent("Repository") { Text(repo).font(.system(.callout, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle) }
@@ -187,7 +191,7 @@ struct HubShareView: View {
             }
         }
         .safeAreaInset(edge: .bottom) {
-            primaryButton("Push \(share.shard.records.count) conversation\(share.shard.records.count == 1 ? "" : "s")", disabled: share.targetRepo == nil) {
+            primaryButton("Push \(share.shard.records.count) conversation\(share.shard.records.count == 1 ? "" : "s")", id: "hubshare.push", disabled: share.targetRepo == nil) {
                 LooplDesign.haptic(1); Task { await share.push() }
             }
         }
@@ -216,12 +220,13 @@ struct HubShareView: View {
     private func done(_ url: URL, rows: Int, images: Int) -> some View {
         VStack(spacing: 16) {
             LooplMark().frame(width: 64, height: 64).matchedGeometryEffect(id: "mark", in: ns)
-            Text("Shared").font(.title2.weight(.semibold))
+            Text("Shared").font(.title2.weight(.semibold)).accessibilityIdentifier("hubshare.shared")
             Text("\(rows) conversation\(rows == 1 ? "" : "s")\(images > 0 ? " and \(images) picture\(images == 1 ? "" : "s")" : "") are in your private dataset.")
                 .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
             Button { openURL(url) } label: { Label("Open on Hugging Face", systemImage: "arrow.up.right.square") }
                 .buttonStyle(.bordered).tint(LooplDesign.accent)
             Text(url.absoluteString).font(.caption2.monospaced()).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.middle).textSelection(.enabled)
+                .accessibilityIdentifier("hubshare.doneURL")
         }
         .padding(LooplDesign.gutter)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -242,12 +247,13 @@ struct HubShareView: View {
 
     // MARK: Primary button
 
-    private func primaryButton(_ title: String, disabled: Bool, action: @escaping () -> Void) -> some View {
+    private func primaryButton(_ title: String, id: String, disabled: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title).font(.body.weight(.semibold)).frame(maxWidth: .infinity).padding(.vertical, 14)
         }
         .buttonStyle(.borderedProminent).tint(LooplDesign.accent)
         .disabled(disabled)
+        .accessibilityIdentifier(id)
         .padding(.horizontal, LooplDesign.gutter)
         .padding(.bottom, 8)
         .background(.bar)

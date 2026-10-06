@@ -190,8 +190,11 @@ public struct HFHubClient: Sendable {
         public var lastModified: String?
         public var author: String { id.split(separator: "/").first.map(String.init) ?? "" }
         public var name: String { id.split(separator: "/").last.map(String.init) ?? id }
-        /// Made by loopl's Share to Hugging Face (README tags) — the natural default target for the next push.
-        public var isLoopl: Bool { tags.contains("loopl") || name.lowercased().contains("loopl") }
+        /// Carries loopl's README tag (training sets, app shares, …) — shown as a badge.
+        public var isLoopl: Bool { tags.contains("loopl") }
+        /// Made by the app's Share to Hugging Face (README tag `loopl-conversations`) — the ONLY kind that is
+        /// picked as the default target: a curated training set tagged `loopl` must never receive shares by default.
+        public var isLooplShare: Bool { tags.contains("loopl-conversations") }
         enum CodingKeys: String, CodingKey { case id, isPrivate = "private", tags, lastModified }
         public init(from decoder: any Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)

@@ -142,7 +142,10 @@ final class HFHubClientTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(ds.count, 2)
         let test = try XCTUnwrap(ds.first { $0.id == "cagataydev/loopl-app-conversations-test" })
         XCTAssertTrue(test.isPrivate); XCTAssertTrue(test.isLoopl); XCTAssertEqual(test.name, "loopl-app-conversations-test")
-        XCTAssertTrue(ds.contains { $0.id == "cagataydev/loopl-train" && $0.isPrivate })
+        // The curated training set is tagged `loopl` as well — it must NOT look like a share target.
+        let train = try XCTUnwrap(ds.first { $0.id == "cagataydev/loopl-train" })
+        XCTAssertTrue(train.isPrivate); XCTAssertTrue(train.isLoopl); XCTAssertFalse(train.isLooplShare)
+        XCTAssertFalse(ds.contains(where: \.isLooplShare), "fixture predates the loopl-conversations tag")
     }
 
     // MARK: repos + commits

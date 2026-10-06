@@ -107,7 +107,7 @@ final class HubShare {
         guard let who = whoami else { return }
         do {
             datasets = try await account.client(transport: transport).datasets(author: who.name).filter { $0.isPrivate }
-            if chosenRepo == nil, let mine = datasets.first(where: \.isLoopl) { chosenRepo = mine.id }
+            if chosenRepo == nil, let mine = datasets.first(where: \.isLooplShare) { chosenRepo = mine.id }
         } catch { datasets = [] }
     }
 

@@ -225,7 +225,7 @@ Style
         license: other
         language: [en]
         task_categories: [text-generation]
-        tags: [loopl, agents, tool-use, conversations, sft]
+        tags: [loopl, loopl-conversations, agents, tool-use, conversations, sft]
         pretty_name: \(repo.split(separator: "/").last.map(String.init) ?? repo)
         configs:
           - config_name: default

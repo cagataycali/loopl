@@ -58,6 +58,10 @@ enum DesignFixture {
             engine.transcript = t
             Task { await replayJump(engine) }
             return
+        case "history":
+            // Share to Hugging Face: three archived conversations (one with tool calls, one plain, one whose
+            // only tool row never finished — the review sheet shows that one as skipped). Chat stays empty.
+            seedHistory(engine, spec: spec)
         case "approval":
             t.user("Post a note to my notes API saying the build is green.")
             t.apply(.startEventLoop(cycle: 1))
@@ -136,6 +140,33 @@ enum DesignFixture {
             t.apply(.metrics(m))
         }
         engine.transcript = t
+    }
+
+    /// `history` scene: fixed ids so the UITest and the proof push are reproducible run to run.
+    @MainActor static func seedHistory(_ engine: Engine, spec: ModelSpec) {
+        let tools: [ToolSpec] = [CurrentTimeTool().toolSpec, CalculatorTool().toolSpec]
+        let day: TimeInterval = 86_400
+        let threads: [SavedConversation] = [
+            SavedConversation(id: UUID(uuidString: "8A6C0A1E-0001-4D8B-9B3C-5E0D2F7A1001")!, title: "What time is it in Istanbul, and what is 23 × 47?",
+                              updated: Date().addingTimeInterval(-2 * 3600), modelName: spec.name,
+                              items: [.user("What time is it in Istanbul, and what is 23 × 47?"),
+                                      .assistant("Let me check both."),
+                                      .tool(name: "current_time", args: ["timezone": .string("Europe/Istanbul")], result: "2026-10-06 07:41 (Europe/Istanbul, UTC+3)", isError: false, ms: 1.2),
+                                      .tool(name: "calculator", args: ["expression": .string("23*47")], result: "23*47 = 1081", isError: false, ms: 0.4),
+                                      .assistant("It is **07:41** in Istanbul, and 23 × 47 = **1081**.")],
+                              modelId: spec.repo, tools: tools),
+            SavedConversation(id: UUID(uuidString: "8A6C0A1E-0002-4D8B-9B3C-5E0D2F7A1002")!, title: "Explain what an agent loop is, in three short points",
+                              updated: Date().addingTimeInterval(-day), modelName: spec.name,
+                              items: [.user("Explain what an agent loop is, in three short points"),
+                                      .assistant("1. **Ask** — the model reads the conversation and either answers or asks for a tool.\n2. **Act** — the app runs the tool and appends the result.\n3. **Repeat** — until the model answers plainly. loopl never caps the rounds.")],
+                              modelId: spec.repo, tools: tools),
+            SavedConversation(id: UUID(uuidString: "8A6C0A1E-0003-4D8B-9B3C-5E0D2F7A1003")!, title: "Fetch https://loopl.dev and summarise it",
+                              updated: Date().addingTimeInterval(-3 * day), modelName: spec.name,
+                              items: [.user("Fetch https://loopl.dev and summarise it"),
+                                      .tool(name: "http", args: ["url": .string("https://loopl.dev")], result: nil, isError: false, ms: 0)],
+                              modelId: spec.repo, tools: tools + [HttpTool().toolSpec]),
+        ]
+        threads.reversed().forEach { engine.archive.upsert($0) }
     }
 
     static let approvalUse = ToolUse(toolUseId: "tooluse_post", name: "http",

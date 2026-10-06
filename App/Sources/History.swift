@@ -210,6 +210,7 @@ struct HistoryList: View {
                         LooplDesign.haptic()
                         withAnimation(LooplDesign.Motion.reduced(LooplDesign.Motion.snappy, reduceMotion)) { selecting.toggle(); if !selecting { selected.removeAll() } }
                     }
+                    .accessibilityIdentifier("history.select")
                     .accessibilityHint(selecting ? "leaves selection mode" : "select conversations to share to Hugging Face")
                 }
             }
@@ -222,6 +223,7 @@ struct HistoryList: View {
                         if selected.count == engine.archive.conversations.count { selected.removeAll() } else { selected = Set(engine.archive.conversations.map(\.id)) }
                     }
                     .font(.footnote)
+                    .accessibilityIdentifier("history.selectAll")
                     Spacer()
                     Button {
                         LooplDesign.haptic(1)
@@ -231,6 +233,7 @@ struct HistoryList: View {
                     }
                     .buttonStyle(.borderedProminent).tint(LooplDesign.accent)
                     .disabled(selected.isEmpty)
+                    .accessibilityIdentifier("history.share")
                     .accessibilityHint("exports the selected conversations to a private dataset in your Hugging Face account")
                 }
                 .padding(.horizontal, LooplDesign.gutter).padding(.vertical, 10)
