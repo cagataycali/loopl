@@ -34,8 +34,10 @@ struct TrainView: View {
     @Environment(\.openURL) private var openURL
 
     private var account: HFAccount { HFAccount.shared }
-    private var signedIn: Bool { fixture != nil || fixtureSignedIn || (account.hasToken && account.username != nil) }
-    private var user: String { fixture?.user ?? account.username ?? (fixtureSignedIn ? "cagataydev" : "") }
+    private var signedIn: Bool { fixture != nil || fixtureSignedIn || (engine.hf.isSignedIn && engine.hf.author != nil) }
+    private var user: String { fixture?.user ?? engine.hf.author ?? account.username ?? (fixtureSignedIn ? "cagataydev" : "") }
+    /// A read-only token can list datasets but `POST /api/jobs` needs write — say so before the user fills the form.
+    private var canRunJobs: Bool { fixture != nil || fixtureSignedIn || (engine.hf.identity?.scopes.contains(.jobs) ?? true) }
 
     private var plan: TrainingPlan? {
         guard let ds = dataset else { return nil }
@@ -69,6 +71,7 @@ struct TrainView: View {
             Label("Sign in to Hugging Face", systemImage: "person.crop.circle.badge.questionmark")
         } description: {
             Text("Training runs on Hugging Face Jobs under your own account: your conversations stay in your private dataset, the tuned model is yours. Add a **write** token in Settings › Hugging Face.")
+                .accessibilityIdentifier("train-signed-out-text")
         } actions: {
             Button("Get a token") { openURL(URL(string: "https://huggingface.co/settings/tokens/new?tokenType=write")!) }
                 .buttonStyle(.borderedProminent).tint(LooplDesign.accent)
@@ -99,7 +102,11 @@ struct TrainView: View {
                     }
                 }
             } header: { Text("Dataset") } footer: {
-                Text("Private, in your account (@\(user)). The training script is committed next to the shards as train/loopl_sft.py.")
+                if canRunJobs {
+                    Text("Private, in your account (@\(user)). The training script is committed next to the shards as train/loopl_sft.py.")
+                } else {
+                    Label("Your token is read-only. Jobs need a write token — Settings › Hugging Face.", systemImage: LooplDesign.iconWarning).foregroundStyle(.orange)
+                }
             }
 
             Section {
@@ -148,7 +155,7 @@ struct TrainView: View {
                             Label("Train on Hugging Face", systemImage: "sparkles").frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.borderedProminent).tint(LooplDesign.accent).controlSize(.large)
-                        .disabled(conversations == 0 || settings.offline)
+                        .disabled(conversations == 0 || settings.offline || !canRunJobs)
                         .accessibilityIdentifier("train-start")
                     }
                 } footer: {
@@ -346,7 +353,7 @@ struct TrainView: View {
     private func addToModels(_ repo: String) async {
         addError = nil
         do {
-            let hub = HubCatalog()
+            let hub = HubCatalog(token: account.provider)
             let r = try await hub.repo(repo)
             let c = try await hub.config(repo)
             let spec = try HubCatalog.spec(for: r, config: c)
@@ -354,7 +361,7 @@ struct TrainView: View {
             LooplDesign.haptic(1)
             await engine.select(row)
         } catch {
-            addError = "Could not add \(repo): \(error.localizedDescription). It is private — once you are signed in, find it under Models › Mine."
+            addError = "Could not add \(repo): \(error.localizedDescription). It is private — it is also listed under Models › Mine."
         }
     }
 }
