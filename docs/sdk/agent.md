@@ -38,7 +38,7 @@ flowchart LR
 
 1. **Stream** the model. Text deltas are yielded as they arrive; tool-use blocks are assembled.
 2. **Run tools** — all calls in the turn, concurrently (`ConcurrentToolExecutor`). Results are appended as a user message.
-3. **Recurse** while the stop reason is `toolUse`. The only bounds are the context window and cancellation. No `maxIterations`, no loop detector — same as Strands.
+3. **Recurse** while the stop reason is `toolUse`. The only bounds are the context window and cancellation. No `maxIterations`, no loop detector, no repeat guard — same as Strands. If the model asks for the same call twice it runs twice; what makes it stop or change its arguments is the tool result it reads (errors say exactly what was wrong).
 
 Before a tool runs, its input is checked against the tool's JSON schema (Strands
 `validate_and_prepare_tools`). A call a small model broke never reaches the tool: it gets an

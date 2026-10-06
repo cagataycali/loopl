@@ -90,37 +90,42 @@ final class AppleFMTests: XCTestCase {
 
     // MARK: - the regression
 
-    /// The exact shape of the bug: FM echoes the call back after the result.
-    /// One tool execution, one assistant answer, `end_turn`.
-    func testRepeatedCallAfterResultRunsToolOnceAndAnswersOnce() async throws {
+    /// The exact shape of the original bug: FM echoes the call back after the result.
+    /// The cure is the prompt (`AppleFMPrompt` renders results as plain text FM cannot
+    /// mistake for its own markup — see `AppleFMPromptTests`), NOT a guard: when a
+    /// scripted model insists on the echo, the loop runs the tool again, shows one answer,
+    /// and ends the turn — no heuristic, no endless loop.
+    func testEchoedCallIsRunAgainAndTheTurnStillEndsWithOneAnswer() async throws {
         let tool = CountingTool()
-        // 1) fenced call  2) the SAME call again (what FM really does)  3) the answer, once re-asked
+        // 1) fenced call  2) the SAME call again  3) the answer
         let (agent, factory) = makeAgent([Self.fencedCall, Self.fencedCall, Self.answer], tool: tool)
 
         let result = try await agent("what time is it in Istanbul?")
 
-        XCTAssertEqual(tool.calls, 1, "the tool must run exactly once")
+        XCTAssertEqual(tool.calls, 2, "no repeat guard: the echoed call runs")
         XCTAssertEqual(result.stopReason, .endTurn)
         XCTAssertEqual(result.text, Self.answer)
 
         let messages = await agent.messages
         let answers = messages.filter { $0.role == .assistant && !$0.text.isEmpty }
         XCTAssertEqual(answers.count, 1, "exactly one assistant answer, not two")
-        XCTAssertEqual(messages.filter { $0.role == .assistant && $0.hasToolUse }.count, 1)
+        XCTAssertEqual(messages.filter { $0.role == .assistant && $0.hasToolUse }.count, 2)
         let toolCallCount = await agent.eventLoopMetrics.toolCallCount
-        XCTAssertEqual(toolCallCount, 1)
-        XCTAssertEqual(factory.promptCount, 3, "one re-ask, not an endless loop")
+        XCTAssertEqual(toolCallCount, 2)
+        XCTAssertEqual(factory.promptCount, 3, "asked once per cycle, then the answer")
     }
 
-    /// The other half of the symptom: FM answers *and* repeats the call in the
-    /// same turn. The answer must stand on its own and the tool must not re-run.
-    func testAnswerPlusRepeatedCallEndsTheTurn() async throws {
+    /// FM answers *and* repeats the call in the same turn. With no repeat guard the
+    /// loop runs the call again (the model asked for it); the prose that came with the
+    /// call is held, so the user still sees exactly one answer — the one that follows
+    /// the second result.
+    func testAnswerPlusRepeatedCallRunsTheToolAgainAndAnswersOnce() async throws {
         let tool = CountingTool()
-        let (agent, _) = makeAgent([Self.fencedCall, Self.answer + "\n" + Self.fencedCall], tool: tool)
+        let (agent, _) = makeAgent([Self.fencedCall, Self.answer + "\n" + Self.fencedCall, Self.answer], tool: tool)
 
         let result = try await agent("what time is it in Istanbul?")
 
-        XCTAssertEqual(tool.calls, 1)
+        XCTAssertEqual(tool.calls, 2, "no repeat guard: a call the model issues is a call that runs")
         XCTAssertEqual(result.stopReason, .endTurn)
         XCTAssertTrue(result.text.contains("03:29"), "got: \(result.text)")
         let answers = (await agent.messages).filter { $0.role == .assistant && !$0.text.isEmpty }
@@ -128,7 +133,7 @@ final class AppleFMTests: XCTestCase {
     }
 
     /// A *different* call after a result is legitimate multi-step work and must
-    /// still go through — the guard is about repeats, not about second tools.
+    /// still go through.
     func testDifferentCallAfterResultStillRuns() async throws {
         let time = CountingTool()
         let calcCalls = LockedCount()
@@ -171,18 +176,18 @@ final class AppleFMTests: XCTestCase {
         XCTAssertEqual(factory.promptCount, 2)
     }
 
-    /// The model that only ever repeats itself must still end the turn (no infinite loop)
-    /// and must show the user what the tool produced rather than nothing.
-    func testHopelessRepeaterStillEndsTheTurn() async throws {
+    /// A model that repeats the same call three times gets three honest results and
+    /// then answers; nothing in the runtime or the loop cuts it short.
+    func testRepeatedCallsAreAllExecutedUntilTheModelAnswers() async throws {
         let tool = CountingTool()
-        let (agent, factory) = makeAgent([Self.fencedCall, Self.fencedCall, Self.fencedCall], tool: tool)
+        let (agent, factory) = makeAgent([Self.fencedCall, Self.fencedCall, Self.fencedCall, Self.answer], tool: tool)
 
         let result = try await agent("what time is it in Istanbul?")
 
-        XCTAssertEqual(tool.calls, 1)
+        XCTAssertEqual(tool.calls, 3)
         XCTAssertEqual(result.stopReason, .endTurn)
         XCTAssertTrue(result.text.contains("03:29"), "got: \(result.text)")
-        XCTAssertEqual(factory.promptCount, 3)
+        XCTAssertEqual(factory.promptCount, 4)
     }
 
     // MARK: - owner-required fixes (OWNER UPDATE 00:18Z)
@@ -302,28 +307,6 @@ final class AppleFMTests: XCTestCase {
         XCTAssertFalse(AppleFMPrompt.toolDocs([spec]).contains("http("), "no signature shape — FM mimics it as a pseudo-call")
     }
 
-    // MARK: - the guard itself
-
-    func testRepeatGuardMatchesRegardlessOfKeyOrderAndLetsErrorsRetry() {
-        let a = ToolUse(toolUseId: "t1", name: "http", input: ["url": "https://x", "method": "GET"])
-        let b = ToolUse(toolUseId: "t2", name: "http", input: ["method": "GET", "url": "https://x"])
-        let other = ToolUse(toolUseId: "t3", name: "http", input: ["url": "https://y", "method": "GET"])
-
-        let answered = ToolCallRepeatGuard(messages: [
-            .user("go"), .assistant(text: "", toolUses: [a]),
-            .toolResults([ToolResult(toolUseId: "t1", name: "http", content: "ok")]),
-        ])
-        XCTAssertTrue(answered.isRepeat(b), "same call, different key order")
-        XCTAssertFalse(answered.isRepeat(other))
-
-        let errored = ToolCallRepeatGuard(messages: [
-            .user("go"), .assistant(text: "", toolUses: [a]),
-            .toolResults([ToolResult(toolUseId: "t1", name: "http", status: .error, content: "timeout")]),
-        ])
-        XCTAssertFalse(errored.isRepeat(b), "a failed call may be retried")
-        XCTAssertTrue(ToolCallRepeatGuard().isEmpty)
-    }
-
     // MARK: - the real model, when this machine has one
 
     /// End-to-end against the REAL Apple Intelligence model: one question, one
@@ -348,12 +331,11 @@ final class AppleFMTests: XCTestCase {
                       "answer should use the tool result: \(result.text)")
     }
 
-    /// Default gate behaviour (MLX, GGUF) is untouched: no suppression without a closure.
-    func testGateWithoutSuppressionKeepsEveryCall() {
+    /// The gate keeps every parsed call — it has no veto.
+    func testGateKeepsEveryCall() {
         var gate = ToolCallStreamGate(family: .generic)
         _ = gate.feed(Self.fencedCall)
         let events = gate.finish()
-        XCTAssertTrue(gate.suppressedCalls.isEmpty)
         XCTAssertTrue(events.contains { if case .messageStop(.toolUse) = $0 { return true }; return false })
     }
 }

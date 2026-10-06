@@ -11,10 +11,9 @@ import Loopl
 /// tool exchange back in `<tool_call>` markup made FM re-emit the identical
 /// call instead of answering (3/3 on real hardware), which the event loop then
 /// correctly executed a second time — the "ran the tool twice, answered twice"
-/// bug. `ToolCallRepeatGuard` is the belt to that braces: a call that already
-/// has a successful result in this conversation can never be issued again, and
-/// if suppressing it leaves the turn empty the runtime re-asks once, insisting
-/// on plain text.
+/// bug. The fix is the prompt alone — tool exchanges are rendered as plain
+/// results the model cannot mistake for its own markup. There is no repeat
+/// guard: a call the model issues is a call the loop runs (faithful Strands).
 public actor AppleFoundationModel: Model {
     public nonisolated let kind: RuntimeKind = .appleFM
     /// Apple Foundation Models is a fixed 4096-token window (no config to read).
@@ -67,26 +66,11 @@ public actor AppleFoundationModel: Model {
                     }
                     continuation.yield(.metadata(stats))
 
-                    // A call that already has a successful result can not be issued again.
-                    let repeatGuard = ToolCallRepeatGuard(messages: messages)
                     var attempt = try await self.generate(instructions: built.instructions, prompt: built.prompt,
-                                                          params: params, repeatGuard: repeatGuard,
+                                                          params: params,
                                                           started: started, stats: stats,
                                                           emit: { continuation.yield($0) })
                     stats = attempt.stats
-
-                    // The pathological FM turn: the only thing it produced was a call it
-                    // already has the result for. Nothing reached the UI (the gate withholds
-                    // tool markup), so drop that turn and re-ask once, insisting on prose.
-                    if attempt.emptyRepeat, built.mode == .answer {
-                        let insisted = AppleFMPrompt.build(messages: messages, toolSpecs: toolSpecs,
-                                                           systemPrompt: systemPrompt, insisting: true)
-                        attempt = try await self.generate(instructions: insisted.instructions, prompt: insisted.prompt,
-                                                          params: params, repeatGuard: repeatGuard,
-                                                          started: started, stats: stats,
-                                                          emit: { continuation.yield($0) }, suppressMessageStart: true)
-                        stats = attempt.stats
-                    }
 
                     // `current_time("Europe/Istanbul")` as the whole reply: a call written as a
                     // signature. Re-ask once, insisting on the JSON shape; the UI's text is replaced.
@@ -96,23 +80,13 @@ public actor AppleFoundationModel: Model {
                         let insisted = AppleFMPrompt.build(messages: messages, toolSpecs: toolSpecs,
                                                            systemPrompt: systemPrompt, insisting: true)
                         attempt = try await self.generate(instructions: insisted.instructions, prompt: insisted.prompt,
-                                                          params: params, repeatGuard: repeatGuard,
+                                                          params: params,
                                                           started: started, stats: stats,
                                                           emit: { continuation.yield($0) }, suppressMessageStart: true)
                         stats = attempt.stats
                     }
 
-                    if attempt.emptyRepeat {
-                        // Twice in a row (or in `call` mode with nothing else to say): present what
-                        // the tools produced rather than recurse for ever or invent a sentence.
-                        let results = (messages.last?.toolResults ?? []).map { "\($0.name): \($0.content)" }.joined(separator: "\n")
-                        continuation.yield(.contentBlockStart(.text))
-                        continuation.yield(.contentBlockDelta(.text(results.isEmpty ? "No answer was produced." : results)))
-                        continuation.yield(.contentBlockStop)
-                        continuation.yield(.messageStop(.endTurn))
-                    } else {
-                        for e in attempt.finishEvents { continuation.yield(e) }
-                    }
+                    for e in attempt.finishEvents { continuation.yield(e) }
 
                     stats.finished = true
                     if stats.stopReason.isEmpty { stats.stopReason = "stop" }
@@ -133,7 +107,6 @@ public actor AppleFoundationModel: Model {
         /// `finish()`'s events, held back so a retried turn can be dropped cleanly.
         var finishEvents: [StreamEvent]
         /// Every tool call this turn produced was a repeat, and it said nothing else.
-        var emptyRepeat: Bool
         /// The text the UI has (deltas + replaces), after `finish()`.
         var visibleText: String
         var sawToolUse: Bool
@@ -142,15 +115,14 @@ public actor AppleFoundationModel: Model {
     }
 
     private func generate(instructions: String, prompt: String, params: GenerationParams,
-                          repeatGuard: ToolCallRepeatGuard, started: Date, stats input: Metrics,
+                          started: Date, stats input: Metrics,
                           emit: @Sendable @escaping (StreamEvent) -> Void,
                           suppressMessageStart: Bool = false) async throws -> Attempt {
         var stats = input
         let session = try factory.makeSession(instructions: instructions.isEmpty ? nil : instructions,
                                               temperature: Double(params.temperature),
                                               maxTokens: params.maxTokens)
-        let guardCopy = repeatGuard
-        var gate = ToolCallStreamGate(family: .generic, suppress: { guardCopy.isRepeat($0) })
+        var gate = ToolCallStreamGate(family: .generic)
         var emitted = ""
         var visibleText = ""
         var sawToolUse = false
@@ -173,7 +145,7 @@ public actor AppleFoundationModel: Model {
                 // A snapshot that does not extend the previous one (FM revised what it
                 // had said). Re-run a fresh gate over the whole snapshot and tell the
                 // UI the text is now exactly that — never drop it, never duplicate it.
-                var fresh = ToolCallStreamGate(family: .generic, suppress: { guardCopy.isRepeat($0) })
+                var fresh = ToolCallStreamGate(family: .generic)
                 let replay = fresh.feed(snapshot)
                 let wasOpen = gate.isTextBlockOpen
                 emitted = snapshot
@@ -242,10 +214,7 @@ public actor AppleFoundationModel: Model {
             visibleText = prose
         }
 
-        let emptyRepeat = !sawToolUse
-            && visibleText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && !gate.suppressedCalls.isEmpty
-        return Attempt(stats: stats, finishEvents: finishEvents, emptyRepeat: emptyRepeat,
+        return Attempt(stats: stats, finishEvents: finishEvents,
                        visibleText: visibleText, sawToolUse: sawToolUse, textOpened: textOpened)
     }
 
