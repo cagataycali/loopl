@@ -1,6 +1,16 @@
 {% extends "base.html" %}
 {% block extrahead %}
   {% if page.is_homepage %}
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="loopl — an agent that lives on your phone" />
+  <meta property="og:description" content="Model, loop and tools on the device. Offline, asks before it acts, open Swift SDK. Free on TestFlight." />
+  <meta property="og:image" content="{{ config.site_url }}assets/og-home.png" />
+  <meta property="og:image:width" content="1200" /><meta property="og:image:height" content="630" />
+  <meta property="og:url" content="{{ config.site_url }}" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="loopl — an agent that lives on your phone" />
+  <meta name="twitter:description" content="Model, loop and tools on the device. Offline, asks before it acts, open Swift SDK. Free on TestFlight." />
+  <meta name="twitter:image" content="{{ config.site_url }}assets/og-home.png" />
   <link rel="preload" as="image" href="{{ 'assets/app2/hero-light-poster.jpg' | url }}" media="(prefers-color-scheme: light)" fetchpriority="high" />
   <link rel="preload" as="image" href="{{ 'assets/app2/hero-dark-poster.jpg' | url }}" media="(prefers-color-scheme: dark)" fetchpriority="high" />
   {% endif %}

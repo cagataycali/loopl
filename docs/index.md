@@ -1,6 +1,8 @@
 ---
 title: loopl — an agent that lives on your phone
 description: loopl runs the model, the agent loop and native tools on the iPhone. Free on TestFlight, open source Swift SDK. Offline, no account, nothing collected.
+social:
+  cards: false
 hide:
   - navigation
   - toc
