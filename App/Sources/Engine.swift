@@ -144,6 +144,14 @@ public final class Engine {
         Task { await agent.resolve(approval: request.id, decision) }
     }
     public var activeTools: [any Tool] { allTools.filter { settings.enabledTools.contains($0.name) } + AppleToolPrefs.shared.active }
+    /// Settings' one-line answer to "how many tools does the model get?" — the portable tools AND the
+    /// on-device Apple ones that are switched on and runnable here (`ToolCountSummary`). Counting only
+    /// `allTools` is what made build 10 say "6 of 6" above eight Apple toggles that were all on.
+    public var toolSummary: String {
+        ToolCountSummary.label(core: allTools.count,
+                               coreEnabled: allTools.filter { settings.enabledTools.contains($0.name) }.count,
+                               apple: AppleTools.all.map { (AppleToolPrefs.shared.enabled.contains($0.name), type(of: $0).availability().available) })
+    }
 
     /// The model to bring up at launch: the last used one, else the catalog default
     /// (mlx-community/Qwen3-0.6B-4bit), else the smallest downloadable model.

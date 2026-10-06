@@ -58,12 +58,19 @@ final class CollectionModel {
         }
     }
 
+    /// Footer status when the collection is private and nobody is signed in. Deliberately NOT an instruction:
+    /// `CollectionSection`'s key row carries the one "sign in in Settings" sentence, and the audit of build 10
+    /// found both of them on screen 40 pt apart.
+    static let privateStatus = "the collection is private right now"
+    /// The single actionable sentence about signing in — the key row, or the empty-section row when nothing loaded.
+    static let signInHint = "These loopl models are private. Sign in to Hugging Face in Settings to download them."
+
     /// Footer wording for a failed refresh: the rows are still there, so no red.
     static func quiet(_ error: any Error) -> String {
         if let e = error as? HubCatalog.HubError {
             switch e {
             case .offline: return "offline — showing the saved list"
-            case .signInRequired: return "the collection is private right now — sign in to Hugging Face in Settings to download"
+            case .signInRequired: return Self.privateStatus
             case .noAccess: return "this account can't read the collection"
             default: break
             }
@@ -109,7 +116,7 @@ struct CollectionSection: View {
                 }
                 if hf.author == nil, listing.rows.contains(where: \.hit.isPrivate) {
                     Label {
-                        Text("Sign in to Hugging Face in Settings to download the private loopl models").font(.footnote).foregroundStyle(.secondary)
+                        Text(CollectionModel.signInHint).font(.footnote).foregroundStyle(.secondary)
                     } icon: { Image(systemName: "key.horizontal").foregroundStyle(.secondary) }
                     .accessibilityIdentifier("collection-signed-out")
                 }
@@ -133,8 +140,12 @@ struct CollectionSection: View {
             Section("loopl models") {
                 if model.loading { SkeletonRow(); SkeletonRow() }
                 else {
-                    Label(model.error ?? "couldn't load the loopl collection", systemImage: LooplDesign.iconWarning).font(.footnote).foregroundStyle(.secondary)
-                        .accessibilityIdentifier("collection-error")
+                    // A private collection with nothing cached is not an error the user can retry out of — it is the sign-in hint.
+                    let signedOut = model.error == CollectionModel.privateStatus
+                    Label(signedOut ? CollectionModel.signInHint : (model.error ?? "couldn't load the loopl collection"),
+                          systemImage: signedOut ? "key.horizontal" : LooplDesign.iconWarning)
+                        .font(.footnote).foregroundStyle(.secondary)
+                        .accessibilityIdentifier(signedOut ? "collection-signed-out" : "collection-error")
                     Button("Try again") { Task { await model.load(author: hf.author, force: true) } }.font(.footnote.weight(.semibold))
                 }
             }
