@@ -21,7 +21,7 @@ MODULES="$SCRATCH/$CFG/Modules"
 SKIP_BUILD="${SNIPPETS_SKIP_BUILD:-0}"
 if [[ "$SKIP_BUILD" != "1" ]]; then
   # --target (not --product): a library product makes SwiftPM build the whole package, incl. LooplUI (SwiftUI, iOS-first).
-  for t in Loopl LooplRuntimes; do
+  for t in Loopl LooplRuntimes LooplAppleTools; do
     echo "▸ swift build --target $t …"
     if ! out="$(swift build -c "$CFG" --scratch-path "$SCRATCH" --target "$t" 2>&1)"; then echo "$out" | grep -E "error:" | head -10; echo "✗ swift build --target $t failed"; exit 2; fi
     echo "$out" | grep -E "Build of target|Build complete" || true

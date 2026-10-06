@@ -116,9 +116,16 @@ public enum TokenEstimator {
             case .text(let t), .reasoning(let t): n += estimate(t)
             case .toolUse(let u): n += 8 + estimate(u.name) + estimate(JSONValue.object(u.input).compact)
             case .toolResult(let r): n += 8 + estimate(r.content)
+            case .image(let i): n += estimate(image: i)
             }
         }
         return n
+    }
+    /// Vision tokens for one picture. Qwen-VL family: one token per 28×28 patch after the processor
+    /// resizes into its budget (≤ 1280 tokens at the default ~1.3 MP ceiling). Unknown size → the ceiling.
+    public static func estimate(image: ImageBlock) -> Int {
+        guard let px = image.pixelCount else { return 1280 }
+        return min(1280, max(16, px / (28 * 28)))
     }
     public static func estimate(messages: [Message], systemPrompt: String?, toolSpecs: [ToolSpec]) -> Int {
         var n = systemPrompt.map(estimate) ?? 0

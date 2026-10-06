@@ -70,6 +70,18 @@ let schema: JSONValue = [
 | `RememberTool` / `RecallTool` | on-device notes (`NotesStore`) |
 | `HttpTool` | `http`: GET/HEAD/POST/PUT/PATCH/DELETE with headers, body, timeout; capped response; blocked when `NetworkPolicy` is offline; writes ask for approval ([HITL](hitl.md)). `HttpGetTool` (`http_get`) stays one release as a deprecated alias |
 
+## On-device Apple tools
+
+`LooplAppleTools` wraps what the iPhone already does, with no account and no download: `generate_image` (Image Playground, iOS 18.4+, Apple Intelligence), `generate_voice` (AVSpeechSynthesizer, Personal Voice), `read_text` and `describe_image` (Vision OCR / classification on the user's attached picture), `translate` (installed Translate packs, iOS 26), `transcribe` (SpeechAnalyzer, iOS 26), `detect_language`, and `apple_intelligence` (Foundation Models `@Generable` summarize / extract / tag). Each conforms to `AppleTool` and reports `availability()` — the app only offers tools the device can run. Pictures come back in `ToolResult.images` (`ImageBlock`); the model reads the text.
+
+```swift
+// snippet: compile(wrap)
+import LooplAppleTools
+let tools: [any Tool] = AppleTools.available   // what THIS device can do right now
+let a = GenerateImageTool.availability()
+print(a.available ? "ready" : a.reason)      // "Needs Apple Intelligence …"
+```
+
 ## How calls reach your code
 
 - Tool specs go through the model's chat template (`ToolSpec`); small models emit `<tool_call>` JSON, which `ToolCallParser` reads per `ToolFamily` (Qwen, Llama, Gemma, …).

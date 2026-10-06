@@ -277,6 +277,8 @@ public struct ToolRow: View {
                 IndeterminateBar().padding(.leading, 24).padding(.trailing, 20).transition(.opacity)
             }
             if expanded { ToolCallCard(call: call, result: result).transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top))) }
+            // A picture the tool made is the result — shown folded or not.
+            if let r = result, !r.images.isEmpty { ToolImagesView(r.images) }
         }
         .padding(.vertical, 2)
         .animation(LooplDesign.Motion.faded(LooplDesign.Motion.spring, reduceMotion), value: result == nil)

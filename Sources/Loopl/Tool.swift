@@ -73,3 +73,26 @@ public struct ClosureTool: Tool {
     }
     public func call(_ args: [String: JSONValue]) async throws -> String { try await body(args) }
 }
+
+// MARK: - Tools that produce or consume pictures (Phase 4, APPLE-TOOLS)
+
+/// What a tool hands back: the text the model reads, plus pictures the
+/// transcript renders (`ToolResult.images`). `call(_:)` returning a String is
+/// `ToolOutput(text:)` — the image-aware entry points below default to it.
+public struct ToolOutput: Sendable, Hashable {
+    public var text: String
+    public var images: [ImageBlock]
+    public init(text: String, images: [ImageBlock] = []) { self.text = text; self.images = images }
+}
+
+extension Tool {
+    /// Image-producing tools override this (and make `call(_:)` return the prose only).
+    public func callOutput(_ args: [String: JSONValue]) async throws -> ToolOutput {
+        ToolOutput(text: try await call(args))
+    }
+    /// Image-consuming tools override this. `images` are the pictures attached to
+    /// the latest user message (most recent last); the default ignores them.
+    public func call(_ args: [String: JSONValue], images: [ImageBlock]) async throws -> ToolOutput {
+        try await callOutput(args)
+    }
+}

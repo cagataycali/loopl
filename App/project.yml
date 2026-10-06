@@ -41,6 +41,8 @@ targets:
       product: LooplRuntimes
     - package: Loopl
       product: LooplUI
+    - package: Loopl
+      product: LooplAppleTools
     info:
       path: Info.plist
       properties:
@@ -87,6 +89,7 @@ targets:
     sources:
     - path: ../Tests/LooplTests
       excludes: [Fixtures]
+    - path: ../Tests/LooplAppleToolsTests
     # Hub fixtures as a folder reference → LooplTests.xctest/hub/<name>.json (tests also try "Fixtures/hub" for SwiftPM).
     - path: ../Tests/LooplTests/Fixtures/hub
       type: folder
@@ -95,6 +98,8 @@ targets:
     - target: LooplApp
     - package: Loopl
       product: Loopl
+    - package: Loopl
+      product: LooplAppleTools
     info:
       path: Tests-Info.plist
       properties: {}
