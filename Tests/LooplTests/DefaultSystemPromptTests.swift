@@ -15,8 +15,20 @@ final class DefaultSystemPromptTests: XCTestCase {
     }
 
     func testStoredLegacyDefaultUpgrades() {
-        UserDefaults.standard.set(AppSettings.legacyDefaultSystemPrompts.first!, forKey: "loopl.system")
-        XCTAssertEqual(AppSettings().systemPrompt, AppSettings.defaultSystemPrompt)
+        for legacy in AppSettings.legacyDefaultSystemPrompts {       // build ≤ 9 and the 1.0.1 text of builds 10–14
+            UserDefaults.standard.set(legacy, forKey: "loopl.system")
+            XCTAssertEqual(AppSettings().systemPrompt, AppSettings.defaultSystemPrompt, legacy)
+        }
+    }
+
+    /// Phase 6 (owner, 2026-10-06): the directives live in the prompt, not in code — mount a missing tool before saying
+    /// "I can't", compact when long, delegate with use_agent. No "write tool code" directive (runtime creation skipped).
+    func testDefaultCarriesThePhase6Directives() {
+        let p = AppSettings.defaultSystemPrompt
+        for tool in ["manage_tools", "manage_messages", "use_agent"] { XCTAssertTrue(p.contains(tool), tool) }
+        XCTAssertFalse(p.lowercased().contains("swift"))
+        XCTAssertFalse(p.lowercased().contains("javascript"))
+        XCTAssertLessThan(p.split(separator: " ").count, 160, "a default prompt for 0.8B–4B models stays short")
     }
 
     func testUserEditIsKept() {
