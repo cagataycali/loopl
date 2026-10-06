@@ -1,6 +1,6 @@
 site_name: loopl
 site_url: https://loopl.dev/
-site_description: "loopl — agents that run on the phone. A native Swift agent SDK for on-device inference, plus a free iOS app. No cloud, no login."
+site_description: "loopl — the Swift SDK for agents that run on the device. A local model, the agent loop and native iPhone tools. Offline, no account."
 repo_url: https://github.com/cagataycali/loopl
 repo_name: cagataycali/loopl
 edit_uri: ""
@@ -58,13 +58,13 @@ theme:
 
 extra_css:
   # bump the suffix on every CSS change: Cloudflare caches assets for 4 h (HTML is DYNAMIC)
-  - stylesheets/loopl.v7.css
+  - stylesheets/loopl.v8.css
 
 hooks:
   - docs/hooks/strip_snippet_tags.py
 
 extra_javascript:
-  - javascripts/demo.js
+  - javascripts/loopl.js
 
 plugins:
   - redirects:
@@ -93,8 +93,8 @@ plugins:
   - social:
       enabled: !ENV [LOOPL_SOCIAL_CARDS, true]
       cards_layout_options:
-        background_color: "#15161A"
-        color: "#ECE8E1"
+        background_color: "#0A0A0B"
+        color: "#EDEDEF"
         font_family: Inter Tight
 
 extra:
