@@ -3,8 +3,10 @@ import Loopl
 import LooplUI
 import LooplRuntimes
 
-/// "Models" — one list: the model in use, the ones on this device, the rest of
-/// the catalog. Tap to switch (downloads first if needed), swipe left to delete.
+/// "Models" — one list in the order a first-time user needs it (owner, 2026-10-06): 1 On this iPhone (what is here,
+/// the one in use marked, swipe left to delete) · 2 Browse Hugging Face · 3 Train your own · 4 loopl models (the
+/// collection; GGUF builds and the rest of the curated catalog fold under it) · 5 Mine. Never more than five sections,
+/// never the same repo twice. Tap a row to switch (it downloads first if needed).
 struct ModelsView: View {
     @Bindable var engine: Engine
     @Bindable var store: ModelStore
@@ -23,37 +25,64 @@ struct ModelsView: View {
     @Namespace private var loadedMark
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    /// On this device (loaded first) · From Hugging Face · More models (· GGUF when Settings shows them).
-    /// The loopl models themselves are the collection section above; their curated models.json twins are the bundled fallback only.
-    private var sections: [(String, [ModelSpec])] {
-        var out: [(String, [ModelSpec])] = []
-        let available = store.catalog.models.filter { $0.runtime != .appleFM || AppleFoundationModel.availability().available }
-        func onDevice(_ s: ModelSpec) -> Bool {
-            guard let st = store.states[s.id] else { return !s.isDownloadable || engine.loadedModel?.id == s.id }
-            return !s.isDownloadable || st.isDownloaded || st.isMoving || st.driveBlocked || engine.loadedModel?.id == s.id
+    /// The models that are HERE (or arriving): downloaded, downloading, paused, failed, on a drive, moving, built in, in use.
+    /// The one in use sorts first. A download in flight belongs on this shelf — its progress must never hide in a folded list.
+    private var available: [ModelSpec] { store.catalog.models.filter { $0.runtime != .appleFM || AppleFoundationModel.availability().available } }
+    private func onDevice(_ s: ModelSpec) -> Bool {
+        guard let st = store.states[s.id] else { return !s.isDownloadable || engine.loadedModel?.id == s.id }
+        if engine.loadedModel?.id == s.id || !s.isDownloadable { return true }
+        switch st {
+        case .downloaded, .downloading, .paused, .failed, .needsDrive, .driveUnreadable, .moving: return true
+        case .notDownloaded: return false
         }
-        let here = available.filter(onDevice).sorted { a, b in (engine.loadedModel?.id == a.id) && engine.loadedModel?.id != b.id }
-        // A model never appears twice: curated models.json rows for repos the collection section lists stay as the
-        // bundled fallback only (they still show under "On this device" once downloaded).
-        let inCollection = collection.repoIds
-        let rest = available.filter { !onDevice($0) && !inCollection.contains($0.repo) }
-        let hub = rest.filter(\.isFromHub)
-        let curated = rest.filter { !$0.isFromHub && $0.runtime != .gguf }
-        let gguf = rest.filter { !$0.isFromHub && $0.runtime == .gguf }
-        if !here.isEmpty { out.append((store.storage.volumes.isEmpty ? "On this device" : "Downloaded", here)) }
-        if !hub.isEmpty { out.append(("From Hugging Face", hub)) }
-        if !curated.isEmpty { out.append(("More models", curated)) }
-        if settings.showGGUF, showMore, !gguf.isEmpty { out.append(("More models · GGUF", gguf)) }
-        return out
     }
-    /// "More models" folds the catalog depth behind one row; the other sections are always open.
-    private func folded(_ title: String) -> Bool { title.hasPrefix("More models") && !showMore }
+    private var here: [ModelSpec] {
+        available.filter(onDevice).sorted { a, b in (engine.loadedModel?.id == a.id) && engine.loadedModel?.id != b.id }
+    }
+    /// Everything else, with no repo twice: the collection section already lists the loopl models, so their models.json
+    /// twins stay a bundled fallback only (they reappear under "On this iPhone" once downloaded).
+    private var rest: [ModelSpec] {
+        let inCollection = collection.repoIds
+        var seen: Set<String> = []
+        return available.filter { !onDevice($0) && !inCollection.contains($0.repo) && seen.insert($0.repo.isEmpty ? $0.id : $0.repo).inserted }
+    }
+    /// Added from Browse, not downloaded yet — they sit under the Browse row they came from.
+    private var hub: [ModelSpec] { rest.filter(\.isFromHub) }
+    /// The curated catalog beyond the loopl models — folded behind one "More models" row under the loopl models.
+    private var curated: [ModelSpec] { rest.filter { !$0.isFromHub && $0.runtime != .gguf } }
+    private var gguf: [ModelSpec] { rest.filter { !$0.isFromHub && $0.runtime == .gguf } }
+    /// Header of section 1: the device this is — a model on a drive carries its own "On SanDisk" line.
+    private var deviceName: String { UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone" }
+    /// For the section-order test and the animation key: the headers, top to bottom, as a first-time user reads them.
+    static let sectionOrder = ["On this iPhone", "Browse Hugging Face", "Train your own", "loopl models", "Mine"]
 
     var body: some View {
         NavigationStack {
             List {
-                // The loopl models first: whoever installs the app sees them before anything else.
-                CollectionSection(engine: engine, store: store, settings: settings, hf: engine.hf, model: collection, selected: $collectionSelected, zoom: zoom)
+                // 1 — what is on the phone. Empty = a calm shelf, not an error; the hint points down at where models come from.
+                Section {
+                    ForEach(here) { spec in row(spec) }
+                    if !here.contains(where: \.isDownloadable) {
+                        // Nothing downloaded (Apple Intelligence may still be here): one calm line pointing at where models come from.
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                if here.isEmpty { Text("Nothing downloaded yet").font(.body.weight(.medium)) }
+                                Text("Get a model ↓ — pick a loopl model below, or browse Hugging Face. It downloads once, then runs offline.")
+                                    .font(here.isEmpty ? .caption : .footnote).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                            }
+                        } icon: { Image(systemName: "arrow.down.circle").foregroundStyle(LooplDesign.accent) }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityIdentifier("models-empty")
+                    }
+                    if settings.offline {
+                        Label("Offline mode is on — downloads are refused, models on this \(deviceName) still load.", systemImage: LooplDesign.iconOffline).font(.footnote).foregroundStyle(.orange)
+                    }
+                } header: {
+                    Text("On this \(deviceName)").accessibilityIdentifier("models-header-device")
+                } footer: {
+                    Text(storageLine).accessibilityIdentifier("models-storage")
+                }
+                // 2 — Browse (and the repos added from it that are not here yet).
                 Section {
                     NavigationLink {
                         HubBrowseView(engine: engine, store: store, settings: settings)
@@ -61,83 +90,48 @@ struct ModelsView: View {
                     } label: {
                         Label {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("Browse Hugging Face").font(.body.weight(.medium))
+                                Text("Search models").font(.body.weight(.medium))
                                 Text(engine.hf.isSignedIn ? "Any MLX or GGUF repo — yours too, private included" : "Any public MLX or GGUF repo — no account needed").font(.caption).foregroundStyle(.secondary)
                             }
                         } icon: { Image(systemName: "magnifyingglass").foregroundStyle(LooplDesign.accent) }
                         .matchedTransitionSource(id: "browse", in: zoom)
                     }
                     .accessibilityIdentifier("models-browse-hub")
+                    ForEach(hub) { spec in row(spec) }
+                } header: {
+                    Text("Browse Hugging Face").accessibilityIdentifier("models-header-browse")
+                } footer: {
+                    if !hub.isEmpty { Text("Added from Browse. Swipe left to remove a row and its weights.") }
+                }
+                // 3 — Train.
+                Section {
                     NavigationLink {
                         TrainView(engine: engine, store: store, settings: settings)
                     } label: {
                         Label {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Train your own").font(.body.weight(.medium))
-                                Text("Post-tune Qwen3.5 on your conversations — on Hugging Face, in your account").font(.caption).foregroundStyle(.secondary)
+                                Text("Post-tune a model on your conversations — on Hugging Face, in your account").font(.caption).foregroundStyle(.secondary)
                             }
                         } icon: { Image(systemName: "sparkles").foregroundStyle(LooplDesign.accent) }
                     }
                     .accessibilityIdentifier("models-train")
+                } header: {
+                    Text("Train your own").accessibilityIdentifier("models-header-train")
                 }
+                // 4 — the loopl models (the collection), with the GGUF builds and the rest of the catalog folded under them.
+                CollectionSection(engine: engine, store: store, settings: settings, hf: engine.hf, model: collection, selected: $collectionSelected, zoom: zoom) {
+                    moreRows
+                }
+                // 5 — the user's own repos.
                 MineSection(engine: engine, store: store, settings: settings, hf: engine.hf, mine: mine, selected: $mineSelected, zoom: zoom)
-                ForEach(sections, id: \.0) { title, rows in
-                    Section {
-                        if title.hasPrefix("More models") {
-                            if title == "More models" {
-                                Button {
-                                    LooplDesign.haptic(1)
-                                    withAnimation(LooplDesign.Motion.faded(LooplDesign.Motion.spring, reduceMotion)) { showMore.toggle() }
-                                } label: {
-                                    HStack {
-                                        Label {
-                                            VStack(alignment: .leading, spacing: 2) {
-                                                Text("More models").font(.body.weight(.medium))
-                                                Text(showMore ? "Qwen3, Qwen3-VL, Llama 3.2, Gemma 3, Phi-4 mini, SmolLM, DeepSeek — the models loopl is tested with"
-                                                              : "\(rows.count) more the app is tested with — Qwen3, Llama 3.2, Gemma 3, Phi-4 mini…").font(.caption).foregroundStyle(.secondary)
-                                            }
-                                        } icon: { Image(systemName: "square.stack.3d.up").foregroundStyle(LooplDesign.accent) }
-                                        Spacer()
-                                        Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
-                                            .rotationEffect(.degrees(showMore ? 90 : 0))
-                                    }
-                                    .contentShape(Rectangle())
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityIdentifier("models-more")
-                                .accessibilityAddTraits(.isButton)
-                            }
-                            if !folded(title) { ForEach(rows) { spec in row(spec) } }
-                        } else {
-                            ForEach(rows) { spec in row(spec) }
-                        }
-                    } header: {
-                        if title == "More models · GGUF" { Text("GGUF · llama.cpp") } else if title != "More models" { Text(title) }
-                    } footer: {
-                        if title == "More models", showMore { Text("Tap a model to use it — it downloads once, then runs offline. Context and output length are set to the model's recommended maximum automatically.") }
-                        if title == "From Hugging Face" { Text("Added from Browse. Swipe left to remove a row and its weights.") }
-                    }
-                }
-                Section {
-                    LabeledContent("On this device", value: ByteSize.label(store.diskUsed))
-                    ForEach(store.storage.volumes) { v in
-                        LabeledContent("On \(v.name)", value: v.connected ? ByteSize.label(v.used) : "not connected")
-                    }
-                    LabeledContent("Memory available to loopl", value: MemoryBudget.label(MemoryBudget.available))
-                    if settings.offline { Label("Offline mode is on — downloads are refused, models on the device still load.", systemImage: LooplDesign.iconOffline).font(.footnote).foregroundStyle(.orange) }
-                } footer: {
-                    // Nothing downloaded yet is an empty shelf, not an error: say so in one line.
-                    Text(store.diskUsed == 0
-                         ? "No weights on this device yet — tap a model above and it downloads once, then runs offline. Catalog v\(store.catalog.version) · \(store.catalog.updated)"
-                         : "Catalog v\(store.catalog.version) · \(store.catalog.updated)")
-                }
             }
             .looplScrollClearance()
             .navigationDestination(isPresented: $trainFixturePushed) {
                 TrainView(engine: engine, store: store, settings: settings, fixture: DesignFixture.trainSession(), fixtureSignedIn: DesignFixture.trainScene != nil)
             }
             .accessibilityIdentifier("pane-models")
-            .animation(LooplDesign.Motion.faded(LooplDesign.Motion.spring, reduceMotion), value: sections.map { $0.1.map(\.id) })
+            .animation(LooplDesign.Motion.faded(LooplDesign.Motion.spring, reduceMotion), value: here.map(\.id) + hub.map(\.id))
             .animation(LooplDesign.Motion.faded(LooplDesign.Motion.spring, reduceMotion), value: engine.loadedModel?.id)
             .animation(LooplDesign.Motion.crossfade, value: engine.readiness.isBusy)
             .navigationTitle("Models")
@@ -162,6 +156,50 @@ struct ModelsView: View {
         }
     }
 
+    /// One line under "On this iPhone": bytes here, bytes on each drive, memory loopl can use. Numbers, no jargon.
+    private var storageLine: String {
+        var parts = [store.diskUsed > 0 ? "\(ByteSize.label(store.diskUsed)) on this \(deviceName)" : "No downloads on this \(deviceName) yet"]
+        for v in store.storage.volumes { parts.append(v.connected ? "\(ByteSize.label(v.used)) on \(v.name)" : "\(v.name) not connected") }
+        if MemoryBudget.available > 0 { parts.append("\(MemoryBudget.label(MemoryBudget.available)) of memory for a model") }
+        return parts.joined(separator: " · ")
+    }
+
+    /// "More models" — the curated catalog the app is tested with, folded behind one row under the loopl models
+    /// (and the GGUF builds of it when Settings shows GGUF). Opening it never reorders the sections above.
+    @ViewBuilder private var moreRows: some View {
+        if !curated.isEmpty {
+            Button {
+                LooplDesign.haptic(1)
+                withAnimation(LooplDesign.Motion.faded(LooplDesign.Motion.spring, reduceMotion)) { showMore.toggle() }
+            } label: {
+                HStack {
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("More models").font(.body.weight(.medium))
+                            Text(showMore ? "Qwen3, Qwen3-VL, Llama 3.2, Gemma 3, Phi-4 mini, SmolLM, DeepSeek — the models loopl is tested with"
+                                          : "\(curated.count + (settings.showGGUF ? gguf.count : 0)) more the app is tested with — Qwen3, Llama 3.2, Gemma 3, Phi-4 mini…").font(.caption).foregroundStyle(.secondary)
+                        }
+                    } icon: { Image(systemName: "square.stack.3d.up").foregroundStyle(LooplDesign.accent) }
+                    Spacer()
+                    Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+                        .rotationEffect(.degrees(showMore ? 90 : 0))
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("models-more")
+            .accessibilityAddTraits(.isButton)
+            if showMore {
+                ForEach(curated) { spec in row(spec) }
+                if settings.showGGUF, !gguf.isEmpty {
+                    Text("GGUF · llama.cpp · text only").font(.footnote.weight(.semibold)).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("models-more-gguf")
+                    ForEach(gguf) { spec in row(spec) }
+                }
+            }
+        }
+    }
+
     @ViewBuilder private func row(_ spec: ModelSpec) -> some View {
         let state = store.states[spec.id] ?? .notDownloaded
         let isLoaded = engine.loadedModel?.id == spec.id
@@ -173,8 +211,8 @@ struct ModelsView: View {
                 Task { await engine.select(spec) }
             } label: {
                 HStack {
-                    ModelPickerRow(spec: spec, loaded: isLoaded, downloaded: state.isDownloaded, loadedMark: loadedMark)
-                    if busy { PulsingMark().frame(width: 16, height: 16).padding(.leading, 4).transition(.opacity) }
+                    ModelPickerRow(spec: spec, loaded: isLoaded, downloaded: state.isDownloaded, loadedMark: loadedMark, downloading: progress(state))
+                    if busy, !isLoaded { PulsingMark().frame(width: 16, height: 16).padding(.leading, 4).transition(.opacity) }
                 }
             }
             .buttonStyle(.plain)
@@ -252,6 +290,14 @@ struct ModelsView: View {
             if state.driveBlocked || state.isMoving { /* not deletable from here */ }
             else if spec.isFromHub { Button("Remove from loopl", systemImage: "trash", role: .destructive) { confirmDelete = spec } }
             else if spec.isDownloadable, state.isDownloaded { Button("Delete from device", systemImage: "trash", role: .destructive) { confirmDelete = spec } }
+        }
+    }
+
+    /// The ring's fraction while the weights arrive (or sit paused), nil otherwise — the row's single glyph.
+    private func progress(_ state: ModelStore.State) -> Double? {
+        switch state {
+        case .downloading(let done, let total, _, _), .paused(let done, let total): return total > 0 ? Double(done) / Double(total) : 0
+        default: return nil
         }
     }
 

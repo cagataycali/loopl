@@ -82,7 +82,7 @@ final class CollectionModel {
     var repoIds: Set<String> { Set(listing?.rows.map(\.id) ?? []) }
 }
 
-struct CollectionSection: View {
+struct CollectionSection<More: View>: View {
     @Bindable var engine: Engine
     @Bindable var store: ModelStore
     @Bindable var settings: AppSettings
@@ -91,8 +91,17 @@ struct CollectionSection: View {
     /// The tapped row. OWNED BY ModelsView, which presents the sheet from the List (a `.sheet` on a Section never presents on iOS 26 — see MineSection).
     @Binding var selected: HubCatalog.Hit?
     var zoom: Namespace.ID
+    /// Rows ModelsView folds under this section after the loopl models (the curated "More models" disclosure):
+    /// the tab stays at five sections in the owner's order, and the catalog depth never outranks the loopl models.
+    @ViewBuilder var more: More
     @State private var showGGUF = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    init(engine: Engine, store: ModelStore, settings: AppSettings, hf: HFSession, model: CollectionModel, selected: Binding<HubCatalog.Hit?>, zoom: Namespace.ID,
+         @ViewBuilder more: () -> More = { EmptyView() }) {
+        self.engine = engine; self.store = store; self.settings = settings; self.hf = hf; self.model = model
+        self._selected = selected; self.zoom = zoom; self.more = more()
+    }
 
     var body: some View {
         if let listing = model.listing, !listing.rows.isEmpty {
@@ -120,6 +129,7 @@ struct CollectionSection: View {
                     } icon: { Image(systemName: "key.horizontal").foregroundStyle(.secondary) }
                     .accessibilityIdentifier("collection-signed-out")
                 }
+                more
             } header: {
                 HStack {
                     Text("loopl models")
@@ -148,6 +158,7 @@ struct CollectionSection: View {
                         .accessibilityIdentifier(signedOut ? "collection-signed-out" : "collection-error")
                     Button("Try again") { Task { await model.load(author: hf.author, force: true) } }.font(.footnote.weight(.semibold))
                 }
+                more
             }
             .task(id: hf.author) { await model.load(author: hf.author) }
         }

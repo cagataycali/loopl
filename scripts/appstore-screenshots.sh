@@ -40,7 +40,7 @@ SCENES=(
   "01-tool|--design-fixture tool|Tools, inline. Tap a row for the details."
   "02-vision|--design-fixture vision|Show it a photo. It sees, then it acts."
   "03-approval|--design-fixture approval|Every request leaves with your approval."
-  "04-models|--design-fixture persona --design-local-vision --design-tab models --design-mine|Your Hugging Face models. Private ones too."
+  "04-models|--design-fixture persona --design-local-vision --design-tab models --design-models shelf --design-collection bundled --storage-fixture none --design-mine|What is on your iPhone first. Then where models come from."
   "05-audio|--design-fixture audio|Talk. The model calls transcribe itself."
   "06-train|--design-fixture empty --design-tab models --design-train form|Train your own, on your conversations."
   "07-share|--design-fixture history --design-share review|Your conversations → your private dataset."
