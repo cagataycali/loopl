@@ -213,6 +213,7 @@ struct HistoryList: View {
                         }
                         .contextMenu {
                             Button("Copy transcript", systemImage: "doc.on.doc") { copyTranscript(c) }
+                            ConversationShareItems(conversation: c)
                             Button("Share to Hugging Face", systemImage: "square.and.arrow.up") { LooplDesign.haptic(); sharing = ShareBatch(conversations: [c]) }
                             Button("Select", systemImage: "checkmark.circle") { beginSelecting(c.id) }
                             Button("Delete", systemImage: "trash", role: .destructive) { engine.delete(c) }
