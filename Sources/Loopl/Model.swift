@@ -96,6 +96,19 @@ public protocol Model: Actor {
     func unload() async
     /// Whether this runtime can run at all on this build/device (Metal, OS version…).
     nonisolated static func availability() -> RuntimeAvailability
+    /// Hard ceiling of the RUNTIME itself, whatever model is loaded: Apple
+    /// Foundation Models is fixed at 4096 tokens, MLX/GGUF have none of their
+    /// own (the loaded model's config/metadata decides). Default `Int.max`.
+    nonisolated static var contextCeiling: Int { get }
+    /// The context window to budget against RIGHT NOW: the loaded model's
+    /// window clamped by the runtime ceiling. The conversation manager sizes
+    /// its sliding window from this — never from a constant.
+    var contextWindow: Int { get }
+}
+
+public extension Model {
+    nonisolated static var contextCeiling: Int { Int.max }
+    var contextWindow: Int { min(params.contextLength, Self.contextCeiling) }
 }
 
 public struct RuntimeAvailability: Sendable, Hashable {
@@ -105,9 +118,21 @@ public struct RuntimeAvailability: Sendable, Hashable {
     public init(available: Bool, reason: String) { self.available = available; self.reason = reason }
 }
 
-/// Rough token estimate when the runtime has no tokenizer at hand (Strands
-/// `_estimate_input_tokens` falls back to a chars/4 heuristic the same way).
+/// Token **estimate** — never a tokenizer count. Everything here is the
+/// chars/4 (UTF-8 bytes / 4) heuristic Strands' `_estimate_input_tokens` falls
+/// back to, plus a few tokens per message for role/separators. It is cheap,
+/// runs on every model call, and is deliberately a little pessimistic.
+///
+/// Real counts exist only where a runtime hands them to us for free (llama.cpp
+/// and MLX report `promptTokens` in `Metrics` after tokenising; Apple FM does
+/// not, which is why its `Metrics.estimated` flag is set). Budgeting happens
+/// BEFORE tokenising, so the budget uses the estimate — that is why the
+/// sliding window trims at `compressionThreshold` (0.7) of the window rather
+/// than at 100 % of it.
 public enum TokenEstimator {
+    /// `true` for every number this type produces (see the type's note).
+    public static let isEstimate = true
+
     public static func estimate(_ text: String) -> Int { max(1, (text.utf8.count + 3) / 4) }
     public static func estimate(_ message: Message) -> Int {
         var n = 4   // role + separators
