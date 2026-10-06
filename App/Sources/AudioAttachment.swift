@@ -129,6 +129,9 @@ final class AudioRecorder: NSObject {
     }
 
     static func requestPermission() async -> Bool {
+        #if DEBUG
+        if CommandLine.arguments.contains("--mic-denied") { return false }   // UITest: the denied path without a system alert
+        #endif
         #if os(iOS)
         switch AVAudioApplication.shared.recordPermission {
         case .granted: return true

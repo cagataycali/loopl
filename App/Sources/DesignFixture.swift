@@ -1,4 +1,6 @@
 import Foundation
+import AVFoundation
+import LooplUI
 import Loopl
 import LooplAppleTools
 
@@ -120,6 +122,26 @@ enum DesignFixture {
             t.apply(.startEventLoop(cycle: 2))
             t.apply(.text("42 × 3 = **126**."))
             t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("42 × 3 = **126**."), metrics: EventLoopMetrics())))
+        case "audio":
+            // A recording the user made in the composer travels as one marker line in the text (shown as a chip);
+            // the model reads the path and calls `transcribe` on it. The file is a real AAC take written by
+            // `GenerateVoiceTool`-style synthesis so the chip's play button works in captures.
+            let dir = AudioAttachment.directory(for: engine.currentId)
+            let url = dir.appendingPathComponent("8F2A1B.m4a")
+            let marker = AudioAttachmentMarker(path: url.path, duration: 4.6)
+            t.user("What did I just say? Answer in one line.\n" + marker.line)
+            t.apply(.startEventLoop(cycle: 1))
+            t.apply(.text("Let me listen to the recording."))
+            let c = ToolUse(toolUseId: "tooluse_t1", name: "transcribe", input: ["path": .string(url.path)])
+            t.apply(.modelMessage(.assistant(text: "Let me listen to the recording.", toolUses: [c])))
+            t.apply(.toolStarted(c))
+            t.apply(.toolResult(ToolResult(toolUseId: "tooluse_t1", name: "transcribe", content: "transcript of 8F2A1B.m4a (4.6 s audio, en-US, 1.1 s):\nhello from loopl, this is a recording", durationMs: 1120)))
+            t.apply(.startEventLoop(cycle: 2))
+            t.apply(.text("You said: **\"hello from loopl, this is a recording.\"**"))
+            t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("You said: **\"hello from loopl, this is a recording.\"**"), metrics: EventLoopMetrics())))
+            engine.transcript = t
+            Task { await writeFixtureRecording(to: url) }
+            return
         default: // streaming
             t.user("Explain what an agent loop is, in three short points, with a Swift example.")
             t.apply(.startEventLoop(cycle: 1))
@@ -220,6 +242,29 @@ enum DesignFixture {
                                     : "\(city.0) is \(city.2) of Istanbul time, so it's **\(city.1)** there right now."
         for tok in tokenize(answer) { _ = engine.transcript.apply(.text(tok)); await sleep(0.03) }
         _ = engine.transcript.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant(answer), metrics: EventLoopMetrics())))
+    }
+
+    /// Synthesises the `audio` scene's take silently (AVSpeechSynthesizer.write → AAC 16 kHz mono), exactly the
+    /// file the composer would have written, so the chip plays in captures. Idempotent.
+    @MainActor static func writeFixtureRecording(to url: URL) async {
+        guard !FileManager.default.fileExists(atPath: url.path) else { return }
+        let utt = AVSpeechUtterance(string: "hello from loopl, this is a recording")
+        utt.voice = AVSpeechSynthesisVoice(language: "en-US")
+        let synth = AVSpeechSynthesizer()
+        final class Box: @unchecked Sendable { var file: AVAudioFile?; var done = false }
+        let box = Box()
+        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+            synth.write(utt) { buffer in
+                guard let pcm = buffer as? AVAudioPCMBuffer else { return }
+                if pcm.frameLength == 0 { if !box.done { box.done = true; box.file = nil; c.resume() }; return }
+                if box.file == nil {
+                    var settings = AudioAttachment.settings
+                    settings[AVSampleRateKey] = pcm.format.sampleRate   // keep the synthesiser's rate; AAC encodes it fine
+                    box.file = try? AVAudioFile(forWriting: url, settings: settings, commonFormat: pcm.format.commonFormat, interleaved: pcm.format.isInterleaved)
+                }
+                try? box.file?.write(from: pcm)
+            }
+        }
     }
 
     @MainActor static func replayApple(_ engine: Engine) async {

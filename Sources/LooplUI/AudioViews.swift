@@ -117,12 +117,13 @@ public struct AudioClipChip: View {
     public var duration: TimeInterval
     public var onRemove: (() -> Void)?
     @State private var preview = AudioPreview.shared
+    /// Re-checked once shortly after appearing (a file still being written lands a moment later).
+    @State private var exists = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     public init(url: URL, duration: TimeInterval, onRemove: (() -> Void)? = nil) {
         self.url = url; self.duration = duration; self.onRemove = onRemove
     }
 
-    private var exists: Bool { FileManager.default.fileExists(atPath: url.path) }
     private var playing: Bool { preview.isPlaying(url) }
 
     public var body: some View {
@@ -146,9 +147,9 @@ public struct AudioClipChip: View {
                 .frame(width: 72, height: 22)
                 .animation(LooplDesign.Motion.faded(LooplDesign.Motion.value, reduceMotion), value: preview.progress)
 
-            Text(AudioAttachmentMarker.clock(duration))
+            Text(exists ? AudioAttachmentMarker.clock(duration) : "recording missing")
                 .font(.caption.weight(.medium)).monospacedDigit()
-                .foregroundStyle(.secondary)
+                .foregroundStyle(exists ? .secondary : .tertiary)
 
             if let onRemove {
                 Button {
@@ -166,13 +167,14 @@ public struct AudioClipChip: View {
         }
         .padding(.leading, 6).padding(.trailing, onRemove == nil ? 14 : 8).padding(.vertical, 6)
         .background(LooplDesign.secondaryBackground, in: Capsule())
-        .overlay(alignment: .bottomLeading) {
-            if !exists {
-                Text("recording missing").font(.system(size: 9)).foregroundStyle(.tertiary).offset(y: 14)
-            }
+        .onAppear { exists = FileManager.default.fileExists(atPath: url.path) }
+        .task(id: url) {
+            guard !FileManager.default.fileExists(atPath: url.path) else { return }
+            try? await Task.sleep(for: .seconds(1.5))
+            exists = FileManager.default.fileExists(atPath: url.path)
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Recording, \(AudioAttachmentMarker.clock(duration))")
+        .accessibilityLabel(exists ? "Recording, \(AudioAttachmentMarker.clock(duration))" : "Recording, file missing")
     }
 }
 
