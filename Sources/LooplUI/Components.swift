@@ -662,7 +662,12 @@ public struct AgentTranscriptView<Empty: View, Banner: View>: View {
     public var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 18) {
+                // A plain VStack, on purpose. As a LazyVStack this transcript span a layout loop (main thread 100 % in
+                // LazySubviewPlacements ⇄ the bottom `defaultScrollAnchor`) whenever the container changed size while
+                // content ≈ container — dismissing the keyboard with a five-line draft froze the app on a 16 Pro and an
+                // SE (296 s, never recovered; a Pro Max, taller, did not). A thread is a few dozen rows of text: eager
+                // layout is cheap, and the anchor-follow below needs real heights, not estimates.
+                VStack(alignment: .leading, spacing: 18) {
                     banner()
                     if transcript.items.isEmpty {
                         // Centred in the free space (the banner, when there is one, sits above): the scroll view's
