@@ -16,6 +16,8 @@ public final class AppleToolPrefs {
     public var enabled: Set<String> { didSet { UserDefaults.standard.set(Array(enabled), forKey: "loopl.appleTools") } }
     /// open_app schemes that skip the approval card — observable mirror of `OpenAppTool.allowedSchemes` (the tool reads UserDefaults).
     public var openAppSchemes: Set<String> { didSet { OpenAppTool.allowedSchemes = Array(openAppSchemes) } }
+    /// location: exact position instead of ~1 km — the PERSON's switch (a 0.8B set a `precise` argument true 9/9 times, so the model has none).
+    public var preciseLocation: Bool { didSet { LocationTool.precise = preciseLocation } }
     /// Tools this install has already seen — a tool added in an update starts ON even when a saved list exists.
     private static let seenKey = "loopl.appleTools.seen"
     private init() {
@@ -27,6 +29,7 @@ public final class AppleToolPrefs {
         set.formIntersection(names)                // removed tools (apple_intelligence) drop out of the saved list
         enabled = set
         openAppSchemes = Set(OpenAppTool.allowedSchemes)
+        preciseLocation = LocationTool.precise
         d.set(Array(names).sorted(), forKey: Self.seenKey)
     }
     /// The tools the agent gets this turn: switched on AND available on this device right now.
@@ -80,6 +83,16 @@ struct AppleToolsSection: View {
                             .font(.subheadline)
                     }
                     .accessibilityIdentifier("openAppAllowlist")
+                }
+                if tool.name == LocationTool().name, prefs.enabled.contains(tool.name) {
+                    Toggle(isOn: $prefs.preciseLocation) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Exact position").font(.subheadline)
+                            Text(prefs.preciseLocation ? "The model gets your position within metres." : "The model gets your city and coordinates rounded to about 1 km.").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    .tint(LooplDesign.accent)
+                    .accessibilityIdentifier("locationPrecise")
                 }
             }
         } header: { Text("On-device Apple tools") } footer: {

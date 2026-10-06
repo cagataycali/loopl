@@ -6,7 +6,7 @@ import LooplAppleTools
 
 /// `--design-fixture [scene]` (DEBUG only): fills the chat with a fixed
 /// transcript so screenshots and design work need no model. Scenes:
-/// `empty` · `streaming` (default) · `tool` · `offline` · `downloading` · `clipboard` (read row + COPY card) · `agenda` (calendar row + reminder ADD card) · `approval` (a POST waiting
+/// `empty` · `streaming` (default) · `tool` · `offline` · `downloading` · `clipboard` (read row + COPY card) · `agenda` (calendar row + reminder ADD card) · `location` (coarse fix → http weather) · `approval` (a POST waiting
 /// for the human; tapping Approve/Deny scripts the follow-up) · `live` (a scripted
 /// replay streamed over ~8 s — text chunks, two tool calls, final answer — for motion
 /// captures; `--design-loop` repeats it). Never a runtime —
@@ -203,6 +203,21 @@ enum DesignFixture {
             t.apply(.startEventLoop(cycle: 2))
             t.apply(.text("It's **06:14** on Sunday morning in Istanbul, and 23 × 47 = **1081**."))
             t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("It's **06:14** on Sunday morning in Istanbul, and 23 × 47 = **1081**."), metrics: EventLoopMetrics())))
+        case "location":
+            // TOOLS-EXPAND: the location row (coarse) chained into http for the weather — the reason the tool exists.
+            LocationStore.use(FixtureLocationSource())
+            t.user("What's the weather like where I am?")
+            t.apply(.startEventLoop(cycle: 1))
+            let lc = ToolUse(toolUseId: "tooluse_lo1", name: "location", input: [:])
+            t.apply(.modelMessage(.assistant(text: "", toolUses: [lc])))
+            t.apply(.toolStarted(lc)); t.apply(.toolResult(ToolResult(toolUseId: "tooluse_lo1", name: "location", content: "location: Hoboken, New Jersey, United States\ncoordinates: 40.74, -74.03 (about 1 km)\ntime zone: America/New_York", durationMs: 412)))
+            t.apply(.startEventLoop(cycle: 2))
+            let hc = ToolUse(toolUseId: "tooluse_lo2", name: "http", input: ["url": .string("https://api.open-meteo.com/v1/forecast?latitude=40.74&longitude=-74.03&current=temperature_2m,weather_code")])
+            t.apply(.modelMessage(.assistant(text: "", toolUses: [hc])))
+            t.apply(.toolStarted(hc)); t.apply(.toolResult(ToolResult(toolUseId: "tooluse_lo2", name: "http", content: "{\"status\":200,\"body\":{\"current\":{\"temperature_2m\":17.4,\"weather_code\":2}}}", durationMs: 380)))
+            t.apply(.startEventLoop(cycle: 3))
+            t.apply(.text("You're in **Hoboken** — it's **17 °C** and partly cloudy right now."))
+            t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("You're in **Hoboken** — it's **17 °C** and partly cloudy right now."), metrics: EventLoopMetrics())))
         case "agenda":
             // TOOLS-EXPAND: calendar_events row from the fixture store, then reminders_create stopping at its ADD card.
             let cal = Calendar.current, day0 = cal.startOfDay(for: Date())
