@@ -148,7 +148,7 @@ final class TrainingTests: XCTestCase {
         XCTAssertEqual(plan.baseLabel, "loopl-app-sim-4bit · round 2")
         XCTAssertEqual(plan.scriptArguments(user: "me"),
                        ["--dataset", "me/loopl-app-conversations", "--base", "me/loopl-app-sim", "--out", "me/loopl-app-sim-r2",
-                        "--epochs", "auto", "--method", "lora", "--stitch", "day"])
+                        "--epochs", "auto", "--method", "lora", "--stitch", "day", "--expect-vision"])
         var noReplay = plan; noReplay.includeAllShards = false
         XCTAssertTrue(noReplay.scriptArguments(user: "me").contains("--new-shards-only"))
         var fresh = TrainingPlan(dataset: "me/d", conversations: 50, base: .b0_8, epochs: .fixed(9))
