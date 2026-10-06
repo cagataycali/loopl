@@ -66,7 +66,7 @@ import sys
 import time
 from pathlib import Path
 
-SCRIPT_VERSION = "1.2.0"
+SCRIPT_VERSION = "1.2.2"
 LLAMA_TAG_DEFAULT = "b11401"  # the llama.cpp build the loopl app vendors (scripts/fetch-llama-xcframework.sh)
 
 BASES = {"0.8b": "Qwen/Qwen3.5-0.8B", "2b": "Qwen/Qwen3.5-2B", "4b": "Qwen/Qwen3.5-4B"}
@@ -491,8 +491,10 @@ def _tools_union(a: list, b: list) -> list:
 
 def stitch(samples: list[dict], mode: str, count_tokens, budget: int) -> tuple[list[dict], dict]:
     """Concatenate related conversations into multi-turn samples. mode ∈ {day, topic}. Threads are atomic (tool pairs and
-    `weight: 0` travel with them); a window that would exceed `budget` tokens drops its OLDEST threads first. Threads with a
-    different system prompt never stitch together. Returns (new samples, stats)."""
+    `weight: 0` travel with them). A group is walked oldest-first; when the next thread would push the window past `budget`
+    tokens the window so far becomes one sample and a new window starts with that thread (a day with 100 chats → several
+    budget-sized samples, nothing silently lost; a thread too long on its own stays unstitched — it trains alone anyway).
+    Threads with a different system prompt never stitch together. Returns (new samples, stats)."""
     keyf = sample_day if mode == "day" else sample_topic
     groups: dict[tuple, list[dict]] = {}
     for s in samples:
@@ -502,7 +504,8 @@ def stitch(samples: list[dict], mode: str, count_tokens, budget: int) -> tuple[l
         sysp = _system(s["messages"])
         groups.setdefault((k, sysp), []).append(s)
     out: list[dict] = []
-    stats = {"mode": mode, "groups": 0, "stitched": 0, "threads_in": 0, "dropped_for_budget": 0, "unkeyed": sum(keyf(s) is None for s in samples)}
+    stats = {"mode": mode, "groups": 0, "stitched": 0, "threads_in": 0, "windows_split": 0, "too_long_alone": 0,
+             "unkeyed": sum(keyf(s) is None for s in samples)}
     for (k, sysp), members in sorted(groups.items(), key=lambda kv: (str(kv[0][0]), str(kv[0][1] or ""))):
         if len(members) < 2:
             continue
@@ -525,10 +528,14 @@ def stitch(samples: list[dict], mode: str, count_tokens, budget: int) -> tuple[l
             stats["threads_in"] += len(window)
 
         for t in members:
+            if count_tokens([t], sysp) > budget:
+                stats["too_long_alone"] += 1
+                continue
+            if window and count_tokens(window + [t], sysp) > budget:
+                flush()
+                stats["windows_split"] += 1
+                window = []
             window.append(t)
-            while len(window) > 1 and count_tokens(window, sysp) > budget:
-                window.pop(0)
-                stats["dropped_for_budget"] += 1
         flush()
     return out, stats
 
@@ -1032,6 +1039,9 @@ def main():
     ap.add_argument("--pii", action="store_true", help="scrub emails / phone numbers / API tokens from every text field")
     ap.add_argument("--public", action="store_true", help="create the output repos public (default private)")
     ap.add_argument("--skip-mlx", action="store_true")
+    ap.add_argument("--expect-vision", action="store_true",
+                    help="fail the MLX stage unless the export keeps a vision tower (vision_config + visual tensors + preprocessor_config) — "
+                         "what the loopl app passes for the Qwen3.5 bases, which all see")
     ap.add_argument("--skip-gguf", action="store_true")
     ap.add_argument("--q-bits", type=int, default=4)
     ap.add_argument("--q-group", type=int, default=64)
@@ -1112,7 +1122,8 @@ def main():
         sstats["budget_tokens"] = budget
         train_s = train_s + stitched
         log(f"stitch {a.stitch}: {sstats['stitched']} samples from {sstats['threads_in']} threads in {sstats['groups']} groups "
-            f"(budget {budget} tokens, {sstats['dropped_for_budget']} oldest threads dropped, {sstats['unkeyed']} threads without a key)")
+            f"(budget {budget} tokens, {sstats['windows_split']} windows split at the budget, {sstats['too_long_alone']} threads too long alone, "
+            f"{sstats['unkeyed']} threads without a key)")
 
     plan = {"round": rnd, "base": a.base, "root": a.root, "lineage": lineage, "size": size,
             "epochs": {"mode": epochs_mode, "max": a.epochs, "heuristic": heuristic, "conversations": n_conv, "early_stop": epochs_mode == "auto" and bool(eval_s)},
