@@ -61,7 +61,7 @@ final class TrainingTests: XCTestCase {
         XCTAssertEqual(spec.dockerImage, "ghcr.io/astral-sh/uv:python3.12-bookworm")
         XCTAssertEqual(spec.command, ["bash", "-lc",
             "set -euo pipefail; curl -fsSL -H \"Authorization: Bearer $HF_TOKEN\" \"$LOOPL_SCRIPT_URL\" -o /tmp/loopl_sft.py && exec uv run /tmp/loopl_sft.py \"$@\"",
-            "loopl", "--dataset", "cagataydev/loopl-app-smoke-data", "--base", "0.8b", "--out", "cagataydev/loopl-app-smoke", "--epochs", "2", "--method", "lora"])
+            "loopl", "--dataset", "cagataydev/loopl-app-smoke-data", "--base", "0.8b", "--out", "cagataydev/loopl-app-smoke", "--epochs", "2", "--method", "lora", "--expect-vision"])
         XCTAssertEqual(spec.environment, ["LOOPL_SCRIPT_URL": "https://huggingface.co/datasets/cagataydev/loopl-app-smoke-data/resolve/main/train/loopl_sft.py"])
         XCTAssertEqual(spec.secrets, ["HF_TOKEN": "hf_secret"])
         XCTAssertEqual(spec.flavor, "a10g-small")

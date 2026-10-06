@@ -52,13 +52,21 @@ public struct GenerateVoiceTool: AppleTool {
         let rate = min(1, max(0, args.double("rate") ?? 0.5))
         #if canImport(AVFAudio)
         let language = args.string("language") ?? Locale.preferredLanguages.first ?? "en-US"
-        let voice = try await Self.resolveVoice(args.string("voice"), language: language)
+        // Measured (ToolsE2ETests, loopl-0.8b): the model asks for `voice: "personal"` unprompted and the whole request failed on
+        // the authorisation. The user asked to HEAR something — speak with the best installed voice and say what happened.
+        var note: String? = nil
+        let voice: AVSpeechSynthesisVoice
+        do { voice = try await Self.resolveVoice(args.string("voice"), language: language) } catch let e as ToolError where args.string("voice")?.lowercased() == "personal" {
+            voice = try await Self.resolveVoice(nil, language: language)
+            note = "Personal Voice not used: \(e.message). Spoke with \(voice.name) instead."
+        }
         let save = args.bool("save") ?? false
         let speaker = await Speaker()
         let result = try await speaker.speak(text: text, voice: voice, rate: Float(rate), save: save)
         var lines = ["spoke \(text.count) characters with voice \(voice.name) (\(voice.language), \(result.quality))",
                      "duration: \(String(format: "%.1f", result.seconds)) s"]
         if let p = result.file { lines.append("audio file: \(p)") }
+        if let note { lines.append(note) }
         return lines.joined(separator: "\n")
         #else
         throw ToolError(Unavailable.sdk)
