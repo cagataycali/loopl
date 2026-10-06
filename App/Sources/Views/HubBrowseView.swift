@@ -2,7 +2,7 @@ import SwiftUI
 import Loopl
 import LooplUI
 
-/// "Browse Hugging Face" — any public repo, no account. Search (MLX · GGUF), paste a
+/// "Browse Hugging Face" — any public repo, no account (private ones too once signed in). Search (MLX · GGUF), paste a
 /// repo id, open the details sheet, pick a quant, download. The chosen spec joins
 /// `ModelStore.hubModels` and the Models list takes over (progress, load, delete).
 struct HubBrowseView: View {
@@ -148,14 +148,8 @@ struct HubHitRow: View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(hit.name).font(.body).lineLimit(2)
-                HStack(spacing: 6) {
-                    meta(hit.author)
-                    meta("·"); meta(Image(systemName: "arrow.down.to.line"), hit.downloads.formatted(.number.notation(.compactName)))
-                    if let p = hit.paramsB { meta("·"); meta("\(p.formatted(.number.precision(.fractionLength(0...1))))B") }
-                    if let b = hit.bits { meta("·"); meta("\(b)-bit") }
-                    if let c = hit.ctx { meta("·"); meta("ctx \(c.formatted(.number.notation(.compactName)))") }
-                    if hit.isVision { meta("·"); meta(Image(systemName: "eye"), "vision").foregroundStyle(LooplDesign.accent) }
-                }
+                // One Text so a narrow column wraps between items, never inside a word ("ca-gatay", "pri-vate").
+                metaLine.font(.caption).foregroundStyle(.secondary).lineLimit(2).fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 8)
             VStack(alignment: .trailing, spacing: 4) {
@@ -167,8 +161,15 @@ struct HubHitRow: View {
         .contentShape(Rectangle())
         .padding(.vertical, 2)
     }
-    private func meta(_ s: String) -> some View { Text(s).font(.caption).foregroundStyle(.secondary) }
-    private func meta(_ i: Image, _ s: String) -> some View { HStack(spacing: 2) { i.font(.caption2); Text(s).font(.caption) }.foregroundStyle(.secondary) }
+    private var metaLine: Text {
+        var t = Text(hit.author) + Text(" · ") + Text(Image(systemName: "arrow.down.to.line")) + Text(" \(hit.downloads.formatted(.number.notation(.compactName)))")
+        if let p = hit.paramsB { t = t + Text(" · \(p.formatted(.number.precision(.fractionLength(0...1))))B") }
+        if let b = hit.bits { t = t + Text(" · \(b)-bit") }
+        if let c = hit.ctx { t = t + Text(" · ctx \(c.formatted(.number.notation(.compactName)))") }
+        if hit.isVision { t = t + Text(" · ") + (Text(Image(systemName: "eye")) + Text(" vision")).foregroundColor(LooplDesign.accent) }
+        if hit.isPrivate { t = t + Text(" · ") + Text(Image(systemName: "lock.fill")) + Text(" private") }
+        return t
+    }
 }
 
 /// fits · tight · too big — advice, never a wall.
