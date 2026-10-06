@@ -69,6 +69,9 @@ targets:
         NSPhotoLibraryAddUsageDescription: Save pictures the model produced to your library.
         # Composer audio input: a recording the model can `transcribe` on the device. The file stays with the thread.
         NSMicrophoneUsageDescription: Record a message for the model to transcribe. Audio never leaves this device.
+        # calendar_events / calendar_create / reminders_due / reminders_create tools (off by default; asked just in time).
+        NSCalendarsFullAccessUsageDescription: Let the model read your calendar and add events you approve. Nothing leaves this device.
+        NSRemindersFullAccessUsageDescription: Let the model read your reminders and add ones you approve. Nothing leaves this device.
         # open_app tool: schemes canOpenURL may answer for (UIApplication.open reports truthfully for any scheme).
         LSApplicationQueriesSchemes:
         - shortcuts

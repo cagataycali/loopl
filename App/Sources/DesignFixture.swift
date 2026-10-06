@@ -6,7 +6,7 @@ import LooplAppleTools
 
 /// `--design-fixture [scene]` (DEBUG only): fills the chat with a fixed
 /// transcript so screenshots and design work need no model. Scenes:
-/// `empty` · `streaming` (default) · `tool` · `offline` · `downloading` · `clipboard` (read row + COPY card) · `approval` (a POST waiting
+/// `empty` · `streaming` (default) · `tool` · `offline` · `downloading` · `clipboard` (read row + COPY card) · `agenda` (calendar row + reminder ADD card) · `approval` (a POST waiting
 /// for the human; tapping Approve/Deny scripts the follow-up) · `live` (a scripted
 /// replay streamed over ~8 s — text chunks, two tool calls, final answer — for motion
 /// captures; `--design-loop` repeats it). Never a runtime —
@@ -200,6 +200,27 @@ enum DesignFixture {
             t.apply(.startEventLoop(cycle: 2))
             t.apply(.text("It's **06:14** on Sunday morning in Istanbul, and 23 × 47 = **1081**."))
             t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("It's **06:14** on Sunday morning in Istanbul, and 23 × 47 = **1081**."), metrics: EventLoopMetrics())))
+        case "agenda":
+            // TOOLS-EXPAND: calendar_events row from the fixture store, then reminders_create stopping at its ADD card.
+            let cal = Calendar.current, day0 = cal.startOfDay(for: Date())
+            func at(_ d: Int, _ h: Int, _ m: Int = 0) -> Date { cal.date(byAdding: .minute, value: h * 60 + m, to: cal.date(byAdding: .day, value: d, to: day0)!)! }
+            let store = FixtureEventSource(events: [AgendaItem(title: "Standup", start: at(0, 9, 30), end: at(0, 9, 45), calendar: "Work"),
+                                                    AgendaItem(title: "Dentist", start: at(0, 15), end: at(0, 16), calendar: "Home", location: "Hoboken")],
+                                           reminders: [AgendaItem(title: "Buy edamame", start: at(0, 18), calendar: "Reminders")])
+            AgendaStore.use(store)
+            t.user("What's on today, and remind me to call the dentist back tomorrow at 9.")
+            t.apply(.startEventLoop(cycle: 1))
+            let ce = ToolUse(toolUseId: "tooluse_ag1", name: "calendar_events", input: ["days": .number(1)])
+            t.apply(.modelMessage(.assistant(text: "", toolUses: [ce])))
+            t.apply(.toolStarted(ce))
+            let f = DateFormatter(); f.dateFormat = "EEE d MMM"; let today = f.string(from: day0)
+            t.apply(.toolResult(ToolResult(toolUseId: "tooluse_ag1", name: "calendar_events", content: "calendar: 2 events \(today) – \(today)\n- \(today) 09:30–09:45: Standup [Work]\n- \(today) 15:00–16:00: Dentist @ Hoboken [Home]", durationMs: 4.2)))
+            t.apply(.startEventLoop(cycle: 2))
+            t.apply(.text("Two things today — **Standup** at 09:30 and the **Dentist** in Hoboken at 15:00. Adding the reminder now."))
+            let g = DateFormatter(); g.dateFormat = "yyyy-MM-dd"
+            let rc = ToolUse(toolUseId: "tooluse_ag2", name: "reminders_create", input: ["title": .string("Call the dentist back"), "due": .string(g.string(from: at(1, 0)) + " 09:00")])
+            t.apply(.modelMessage(.assistant(text: "Two things today — **Standup** at 09:30 and the **Dentist** in Hoboken at 15:00. Adding the reminder now.", toolUses: [rc])))
+            t.apply(.approvalRequested(RemindersCreateTool().requiresApproval(for: rc.input)!.with(id: rc.toolUseId)))
         case "clipboard":
             // TOOLS-EXPAND: the clipboard tool both ways — a read row (what the user copied), then a write that
             // stops at the COPY approval card quoting the text. `--design-clipboard-approved` settles the card.
