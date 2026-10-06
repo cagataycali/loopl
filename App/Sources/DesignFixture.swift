@@ -1,5 +1,6 @@
 import Foundation
 import Loopl
+import LooplAppleTools
 
 /// `--design-fixture [scene]` (DEBUG only): fills the chat with a fixed
 /// transcript so screenshots and design work need no model. Scenes:
@@ -57,6 +58,13 @@ enum DesignFixture {
             let use = approvalUse
             t.apply(.modelMessage(.assistant(text: "I'll post it now.", toolUses: [use])))
             t.apply(.approvalRequested(HttpTool().requiresApproval(for: use.input)!.with(id: use.toolUseId)))
+        case "apple":
+            // On-device Apple tools: detect_language and generate_voice run FOR REAL through the
+            // tools; generate_image runs for real where ImagePlayground is available (device with
+            // Apple Intelligence) and otherwise shows the flat ImageCodec fixture, labelled as such.
+            engine.transcript = t
+            Task { await replayApple(engine) }
+            return
         case "tool":
             t.user("What time is it in Istanbul, and what is 23 × 47?")
             t.apply(.startEventLoop(cycle: 1))
@@ -123,6 +131,41 @@ enum DesignFixture {
             for w in "Okay — I won't post it. Tell me if you'd like it changed first.".split(separator: " ") { _ = engine.transcript.apply(.text(String(w) + " ")); await sleep(0.04) }
         }
         _ = engine.transcript.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("done"), metrics: EventLoopMetrics())))
+    @MainActor static func replayApple(_ engine: Engine) async {
+        func sleep(_ s: Double) async { try? await Task.sleep(for: .seconds(s)) }
+        let t0 = Date()
+        engine.transcript.user("Draw a black smart ring on a slate tile, and tell me what language \"Merhaba dünya, bugün hava çok güzel\" is.")
+        engine.haptics.emit(.send)
+        await sleep(0.8)
+        _ = engine.transcript.apply(.startEventLoop(cycle: 1))
+        _ = engine.transcript.apply(.text("On it — drawing the ring and checking the language."))
+        let c1 = ToolUse(toolUseId: "tooluse_a1", name: "generate_image", input: ["prompt": .string("a black smart ring on a slate tile, studio light"), "style": .string("illustration")])
+        let c2 = ToolUse(toolUseId: "tooluse_a2", name: "detect_language", input: ["text": .string("Merhaba dünya, bugün hava çok güzel")])
+        _ = engine.transcript.apply(.modelMessage(.assistant(text: "On it — drawing the ring and checking the language.", toolUses: [c1, c2])))
+        _ = engine.transcript.apply(.toolStarted(c1)); engine.haptics.emit(.toolStart)
+        _ = engine.transcript.apply(.toolStarted(c2)); engine.haptics.emit(.toolStart)
+        // detect_language: the real tool.
+        let langText = (try? await DetectLanguageTool().call(c2.input)) ?? "language: undetermined"
+        _ = engine.transcript.apply(.toolResult(ToolResult(toolUseId: c2.toolUseId, name: c2.name, content: langText, durationMs: 3))); engine.haptics.emit(.toolFinish)
+        // generate_image: real when the device can; otherwise the fixture image, labelled.
+        var imageResult: ToolResult
+        if GenerateImageTool.availability().available, let out = try? await GenerateImageTool().callOutput(c1.input) {
+            imageResult = ToolResult(toolUseId: c1.toolUseId, name: c1.name, content: out.text, durationMs: Date().timeIntervalSince(t0) * 1000, images: out.images)
+        } else {
+            await sleep(1.6)
+            let reason = GenerateImageTool.availability().reason
+            if let cg = ImageCodec.testImage(width: 1024, height: 1024), let block = try? ImageCodec.jpeg(cg, alt: "design fixture — not a generated image (\(reason))") {
+                imageResult = ToolResult(toolUseId: c1.toolUseId, name: c1.name, content: "DESIGN FIXTURE: generate_image is unavailable here (\(reason)); showing a flat placeholder image, 1024×1024.", durationMs: 1612, images: [block])
+            } else {
+                imageResult = .error(c1, reason)
+            }
+        }
+        _ = engine.transcript.apply(.toolResult(imageResult)); engine.haptics.emit(imageResult.isError ? .error : .toolFinish)
+        await sleep(0.5)
+        _ = engine.transcript.apply(.startEventLoop(cycle: 2))
+        let answer = "Here's the ring. The sentence is **Turkish** — \"Hello world, the weather is lovely today.\""
+        _ = engine.transcript.apply(.text(answer))
+        _ = engine.transcript.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant(answer), metrics: EventLoopMetrics())))
     }
 
     /// Streams the `tool` scene over time the way a real run looks: ~30 chunks/s text, two tool
