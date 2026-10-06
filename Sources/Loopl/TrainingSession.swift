@@ -1,6 +1,15 @@
 import Foundation
 import Observation
 
+extension HFHubClient.DatasetSummary {
+    /// Fixtures and previews (the API shape comes through `Decodable`).
+    public init(id: String, isPrivate: Bool = true, tags: [String] = [], lastModified: String? = nil) {
+        var o: [String: JSONValue] = ["id": .string(id), "private": .bool(isPrivate), "tags": .array(tags.map(JSONValue.string))]
+        if let lastModified { o["lastModified"] = .string(lastModified) }
+        self = try! JSONDecoder().decode(Self.self, from: Data(JSONValue.object(o).compact.utf8))
+    }
+}
+
 /// Drives one training run from the app: puts the bundled script into the user's dataset repo, creates the HF Job,
 /// polls status + logs, and exposes `TrainingProgress` for the UI. Pure HFHubClient calls underneath (injectable
 /// transport → testable with a replay transport). One session = one job.

@@ -99,10 +99,12 @@ final class TrainingSessionTests: XCTestCase {
     }
 
     func testDatasetsListingParsesPrivateRepos() throws {
-        let json = #"[{"id":"cagataydev/loopl-app-conversations","private":true,"tags":["loopl"],"lastModified":"2026-10-06T04:00:00Z"},{"id":"cagataydev/other","private":false,"tags":[]}]"#
+        let json = #"[{"id":"cagataydev/loopl-app-conversations","private":true,"tags":["loopl","loopl-conversations"],"lastModified":"2026-10-06T04:00:00Z"},{"id":"cagataydev/loopl-train","private":true,"tags":["loopl"]}]"#
         let ds = try HFHubClient.parseDatasets(Data(json.utf8))
         XCTAssertEqual(ds.count, 2)
-        XCTAssertTrue(ds[0].isPrivate && ds[0].isLoopl); XCTAssertEqual(ds[0].name, "loopl-app-conversations")
-        XCTAssertFalse(ds[1].isLoopl)
+        XCTAssertTrue(ds[0].isPrivate && ds[0].isLoopl && ds[0].isLooplShare); XCTAssertEqual(ds[0].name, "loopl-app-conversations")
+        XCTAssertTrue(ds[1].isLoopl); XCTAssertFalse(ds[1].isLooplShare, "a curated training set is never the default target")
+        let fixture = HFHubClient.DatasetSummary(id: "u/x", tags: ["loopl-conversations"])
+        XCTAssertTrue(fixture.isLooplShare)
     }
 }

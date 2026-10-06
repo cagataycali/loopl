@@ -54,7 +54,7 @@ struct TrainView: View {
         .accessibilityIdentifier("pane-train")
         .task {
             if fixtureSignedIn, fixture == nil {
-                datasets = [HFHubClient.DatasetSummary(id: "cagataydev/loopl-app-conversations", tags: ["loopl"]), HFHubClient.DatasetSummary(id: "cagataydev/loopl-train")]
+                datasets = [HFHubClient.DatasetSummary(id: "cagataydev/loopl-app-conversations", tags: ["loopl", "loopl-conversations"]), HFHubClient.DatasetSummary(id: "cagataydev/loopl-train")]
                 dataset = datasets.first; conversations = 191; shardBytes = 812_000; base = .b0_8
             } else if fixture == nil { await loadDatasets() }
         }
@@ -306,9 +306,10 @@ struct TrainView: View {
         loadingDatasets = true; defer { loadingDatasets = false }
         do {
             let all = try await account.client().datasets(author: user)
-            let mine = all.filter(\.isLoopl) + all.filter { !$0.isLoopl }
+            // app shares (tag loopl-conversations) first and the only auto-pick; a curated set like loopl-train is never a default
+            let mine = all.filter(\.isLooplShare) + all.filter { !$0.isLooplShare }
             withAnimation(LooplDesign.Motion.faded(LooplDesign.Motion.spring, reduceMotion)) { datasets = mine }
-            if dataset == nil { dataset = mine.first }
+            if dataset == nil { dataset = mine.first(where: \.isLooplShare) }
         } catch { datasetsError = error.localizedDescription }
     }
 
