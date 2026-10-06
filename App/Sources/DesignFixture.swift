@@ -286,6 +286,14 @@ enum DesignFixture {
             engine.archive.reload()                                  // decode from disk, not the in-memory copy
             if let c = engine.archive.conversations.first(where: { $0.id == id }) { engine.open(c) }
         }
+        // `--design-history-corpus N`: N more deterministic conversations (every 8th carries a rendered picture of coloured
+        // shapes + a number, described in the answer) — enough for a real Train-your-own run from the app (TRAIN-E2E-VISION).
+        #if DEBUG
+        if let i = CommandLine.arguments.firstIndex(of: "--design-history-corpus"), i + 1 < CommandLine.arguments.count,
+           let n = Int(CommandLine.arguments[i + 1]), n > 0 {
+            HistoryCorpus.threads(count: n, modelName: spec.name, modelId: spec.repo, tools: tools).reversed().forEach { engine.archive.upsert($0) }
+        }
+        #endif
         if CommandLine.arguments.contains("--design-history-images-legacy") {
             // The exact bytes a 0.1 build wrote: `user` has only `_0`, `tool` has no `images`.
             let legacy = """

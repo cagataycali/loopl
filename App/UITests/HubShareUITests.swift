@@ -21,6 +21,8 @@ final class HubShareUITests: XCTestCase {
     private func launch(signedIn: Bool) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["--design-fixture", "history"]
+        // LOOPL_HF_SHARE_CORPUS=N adds N deterministic threads (every 8th with a picture) — the TRAIN-E2E-VISION share.
+        if let n = ProcessInfo.processInfo.environment["LOOPL_HF_SHARE_CORPUS"], Int(n) != nil { app.launchArguments += ["--design-history-corpus", n] }
         if signedIn, let token { app.launchEnvironment["LOOPL_HF_TOKEN"] = token }
         else { app.launchEnvironment["LOOPL_HF_TOKEN"] = ""; app.launchArguments.append("--design-signed-out") }
         app.launch()
@@ -102,7 +104,7 @@ final class HubShareUITests: XCTestCase {
         shot("06-dataset")
         push.tap()
         let shared = app.staticTexts["hubshare.shared"]
-        XCTAssertTrue(shared.waitForExistence(timeout: 90), "push finished")
+        XCTAssertTrue(shared.waitForExistence(timeout: 240), "push finished")
         let url = app.staticTexts["hubshare.doneURL"].firstMatch
         XCTAssertTrue(url.exists)
         let link = url.label.isEmpty ? ((url.value as? String) ?? "") : url.label
