@@ -40,6 +40,10 @@ struct ChatView: View {
                 .onTapGesture { focused = false }
                 .onReceive(NotificationCenter.default.publisher(for: Onboarding.finished)) { _ in focused = true }   // first run just ended: the composer is the next thing
                 .onAppear { if DesignFixture.focusComposer { focused = true } }   // screenshot switch: keyboard up
+                // The iOS 26 keyboard is translucent: with the tab bar left in place under it, the Chat/Models/Settings
+                // glyphs showed through its bottom row as an orange smear (UX audit, 16 Pro + Pro Max). The tab bar is
+                // out of reach while typing anyway, so it steps out with the keyboard and returns on blur.
+                .toolbarVisibility(focused ? .hidden : .visible, for: .tabBar)
                 // One place per error: a load failure is the readiness banner's (with Try again); this line is for
                 // errors while a model IS loaded (a failed turn, a refused send). Dismissable; cleared on the next send.
                 if let err = engine.lastError, !engine.readiness.isFailed {
@@ -297,9 +301,13 @@ struct Composer: View {
 
     static let maxAttachments = 4
     /// The round buttons grow with the text (so the glyph never outgrows its circle at accessibility sizes) but stop
-    /// at 56 pt, which keeps the bar one line on an SE at AX-XL.
-    @ScaledMetric(relativeTo: .callout) private var scaledSide: CGFloat = 40
-    private var side: CGFloat { min(scaledSide, 56) }
+    /// at `LooplDesign.controlSideMax`: at 56 pt three of them left the field two words wide on an SE at AX-XL
+    /// ("price / to / euros?"), so above that the attach + mic buttons also fold into ONE menu (`compactControls`).
+    @ScaledMetric(relativeTo: .callout) private var scaledSide: CGFloat = LooplDesign.controlSide
+    @Environment(\.dynamicTypeSize) private var typeSize
+    private var side: CGFloat { min(scaledSide, LooplDesign.controlSideMax) }
+    /// Accessibility sizes: one "+" menu (photo / camera / paste / record) instead of two round buttons.
+    private var compactControls: Bool { typeSize.isAccessibilitySize }
 
     static let maxClips = 3
 
@@ -368,11 +376,43 @@ struct Composer: View {
                 .disabled(!ImageAttachment.pasteboardHasImage)
         } label: {
             Image(systemName: "plus").font(.callout.weight(.bold)).frame(width: side, height: side)
-                .background(Color(.secondarySystemBackground), in: Circle())
+                .background(LooplDesign.controlFill, in: Circle())
                 .foregroundStyle(attachments.count >= Self.maxAttachments ? Color.secondary : Color.primary)
         }
         .disabled(attachments.count >= Self.maxAttachments || generating)
         .accessibilityLabel("Attach an image")
+        .accessibilityIdentifier("composer-attach")
+        .transition(.scale.combined(with: .opacity))
+    }
+
+    /// Accessibility sizes only: the attach menu and the mic as ONE round button, so the field keeps most of the bar.
+    private var compactMenu: some View {
+        Menu {
+            if canAttach {
+                Button { showPhotos = true } label: { Label("Photo Library", systemImage: "photo.on.rectangle") }
+                    .disabled(attachments.count >= Self.maxAttachments)
+                #if os(iOS)
+                if UIImagePickerController.isSourceTypeAvailable(.camera) {
+                    Button { showCamera = true } label: { Label("Take Photo", systemImage: "camera") }
+                        .disabled(attachments.count >= Self.maxAttachments)
+                }
+                #endif
+                Button { paste() } label: { Label("Paste Image", systemImage: "doc.on.clipboard") }
+                    .disabled(!ImageAttachment.pasteboardHasImage || attachments.count >= Self.maxAttachments)
+            }
+            Button {
+                LooplDesign.haptic(1)
+                focused.wrappedValue = false
+                Task { await recorder.start(in: attachmentsDir()) }
+            } label: { Label("Record Audio", systemImage: "mic") }
+                .disabled(clips.count >= Self.maxClips)
+        } label: {
+            Image(systemName: "plus").font(.callout.weight(.bold)).frame(width: side, height: side)
+                .background(LooplDesign.controlFill, in: Circle())
+                .foregroundStyle(Color.primary)
+        }
+        .disabled(generating)
+        .accessibilityLabel(canAttach ? "Attach an image or record audio" : "Record audio")
         .accessibilityIdentifier("composer-attach")
         .transition(.scale.combined(with: .opacity))
     }
@@ -431,7 +471,7 @@ struct Composer: View {
             Task { await recorder.start(in: attachmentsDir()) }
         } label: {
             Image(systemName: "mic").font(.callout.weight(.bold)).frame(width: side, height: side)
-                .background(Color(.secondarySystemBackground), in: Circle())
+                .background(LooplDesign.controlFill, in: Circle())
                 .foregroundStyle(clips.count >= Self.maxClips ? Color.secondary : Color.primary)
         }
         .disabled(clips.count >= Self.maxClips || generating)
@@ -447,7 +487,7 @@ struct Composer: View {
                 recorder.cancel()
             } label: {
                 Image(systemName: "xmark").font(.callout.weight(.bold)).frame(width: side, height: side)
-                    .background(Color(.secondarySystemBackground), in: Circle()).foregroundStyle(Color.primary)
+                    .background(LooplDesign.controlFill, in: Circle()).foregroundStyle(Color.primary)
             }
             .accessibilityLabel("Cancel recording")
             HStack(spacing: 10) {
@@ -492,17 +532,22 @@ struct Composer: View {
     }
 
     private var bar: some View {
-        HStack(alignment: .bottom, spacing: 10) {
-            if canAttach { attachButton }
-            micButton
+        HStack(alignment: .bottom, spacing: compactControls ? 8 : 10) {
+            if compactControls {
+                compactMenu
+            } else {
+                if canAttach { attachButton }
+                micButton
+            }
             // No fill behind the field: a second rounded shape here fought the keyboard's own corner radius right
             // above it (owner, 2026-10-06). The field sits straight on the bar's material, so composer + keyboard read
-            // as one surface; the vertical padding keeps the caret centred on the round buttons' first line.
+            // as one surface. Vertical padding 9: a one-line body field is 22 pt, so the box is 40 pt — the same height
+            // as the round buttons, which puts the caret on their centre line (10 pt made it 42 and 1 pt off).
             TextField(placeholder, text: $draft, axis: .vertical)
                 .lineLimit(1...5)
                 .textFieldStyle(.plain)
                 .font(.body)
-                .padding(.horizontal, 6).padding(.vertical, 10)
+                .padding(.horizontal, 6).padding(.vertical, 9)
                 .focused(focused)
                 .submitLabel(.send)
                 .onSubmit { if sendable { send() } }
