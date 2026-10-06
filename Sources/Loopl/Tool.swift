@@ -1,6 +1,6 @@
 import Foundation
 
-/// A tool the agent may call (Strands: `AgentTool`). `parameters` is a JSON Schema object.
+/// A tool the agent may call (`AgentTool`). `parameters` is a JSON Schema object.
 public protocol Tool: Sendable {
     var name: String { get }
     var description: String { get }
@@ -33,7 +33,7 @@ public struct ToolError: LocalizedError, Sendable {
     public var errorDescription: String? { message }
 }
 
-/// Strands `ToolSpec`: what the model is told about a tool.
+/// `ToolSpec`: what the model is told about a tool.
 public struct ToolSpec: Sendable, Hashable, Codable {
     public var name: String
     public var description: String

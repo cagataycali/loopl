@@ -87,7 +87,7 @@ public actor MLXModel: Model {
         return (container, spec, params, isVLM)
     }
 
-    /// Strands `Model.stream`: prompt → MLX decode → `StreamEvent`s. Tool-call
+    /// `Model.stream`: prompt → MLX decode → `StreamEvent`s. Tool-call
     /// markup is resolved here (provider side) by `ToolCallStreamGate`; MLX's
     /// own native tool-call detection is merged in when it fires.
     public nonisolated func stream(_ messages: [Loopl.Message], toolSpecs: [Loopl.ToolSpec], systemPrompt: String?) -> AsyncThrowingStream<StreamEvent, Error> {
@@ -125,7 +125,7 @@ public actor MLXModel: Model {
                             try PromptEncoder.encode(systemPrompt: systemPrompt, messages: messages, toolSpecs: toolSpecs, family: spec.family,
                                                      kwargs: kwargs, tokenizer: context.tokenizer)
                         }
-                        // Strands ContextWindowOverflowException analogue: the prompt alone does not fit.
+                        // ContextWindowOverflowException analogue: the prompt alone does not fit.
                         if prompt.count >= params.contextLength - 16 {
                             throw ContextWindowOverflowError("prompt is \(prompt.count) tokens; context window is \(params.contextLength)")
                         }

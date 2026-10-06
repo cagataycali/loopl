@@ -13,7 +13,7 @@ import Loopl
 /// correctly executed a second time — the "ran the tool twice, answered twice"
 /// bug. The fix is the prompt alone — tool exchanges are rendered as plain
 /// results the model cannot mistake for its own markup. There is no repeat
-/// guard: a call the model issues is a call the loop runs (faithful Strands).
+/// guard: a call the model issues is a call the loop runs (no heuristics).
 public actor AppleFoundationModel: Model {
     public nonisolated let kind: RuntimeKind = .appleFM
     /// Apple Foundation Models is a fixed 4096-token window (no config to read).

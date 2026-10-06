@@ -6,7 +6,7 @@ import llama
 
 /// llama.cpp runtime (official ggml-org xcframework, vendored by
 /// `scripts/fetch-llama-xcframework.sh`). Loads ONE .gguf file, Metal
-/// offload on device, decodes token by token into Strands `StreamEvent`s.
+/// offload on device, decodes token by token into `StreamEvent`s.
 /// Tool calls: specs are rendered into the system prompt with the family's
 /// manual dialect (llama_chat_apply_template has no `tools` argument) and
 /// the model's markup is resolved by `ToolCallStreamGate`, exactly like the

@@ -1,9 +1,9 @@
 import Foundation
 
-/// Provider-side helper: converts a text-only decode stream into Strands
+/// Provider-side helper: converts a text-only decode stream into
 /// `StreamEvent`s, turning tool-call markup (`<tool_call>…</tool_call>`,
 /// `<|python_tag|>{…}`, fenced JSON, bare `{"name":…}`) into `toolUse` content
-/// blocks — the job Strands' Bedrock/OpenAI providers do with native tool-use
+/// blocks — the job Bedrock/OpenAI providers do with native tool-use
 /// deltas, done here for small open models that only speak text.
 ///
 /// Text is forwarded live until the first character that could open a tool
@@ -38,7 +38,7 @@ public struct ToolCallStreamGate: Sendable {
 
     /// Every parsed call is kept: the gate has no veto. Deciding what to do
     /// with a call — including one the model has made before — is the model's
-    /// job, informed by the tool results it reads (faithful Strands).
+    /// job, informed by the tool results it reads (no heuristics).
     public init(family: ToolFamily) {
         self.family = family
         parser = ToolCallParser(family: family)

@@ -1,6 +1,6 @@
 import Foundation
 
-// Tracing — Strands' `telemetry/tracer.py` without OpenTelemetry. The spans an
+// Tracing — `telemetry/tracer.py` without OpenTelemetry. The spans an
 // agent produces are the interesting part (invoke_agent → chat → execute_tool),
 // and they can be built entirely out of the hooks that already exist, so loopl
 // has no new dependency: `Tracer` is a `HookProvider` that records

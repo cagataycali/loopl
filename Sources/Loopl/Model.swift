@@ -14,7 +14,7 @@ public enum RuntimeKind: String, Sendable, Codable, CaseIterable, Identifiable {
     }
 }
 
-/// Sampling + context configuration (Strands: the provider's `ModelConfig`).
+/// Sampling + context configuration (the provider's `ModelConfig`).
 /// Defaults are "maxed out": no new-token cap (`maxTokens == nil` → generate
 /// until a stop token or the context is full), context from the catalog.
 public struct GenerationParams: Sendable, Hashable, Codable {
@@ -32,7 +32,7 @@ public struct GenerationParams: Sendable, Hashable, Codable {
     }
 }
 
-// MARK: - Errors (Strands `types/exceptions.py`)
+// MARK: - Errors (`types/exceptions.py`)
 
 /// Generic runtime failure. Not retried.
 public struct ModelError: LocalizedError, Sendable {
@@ -41,7 +41,7 @@ public struct ModelError: LocalizedError, Sendable {
     public var errorDescription: String? { message }
 }
 
-/// Strands `ContextWindowOverflowException`: the prompt does not fit. The agent
+/// `ContextWindowOverflowException`: the prompt does not fit. The agent
 /// asks its `ConversationManager` to reduce context and tries again.
 public struct ContextWindowOverflowError: LocalizedError, Sendable {
     public let message: String
@@ -49,7 +49,7 @@ public struct ContextWindowOverflowError: LocalizedError, Sendable {
     public var errorDescription: String? { message }
 }
 
-/// Strands `ModelThrottledException` — the retryable class. On-device: a
+/// `ModelThrottledException` — the retryable class. On-device: a
 /// transient failure (Metal/GPU busy, memory pressure, engine not ready).
 public struct ModelThrottledError: LocalizedError, Sendable {
     public let message: String
@@ -57,7 +57,7 @@ public struct ModelThrottledError: LocalizedError, Sendable {
     public var errorDescription: String? { message }
 }
 
-/// Strands `MaxTokensReachedException`: the model hit its output limit. The
+/// `MaxTokensReachedException`: the model hit its output limit. The
 /// (recovered) partial message is already in `agent.messages`; call again to continue.
 public struct MaxTokensReachedError: LocalizedError, Sendable {
     public let message: Message
@@ -67,7 +67,7 @@ public struct MaxTokensReachedError: LocalizedError, Sendable {
     }
 }
 
-/// Strands `EventLoopException`: wraps any other failure inside a cycle.
+/// `EventLoopException`: wraps any other failure inside a cycle.
 public struct EventLoopError: LocalizedError, Sendable {
     public let underlying: String
     public init(_ error: any Error) { underlying = (error as? LocalizedError)?.errorDescription ?? String(describing: error) }
@@ -76,19 +76,19 @@ public struct EventLoopError: LocalizedError, Sendable {
 
 // MARK: - Model
 
-/// The one contract every engine implements (Strands: `Model`).
+/// The one contract every engine implements (`Model`).
 ///
 ///     func stream(_ messages: [Message], toolSpecs: [ToolSpec], systemPrompt: String?) -> AsyncThrowingStream<StreamEvent, Error>
 ///
 /// Models are actors — weights must never be touched from two tasks. Text-only
 /// engines turn `<tool_call>` markup into `toolUse` blocks themselves (as
-/// Strands' Bedrock/OpenAI providers do) — see `ToolCallStreamGate`.
+/// Bedrock/OpenAI providers do) — see `ToolCallStreamGate`.
 public protocol Model: Actor {
     nonisolated var kind: RuntimeKind { get }
     var loadedModelId: String? { get }
-    /// Current sampling/context config (Strands `get_config`).
+    /// Current sampling/context config (`get_config`).
     var params: GenerationParams { get }
-    /// Strands `update_config`.
+    /// `update_config`.
     func updateConfig(_ params: GenerationParams)
     /// `progress` is 0…1 for weight loading (download is the model manager's job).
     func load(_ spec: ModelSpec, from directory: URL?, progress: @Sendable @escaping (Double) -> Void) async throws
@@ -119,7 +119,7 @@ public struct RuntimeAvailability: Sendable, Hashable {
 }
 
 /// Token **estimate** — never a tokenizer count. Everything here is the
-/// chars/4 (UTF-8 bytes / 4) heuristic Strands' `_estimate_input_tokens` falls
+/// chars/4 (UTF-8 bytes / 4) heuristic `_estimate_input_tokens` falls
 /// back to, plus a few tokens per message for role/separators. It is cheap,
 /// runs on every model call, and is deliberately a little pessimistic.
 ///

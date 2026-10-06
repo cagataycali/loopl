@@ -1,21 +1,21 @@
 import Foundation
 
-// Strands `hooks/registry.py` + `hooks/events.py`.
+// `hooks/registry.py` + `hooks/events.py`.
 
-/// Strands `HookEvent`. `shouldReverseCallbacks` is true for the "After…"
+/// `HookEvent`. `shouldReverseCallbacks` is true for the "After…"
 /// events so hooks unwind in the opposite order they were entered.
 public protocol HookEvent: Sendable {
     static var shouldReverseCallbacks: Bool { get }
 }
 public extension HookEvent { static var shouldReverseCallbacks: Bool { false } }
 
-/// Strands `HookProvider`: an object that registers several callbacks at once
+/// `HookProvider`: an object that registers several callbacks at once
 /// (the retry strategy and the sliding-window manager are providers).
 public protocol HookProvider: Sendable {
     func registerHooks(_ registry: HookRegistry)
 }
 
-/// Strands `HookRegistry`. Callbacks are keyed by the concrete event type and
+/// `HookRegistry`. Callbacks are keyed by the concrete event type and
 /// may mutate the event (`inout`) — that is how a hook cancels a tool, asks
 /// for a model retry, or rewrites the messages before a model call.
 public final class HookRegistry: @unchecked Sendable {
@@ -43,7 +43,7 @@ public final class HookRegistry: @unchecked Sendable {
         return !(callbacks[ObjectIdentifier(type)] ?? []).isEmpty
     }
 
-    /// Strands `invoke_callbacks_async`: run every callback for the event's
+    /// `invoke_callbacks_async`: run every callback for the event's
     /// type, in registration order (reversed for After… events).
     private func entries<E: HookEvent>(for type: E.Type) -> [Entry] {
         lock.lock(); defer { lock.unlock() }
@@ -64,7 +64,7 @@ public final class HookRegistry: @unchecked Sendable {
 
 // MARK: - Events
 
-/// Strands `BeforeInvocationEvent`: once per `agent(…)` call, before the loop.
+/// `BeforeInvocationEvent`: once per `agent(…)` call, before the loop.
 /// `messages` is the new input; a hook may rewrite it. `cancel` stops the invocation.
 public struct BeforeInvocationEvent: HookEvent {
     public var messages: [Message]
@@ -72,7 +72,7 @@ public struct BeforeInvocationEvent: HookEvent {
     public init(messages: [Message]) { self.messages = messages }
 }
 
-/// Strands `AfterInvocationEvent`: always fires (also on error), reversed order.
+/// `AfterInvocationEvent`: always fires (also on error), reversed order.
 public struct AfterInvocationEvent: HookEvent {
     public static var shouldReverseCallbacks: Bool { true }
     public var result: AgentResult?
@@ -80,7 +80,7 @@ public struct AfterInvocationEvent: HookEvent {
     public init(result: AgentResult?, error: String?) { self.result = result; self.error = error }
 }
 
-/// Strands `BeforeModelCallEvent`: before each model stream. The sliding-window
+/// `BeforeModelCallEvent`: before each model stream. The sliding-window
 /// manager trims `messages` here when the projected prompt would overflow.
 public struct BeforeModelCallEvent: HookEvent {
     public var messages: [Message]
@@ -93,7 +93,7 @@ public struct BeforeModelCallEvent: HookEvent {
     }
 }
 
-/// Strands `AfterModelCallEvent`: either `stopResponse` or `error` is set.
+/// `AfterModelCallEvent`: either `stopResponse` or `error` is set.
 /// Setting `retry = true` makes the loop call the model again (the retry
 /// strategy does this with backoff).
 public struct AfterModelCallEvent: HookEvent {
@@ -105,7 +105,7 @@ public struct AfterModelCallEvent: HookEvent {
     public init(stopResponse: ModelStopResponse?, error: (any Error)?) { self.stopResponse = stopResponse; self.error = error }
 }
 
-/// Strands `BeforeToolsEvent`: the assistant message with all its toolUse blocks, before any runs.
+/// `BeforeToolsEvent`: the assistant message with all its toolUse blocks, before any runs.
 /// A hook may raise an interrupt here (`try event.interrupt("…")`) — see `Interrupt.swift`.
 public struct BeforeToolsEvent: HookEvent, InterruptibleEvent {
     public var message: Message
@@ -114,22 +114,22 @@ public struct BeforeToolsEvent: HookEvent, InterruptibleEvent {
     public init(message: Message) { self.message = message }
 }
 
-/// Strands `AfterToolsEvent`: the toolResult user message, before it is appended.
+/// `AfterToolsEvent`: the toolResult user message, before it is appended.
 /// Guaranteed to fire once for every `BeforeToolsEvent` — including when a BeforeTools hook
-/// throws, a tool throws, the cycle is cancelled, or an interrupt stops the loop (Strands
-/// builds and invokes it in a `finally`).
+/// throws, a tool throws, the cycle is cancelled, or an interrupt stops the loop (it is
+/// built and invoked in a `finally`).
 public struct AfterToolsEvent: HookEvent {
     public static var shouldReverseCallbacks: Bool { true }
     public var message: Message
-    /// Strands `after_tools_event.end_turn`: set it and the loop ends the turn *without*
+    /// `after_tools_event.end_turn`: set it and the loop ends the turn *without*
     /// calling the model again — the content below becomes the final assistant message.
     public var endTurn: EndTurn?
-    /// Strands `invocation_state["request_state"]`: shared scratch space. Setting
+    /// `invocation_state["request_state"]`: shared scratch space. Setting
     /// `requestState["stopEventLoop"] = true` stops the loop after this tool cycle,
     /// keeping the cycle's own stop reason (`tool_use`).
     public var requestState: [String: JSONValue]
 
-    /// What `endTurn` puts in the final assistant message (Strands accepts `True`, a string, or content blocks).
+    /// What `endTurn` puts in the final assistant message (accepts `True`, a string, or content blocks).
     public enum EndTurn: Sendable, Hashable {
         /// A neutral one-liner ("Turn ended early by hook after tool execution").
         case flag
@@ -150,7 +150,7 @@ public struct AfterToolsEvent: HookEvent {
     }
 }
 
-/// Strands `BeforeToolCallEvent`: per tool. A hook may swap `toolUse`, replace
+/// `BeforeToolCallEvent`: per tool. A hook may swap `toolUse`, replace
 /// `selectedTool`, or `cancelTool` with a message that becomes the error result.
 /// loopl adds `approval`: pre-filled from `tool.requiresApproval(for:)`; a hook
 /// sets it to `nil` to auto-approve (`ApprovalPolicy`) or sets one to demand a
@@ -166,7 +166,7 @@ public struct BeforeToolCallEvent: HookEvent, InterruptibleEvent {
     }
 }
 
-/// Strands `AfterToolCallEvent`: per tool, reversed order; `result` is mutable.
+/// `AfterToolCallEvent`: per tool, reversed order; `result` is mutable.
 public struct AfterToolCallEvent: HookEvent {
     public static var shouldReverseCallbacks: Bool { true }
     public var toolUse: ToolUse
@@ -179,7 +179,7 @@ public struct AfterToolCallEvent: HookEvent {
     }
 }
 
-/// Strands `MessageAddedEvent`: every append to `agent.messages`.
+/// `MessageAddedEvent`: every append to `agent.messages`.
 public struct MessageAddedEvent: HookEvent {
     public var message: Message
     public init(message: Message) { self.message = message }

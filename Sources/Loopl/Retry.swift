@@ -1,6 +1,6 @@
 import Foundation
 
-/// Strands `ModelRetryStrategy`: a `HookProvider` on `AfterModelCallEvent`.
+/// `ModelRetryStrategy`: a `HookProvider` on `AfterModelCallEvent`.
 /// Retries retryable model errors with exponential backoff — delays
 /// `initialDelay · 2^attempt`, capped at `maxDelay`; defaults 4 s → 8 → 16 → 32
 /// → 64 (5 retries, 6 attempts). State resets after a successful call and at
@@ -11,14 +11,14 @@ public final class ModelRetryStrategy: HookProvider, @unchecked Sendable {
     public let maxDelay: TimeInterval
     private var currentAttempt = 0
     private let lock = NSLock()
-    /// Observed by the agent so it can surface a throttle event (Strands `EventLoopThrottleEvent`).
+    /// Observed by the agent so it can surface a throttle event (`EventLoopThrottleEvent`).
     var lastDelay: TimeInterval?
 
     public init(maxAttempts: Int = 6, initialDelay: TimeInterval = 4, maxDelay: TimeInterval = 240) {
         self.maxAttempts = maxAttempts; self.initialDelay = initialDelay; self.maxDelay = maxDelay
     }
 
-    /// Override point (Strands `is_retryable`).
+    /// Override point (`is_retryable`).
     public func isRetryable(_ error: any Error) -> Bool { error is ModelThrottledError }
 
     public func delay(forAttempt attempt: Int) -> TimeInterval { min(initialDelay * pow(2, Double(attempt)), maxDelay) }

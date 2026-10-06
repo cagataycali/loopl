@@ -1,6 +1,6 @@
 import Foundation
 
-// Structured output — Strands `structured_output` in Swift. Strands hands a
+// Structured output — `structured_output` in Swift. The reference hands a
 // Pydantic model to the invocation, registers a tool whose input IS the schema,
 // forces tool choice, and retries once with a "format the previous response"
 // prompt when the model answers in prose instead. loopl does the same with
@@ -25,14 +25,14 @@ public struct StructuredOutputOptions: Sendable {
     /// Keep the agent's other tools available in the first pass (the model may
     /// need them to find the answer). The forced pass always offers this tool only.
     public var withTools: Bool
-    /// The nudge used for the forced pass (Strands: "You must format the previous response as structured output.").
+    /// The nudge used for the forced pass ("You must format the previous response as structured output.").
     public var forcePrompt: String
     /// How many malformed calls to feed back to the model before giving up. Default 1.
     public var maxRepairs: Int
     /// The assistant text written to history when the loop is ended early with the value in hand.
     public var completionNote: String
     /// Restore `agent.messages` to its pre-call state when the call returns —
-    /// a structured query then leaves no trace in the chat. Default `false` (Strands keeps it).
+    /// a structured query then leaves no trace in the chat. Default `false` (keeps it in the history).
     public var discardHistory: Bool
     /// Dates are ISO-8601 (what the derived schema advertises) and keys are decoded as written.
     public var dateStrategy: JSONDecoder.DateDecodingStrategy
@@ -85,7 +85,7 @@ public enum StructuredOutputError: LocalizedError, Sendable {
 
 // MARK: - the tool
 
-/// The tool whose arguments ARE the answer (Strands `StructuredOutputTool`).
+/// The tool whose arguments ARE the answer (`StructuredOutputTool`).
 /// Calling it decodes the model's JSON into `T`; a decoding failure is returned
 /// to the model as an error tool result, which is how repair happens.
 public struct StructuredOutputTool<T: Decodable & Sendable>: Tool {
@@ -233,7 +233,7 @@ enum StructuredHookInstaller {
 // MARK: - the API
 
 public extension Agent {
-    /// Ask for a value instead of prose (Strands `structured_output`):
+    /// Ask for a value instead of prose (`structured_output`):
     ///
     ///     struct Weather: Codable, Sendable { let city: String; let celsius: Int }
     ///     let w = try await agent.structured(As: Weather.self, prompt: "weather in Istanbul")
