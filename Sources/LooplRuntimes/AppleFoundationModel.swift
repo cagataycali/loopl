@@ -132,42 +132,54 @@ public actor AppleFoundationModel: Model {
                                               maxTokens: params.maxTokens)
         let guardCopy = repeatGuard
         var gate = ToolCallStreamGate(family: .generic, suppress: { guardCopy.isRepeat($0) })
-        var emitted = ""
-        var visibleText = ""
-        var sawToolUse = false
+        // REPLACE semantics. `LanguageModelSession.streamResponse` yields the whole response
+        // so far, and a snapshot is NOT guaranteed to extend the previous one (the model may
+        // revise what it has written). Treating a non-extending snapshot as "skip" silently
+        // DROPPED that text; the newest snapshot is always the truth, so keep it and parse once.
+        var latest = ""
         var first: Date?
-
-        func classify(_ events: [StreamEvent]) {
-            for e in events {
-                if case .contentBlockDelta(.text(let t)) = e { visibleText += t }
-                if case .contentBlockStart(.toolUse) = e { sawToolUse = true }
-            }
-        }
 
         for try await snapshot in session.snapshots(prompt: prompt) {
             try Task.checkCancellation()
-            guard snapshot.hasPrefix(emitted) else { emitted = snapshot; continue }   // non-monotonic snapshot: resync
-            let delta = String(snapshot.dropFirst(emitted.count))
-            emitted = snapshot
-            if delta.isEmpty { continue }
+            guard snapshot != latest else { continue }
+            latest = snapshot
             if first == nil { first = Date(); stats.ttftMs = first!.timeIntervalSince(started) * 1000 }
-            stats.generatedTokens = emitted.count / 4
+            stats.generatedTokens = latest.count / 4
             stats.contextUsed = stats.promptTokens + stats.generatedTokens
             if let f = first { let dt = Date().timeIntervalSince(f); if dt > 0.05 { stats.tokensPerSecond = Double(stats.generatedTokens) / dt } }
-            let live = gate.feed(delta)
-            classify(live)
-            for e in live where !(suppressMessageStart && isMessageStart(e)) { emit(e) }
-            emit(.metadata(stats))
+            emit(.metadata(stats))          // the UI keeps its live pulse; the text waits (see below)
         }
 
-        var finishEvents = gate.finish()
-        classify(finishEvents)
-        if suppressMessageStart { finishEvents.removeAll(where: isMessageStart) }
+        // PROSE IS HELD until the whole turn is known. A ~3B model happily writes the answer
+        // AND another tool call in one turn; streaming that prose would print an answer before
+        // the tool result exists — and then again after it. Parsed once, at the end, the turn is
+        // unambiguous: prose + a surviving call ⇒ the prose was thinking-out-loud (`reasoning`),
+        // prose alone ⇒ the answer.
+        var events = gate.feed(latest)
+        events += gate.finish()
+        var visibleText = ""
+        var sawToolUse = false
+        for e in events {
+            if case .contentBlockDelta(.text(let t)) = e { visibleText += t }
+            if case .contentBlockStart(.toolUse) = e { sawToolUse = true }
+        }
+        if sawToolUse, !visibleText.isEmpty { events = events.map(Self.textAsReasoning) }
+        if suppressMessageStart { events.removeAll(where: isMessageStart) }
 
         let emptyRepeat = !sawToolUse
             && visibleText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !gate.suppressedCalls.isEmpty
-        return Attempt(stats: stats, finishEvents: finishEvents, emptyRepeat: emptyRepeat)
+        return Attempt(stats: stats, finishEvents: events, emptyRepeat: emptyRepeat)
+    }
+
+    /// Prose that came with a tool call is commentary, not the answer — keep it in the
+    /// transcript as reasoning so the UI never shows an answer twice.
+    private nonisolated static func textAsReasoning(_ e: StreamEvent) -> StreamEvent {
+        switch e {
+        case .contentBlockStart(.text): return .contentBlockStart(.reasoning)
+        case .contentBlockDelta(.text(let t)): return .contentBlockDelta(.reasoning(t))
+        default: return e
+        }
     }
 
     private nonisolated func isMessageStart(_ e: StreamEvent) -> Bool {
