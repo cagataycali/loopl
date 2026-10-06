@@ -5,8 +5,10 @@ import LooplRuntimes
 
 /// "Models" — one list in the order a first-time user needs it (owner, 2026-10-06): 1 On this iPhone (what is here,
 /// the one in use marked, swipe left to delete) · 2 Browse Hugging Face · 3 Train your own · 4 loopl models (the
-/// collection; GGUF builds and the rest of the curated catalog fold under it) · 5 Mine. Never more than five sections,
-/// never the same repo twice. Tap a row to switch (it downloads first if needed).
+/// collection; GGUF builds and the rest of the curated catalog fold under it) · 5 Mine · then one **Storage** block LAST
+/// (used AND free bytes on this iPhone and each drive, memory for a model, catalog line, a link to Settings › Storage —
+/// the owner asked "how much space do we have" back after #112 folded it into a caption). Never the same repo twice.
+/// Tap a row to switch (it downloads first if needed).
 struct ModelsView: View {
     @Bindable var engine: Engine
     @Bindable var store: ModelStore
@@ -54,7 +56,7 @@ struct ModelsView: View {
     /// Header of section 1: the device this is — a model on a drive carries its own "On SanDisk" line.
     private var deviceName: String { UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone" }
     /// For the section-order test and the animation key: the headers, top to bottom, as a first-time user reads them.
-    static let sectionOrder = ["On this iPhone", "Browse Hugging Face", "Train your own", "loopl models", "Mine"]
+    static let sectionOrder = ["On this iPhone", "Browse Hugging Face", "Train your own", "loopl models", "Mine", "Storage"]
 
     var body: some View {
         NavigationStack {
@@ -79,8 +81,6 @@ struct ModelsView: View {
                     }
                 } header: {
                     Text("On this \(deviceName)").accessibilityIdentifier("models-header-device")
-                } footer: {
-                    Text(storageLine).accessibilityIdentifier("models-storage")
                 }
                 // 2 — Browse (and the repos added from it that are not here yet).
                 Section {
@@ -125,6 +125,8 @@ struct ModelsView: View {
                 }
                 // 5 — the user's own repos.
                 MineSection(engine: engine, store: store, settings: settings, hf: engine.hf, mine: mine, selected: $mineSelected, zoom: zoom)
+                // Last — how much space there is. Readable rows, not a caption: used AND free here and on every drive.
+                storageSection
             }
             .looplScrollClearance()
             .navigationDestination(isPresented: $trainFixturePushed) {
@@ -156,12 +158,52 @@ struct ModelsView: View {
         }
     }
 
-    /// One line under "On this iPhone": bytes here, bytes on each drive, memory loopl can use. Numbers, no jargon.
-    private var storageLine: String {
-        var parts = [store.diskUsed > 0 ? "\(ByteSize.label(store.diskUsed)) on this \(deviceName)" : "No downloads on this \(deviceName) yet"]
-        for v in store.storage.volumes { parts.append(v.connected ? "\(ByteSize.label(v.used)) on \(v.name)" : "\(v.name) not connected") }
-        if MemoryBudget.available > 0 { parts.append("\(MemoryBudget.label(MemoryBudget.available)) of memory for a model") }
-        return parts.joined(separator: " · ")
+    // MARK: Storage (last section)
+
+    /// The Storage block: this iPhone (used · free), each remembered drive (used · free, or not connected), memory a model
+    /// can take, the catalog line, and the way to Settings › Storage (move models, add a drive). Identifiers for the tests.
+    @ViewBuilder private var storageSection: some View {
+        Section {
+            storageRow(system: "iphone", name: "On this \(deviceName)", value: StorageReadout.spaceLine(used: store.diskUsed, free: store.storage.internalFree), connected: true)
+                .accessibilityIdentifier("models-storage")
+            ForEach(store.storage.volumes) { v in
+                storageRow(system: v.connected && !v.usable ? "externaldrive.badge.exclamationmark" : "externaldrive", name: v.name,
+                           value: StorageReadout.volumeLine(connected: v.connected, usable: v.usable, used: v.used, free: v.free),
+                           connected: v.usable)
+                    .accessibilityIdentifier("models-storage-volume-\(v.name)")
+            }
+            if MemoryBudget.available > 0 {
+                storageRow(system: "memorychip", name: "Memory for a model", value: MemoryBudget.label(MemoryBudget.available), connected: true)
+                    .accessibilityIdentifier("models-storage-memory")
+            }
+            NavigationLink {
+                StorageView(engine: engine, settings: settings, store: store)
+            } label: {
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Settings › Storage").font(.body.weight(.medium))
+                        Text(store.storage.volumes.isEmpty ? "Move models to a USB-C drive, see what takes the space" : "Move models between this \(deviceName) and your drives").font(.caption).foregroundStyle(.secondary)
+                    }
+                } icon: { Image(systemName: "internaldrive").foregroundStyle(LooplDesign.accent) }
+            }
+            .accessibilityIdentifier("models-storage-settings")
+        } header: {
+            Text("Storage").accessibilityIdentifier("models-header-storage")
+        } footer: {
+            Text("Free space is what iOS lets a download use right now. Catalog v\(store.catalog.version) · \(store.catalog.updated)")
+                .accessibilityIdentifier("models-catalog")
+        }
+    }
+
+    /// One readable storage row: glyph · name · the numbers, read as one element ("On this iPhone, 2.1 GB used · 54 GB free").
+    private func storageRow(system: String, name: String, value: String, connected: Bool) -> some View {
+        Label {
+            LabeledContent(name) {
+                Text(value).font(.callout.monospacedDigit()).foregroundStyle(connected ? .primary : .secondary)
+                    .multilineTextAlignment(.trailing).fixedSize(horizontal: false, vertical: true)
+            }
+        } icon: { Image(systemName: system).foregroundStyle(connected ? LooplDesign.accent : .secondary) }
+        .accessibilityElement(children: .combine)
     }
 
     /// "More models" — the curated catalog the app is tested with, folded behind one row under the loopl models
@@ -181,8 +223,7 @@ struct ModelsView: View {
                         }
                     } icon: { Image(systemName: "square.stack.3d.up").foregroundStyle(LooplDesign.accent) }
                     Spacer()
-                    Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
-                        .rotationEffect(.degrees(showMore ? 90 : 0))
+                    DisclosureChevron(expanded: showMore, font: .footnote.weight(.semibold))
                 }
                 .contentShape(Rectangle())
             }

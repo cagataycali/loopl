@@ -2,11 +2,12 @@ import SwiftUI
 import Loopl
 import LooplUI
 
-/// Models › Train your own: pick the conversations the user pushed to their Hugging Face account and a base (stock Qwen3.5 size or
+/// Models › Train your own: pick the conversations the user pushed to their Hugging Face account and a base (a public loopl size — the Qwen3.5-rooted v1.1 checkpoints — or
 /// one of their own tuned models); epochs/GPU/method are Auto unless "Fine-tune manually" is opened; the cost guard is automatic
 /// (2× the estimate, ≥ 15 min) and lives in the estimate sentence. See an honest cost estimate, confirm on the same ApprovalCard the agent uses for HITL, then watch the job's
 /// `[loopl] stage=` ladder. The resulting private model lands under Models › Mine (HF-ACCOUNT lane) → download → default.
 struct TrainView: View {
+    @Environment(\.dynamicTypeSize) private var typeSize
     @Bindable var engine: Engine
     @Bindable var store: ModelStore
     @Bindable var settings: AppSettings
@@ -25,7 +26,7 @@ struct TrainView: View {
     @State private var inspectError: String?
     @State private var base: TrainingBase = .b0_8
     @State private var tunedBases: [TrainingTunedBase] = []
-    @State private var tuned: TrainingTunedBase?          // nil = start from the stock Qwen3.5 size
+    @State private var tuned: TrainingTunedBase?          // nil = start from the public loopl checkpoint of the picked size
     @State private var method: TrainingMethod? = nil        // nil = Auto (the size's default)
     @State private var flavor: TrainingFlavor? = nil        // nil = Auto (the cheapest GPU the size trains well on)
     @State private var epochsChoice = 0                     // 0 = Auto, 1…4 fixed
@@ -107,10 +108,20 @@ struct TrainView: View {
                         if let e = datasetsError { Text(e).font(.footnote).foregroundStyle(.orange) }
                     }
                 } else {
-                    Picker("Conversations", selection: $dataset) {
-                        ForEach(datasets) { d in Text(d.name).tag(Optional(d)) }
+                    if typeSize.isAccessibilitySize {
+                        // Inline rows instead of a menu: the menu's label squeezed a repo name to "loopl-a…ations" at AX-XL
+                        // however wide it was. A user has a handful of datasets; each gets a full-width, wrapping row.
+                        Picker("Conversations", selection: $dataset) {
+                            ForEach(datasets) { d in Text(d.name).tag(Optional(d)) }
+                        }
+                        .pickerStyle(.inline)
+                        .accessibilityIdentifier("train-dataset")
+                    } else {
+                        Picker("Conversations", selection: $dataset) {
+                            ForEach(datasets) { d in Text(d.name).tag(Optional(d)) }
+                        }
+                        .accessibilityIdentifier("train-dataset")
                     }
-                    .accessibilityIdentifier("train-dataset")
                     if dataset != nil {
                         LabeledContent("Rows", value: inspecting ? "reading…" : conversations > 0 ? "≈ \(conversations) conversations · \(ByteSize.label(shardBytes))" : "no .jsonl shards found")
                             .accessibilityIdentifier("train-rows")
