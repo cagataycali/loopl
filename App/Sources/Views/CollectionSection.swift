@@ -92,8 +92,11 @@ struct CollectionSection: View {
                             Spacer()
                             Text("\(listing.gguf.count)").font(.footnote.monospacedDigit()).foregroundStyle(.secondary)
                         }
+                        .contentShape(Rectangle())
+                        .onTapGesture { withAnimation(LooplDesign.Motion.faded(LooplDesign.Motion.spring, reduceMotion)) { showGGUF.toggle() } }
+                        .accessibilityIdentifier("collection-gguf")
+                        .accessibilityAddTraits(.isButton)
                     }
-                    .accessibilityIdentifier("collection-gguf")
                 }
                 if hf.author == nil, listing.rows.contains(where: \.hit.isPrivate) {
                     Label {
@@ -143,7 +146,7 @@ struct CollectionSection: View {
         }
         if let e = model.error { status.append(e) }
         if !status.isEmpty { parts.append(status.joined(separator: " · ")) }
-        return parts.joined(separator: " ")
+        return parts.joined(separator: "\n")
     }
 
     @ViewBuilder private func row(row: HubCollectionRow) -> some View {
