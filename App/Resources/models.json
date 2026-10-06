@@ -438,6 +438,43 @@
         "enable_thinking": false
       },
       "notes": "loopl v1 GGUF (llama.cpp b11401, --no-mtp). Private: needs the user's HF token."
+    },
+    {
+      "id": "loopl-4b-4bit",
+      "name": "loopl 4B",
+      "repo": "cagataydev/loopl-4b-4bit",
+      "runtime": "mlx",
+      "family": "hermes",
+      "params_b": 4.0,
+      "size_bytes": 2367237149,
+      "ctx_nominal": 262144,
+      "ctx_usable_8gb": 8192,
+      "min_ram_gb": 6,
+      "gated": true,
+      "vision": false,
+      "chat_template_kwargs": {
+        "enable_thinking": false
+      },
+      "notes": "loopl v1 — Qwen3.5-4B LoRA r64 (merged) post-tuned by Cagatay Cali on cagataydev/loopl-train (agent loop, tools, robots, identity). Text-only (vision tower not merged). Private: needs the user's HF token."
+    },
+    {
+      "id": "loopl-4b-q4_k_m",
+      "name": "loopl 4B · Q4_K_M (llama.cpp)",
+      "repo": "cagataydev/loopl-4b-GGUF",
+      "file": "loopl-4b-Q4_K_M.gguf",
+      "runtime": "gguf",
+      "family": "hermes",
+      "params_b": 4.0,
+      "size_bytes": 2708804512,
+      "ctx_nominal": 262144,
+      "ctx_usable_8gb": 4096,
+      "min_ram_gb": 6,
+      "gated": true,
+      "vision": false,
+      "chat_template_kwargs": {
+        "enable_thinking": false
+      },
+      "notes": "loopl v1 GGUF (llama.cpp b11401, --no-mtp). Private: needs the user's HF token."
     }
   ]
 }
