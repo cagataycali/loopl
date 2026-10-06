@@ -18,6 +18,7 @@ struct LooplApp: App {
                         .looplHaptics(engine.haptics)
                 } else {
                     LaunchView().task {
+                        StorageFixture.apply(to: store)
                         let e = Engine(settings: settings, store: store)
                         if DesignFixture.requested { DesignFixture.apply(to: e, settings: settings) } else { e.bootstrap() }
                         engine = e

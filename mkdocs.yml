@@ -157,6 +157,7 @@ nav:
   - App:
       - Overview: app/index.md
       - Share to Hugging Face: app/share-to-hugging-face.md
+      - Storage: app/storage.md
   - Privacy: privacy.md
   - FAQ: faq.md
   - Changelog: changelog.md

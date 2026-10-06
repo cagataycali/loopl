@@ -19,13 +19,16 @@ struct ModelsView: View {
     private var sections: [(String, [ModelSpec])] {
         var out: [(String, [ModelSpec])] = []
         let available = store.catalog.models.filter { $0.runtime != .appleFM || AppleFoundationModel.availability().available }
-        func onDevice(_ s: ModelSpec) -> Bool { !s.isDownloadable || (store.states[s.id]?.isDownloaded ?? false) || engine.loadedModel?.id == s.id }
+        func onDevice(_ s: ModelSpec) -> Bool {
+            guard let st = store.states[s.id] else { return !s.isDownloadable || engine.loadedModel?.id == s.id }
+            return !s.isDownloadable || st.isDownloaded || st.isMoving || st.needsDrive != nil || engine.loadedModel?.id == s.id
+        }
         let here = available.filter(onDevice).sorted { a, b in (engine.loadedModel?.id == a.id) && engine.loadedModel?.id != b.id }
         let rest = available.filter { !onDevice($0) }
         let hub = rest.filter(\.isFromHub)
         let curated = rest.filter { !$0.isFromHub && $0.runtime != .gguf }
         let gguf = rest.filter { !$0.isFromHub && $0.runtime == .gguf }
-        if !here.isEmpty { out.append(("On this device", here)) }
+        if !here.isEmpty { out.append((store.storage.volumes.isEmpty ? "On this device" : "Downloaded", here)) }
         if !hub.isEmpty { out.append(("From Hugging Face", hub)) }
         if !curated.isEmpty { out.append(("Recommended", curated)) }
         if !gguf.isEmpty { out.append(("Recommended · GGUF", gguf)) }
@@ -61,6 +64,9 @@ struct ModelsView: View {
                 }
                 Section {
                     LabeledContent("On this device", value: ByteSize.label(store.diskUsed))
+                    ForEach(store.storage.volumes) { v in
+                        LabeledContent("On \(v.name)", value: v.connected ? ByteSize.label(v.used) : "not connected")
+                    }
                     LabeledContent("Memory available to loopl", value: MemoryBudget.label(MemoryBudget.available))
                     if settings.offline { Label("Offline mode is on — downloads are refused, models on the device still load.", systemImage: LooplDesign.iconOffline).font(.footnote).foregroundStyle(.orange) }
                 } footer: {
@@ -90,7 +96,7 @@ struct ModelsView: View {
         let busy = engine.readiness.spec?.id == spec.id && engine.readiness.isBusy
         VStack(alignment: .leading, spacing: 6) {
             Button {
-                guard !busy, !isLoaded, !engine.isGenerating else { return }
+                guard !busy, !isLoaded, !engine.isGenerating, state.needsDrive == nil, !state.isMoving else { return }
                 LooplDesign.haptic(1)
                 Task { await engine.select(spec) }
             } label: {
@@ -100,7 +106,12 @@ struct ModelsView: View {
                 }
             }
             .buttonStyle(.plain)
-            .accessibilityHint(isLoaded ? "in use" : "switches to this model")
+            .opacity(state.needsDrive == nil ? 1 : 0.55)
+            .accessibilityHint(state.needsDrive.map { "on \($0), not connected" } ?? (isLoaded ? "in use" : "switches to this model"))
+            if state.isDownloaded, store.storage.location(of: spec.id).isExternal {
+                Label("On \(store.locationName(spec))", systemImage: "externaldrive").font(.caption).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("models-location-\(spec.id)")
+            }
             switch state {
             case .downloading(let done, let total, let fd, let files):
                 DownloadProgressRow(done: done, total: total, fileIndex: fd, fileCount: files) { store.pause(spec) }
@@ -112,6 +123,14 @@ struct ModelsView: View {
                 }
             case .failed(let msg):
                 Text(msg).font(.caption).foregroundStyle(.red)
+            case .needsDrive(let drive):
+                Label("Needs \(drive) — plug it in to use", systemImage: "externaldrive.badge.xmark").font(.caption).foregroundStyle(.orange)
+                    .accessibilityIdentifier("models-needs-drive-\(spec.id)")
+            case .moving(let done, let total, let to):
+                HStack(spacing: 10) {
+                    ProgressView(value: total > 0 ? Double(done) / Double(total) : 0).tint(LooplDesign.accent)
+                    Text("Moving to \(to) · \(ByteSize.label(done)) of \(ByteSize.label(total))").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                }
             case .downloaded, .notDownloaded:
                 #if !targetEnvironment(simulator)
                 if !MemoryBudget.fits(spec) && spec.isDownloadable {
@@ -124,7 +143,9 @@ struct ModelsView: View {
         }
         .padding(.vertical, 2)
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-            if spec.isFromHub {
+            if state.needsDrive != nil || state.isMoving {
+                // Nothing on the phone to delete; a move in flight owns the files.
+            } else if spec.isFromHub {
                 Button(role: .destructive) { confirmDelete = spec } label: { Label("Remove", systemImage: "trash") }
             } else if spec.isDownloadable, state.isDownloaded || { if case .paused = state { return true }; return false }() {
                 Button(role: .destructive) { confirmDelete = spec } label: { Label("Delete", systemImage: "trash") }
@@ -136,7 +157,17 @@ struct ModelsView: View {
                 Button("Copy repo id", systemImage: "doc.on.doc") { copy(spec.repo) }
                 Link(destination: URL(string: "https://huggingface.co/\(spec.repo)")!) { Label("Open on Hugging Face", systemImage: "safari") }
             }
-            if spec.isFromHub { Button("Remove from loopl", systemImage: "trash", role: .destructive) { confirmDelete = spec } }
+            if state.isDownloaded {
+                let here = store.storage.location(of: spec.id).volumeId
+                let targets = store.storage.volumes.filter { $0.connected && $0.id != here }
+                if here != nil || !targets.isEmpty {
+                    Divider()
+                    if here != nil { Button("Move to this iPhone", systemImage: "iphone") { store.move(spec, to: nil) } }
+                    ForEach(targets) { v in Button("Move to \(v.name)", systemImage: "externaldrive") { store.move(spec, to: v.id) } }
+                }
+            }
+            if state.needsDrive != nil || state.isMoving { /* not deletable from here */ }
+            else if spec.isFromHub { Button("Remove from loopl", systemImage: "trash", role: .destructive) { confirmDelete = spec } }
             else if spec.isDownloadable, state.isDownloaded { Button("Delete from device", systemImage: "trash", role: .destructive) { confirmDelete = spec } }
         }
     }

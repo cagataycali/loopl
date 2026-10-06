@@ -149,6 +149,8 @@ enum SelfTest {
                         emit("downloaded \(ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)) in \(Int(Date().timeIntervalSince(t0))) s")
                     case .failed(let msg): throw ModelError("download failed: \(msg)")
                     case .paused, .notDownloaded: throw ModelError("download stopped unexpectedly")
+                    case .needsDrive(let d): throw ModelError("\(spec.name) is on \(d), which is not plugged in")
+                    case .moving: continue
                     }
                     break
                 }

@@ -109,7 +109,12 @@ public final class Engine {
     /// (mlx-community/Qwen3-0.6B-4bit), else the smallest downloadable model.
     public var startupSpec: ModelSpec? {
         let models = store.catalog.models.filter { $0.runtime != .appleFM || AppleFoundationModel.availability().available }
-        if let id = settings.lastModelId, let s = models.first(where: { $0.id == id }) { return s }
+        if let id = settings.lastModelId, let s = models.first(where: { $0.id == id }) {
+            // Last used model lives on a drive that is not plugged in → start on the default instead, and say so.
+            if let drive = store.storage.missingDrive(for: s) {
+                transcript.note("\(s.name) is on \(drive), which isn't plugged in — using the default model until it is.")
+            } else { return s }
+        }
         if let id = store.catalog.defaultModelId, let s = models.first(where: { $0.id == id }) { return s }
         return models.filter(\.isDownloadable).min { $0.sizeBytes < $1.sizeBytes }
     }
@@ -127,6 +132,11 @@ public final class Engine {
     /// Switch to `spec`: download if needed (progress inline), then load. Remembers the choice.
     public func select(_ spec: ModelSpec) async {
         lastError = nil
+        if let drive = store.storage.missingDrive(for: spec) {
+            readiness = loadedModel.map { .ready($0) } ?? .failed(spec, "\(spec.name) is on \(drive). Plug it in to use it.")
+            lastError = "\(spec.name) is on \(drive). Plug it in to use it."
+            haptics.emit(.error); return
+        }
         if spec.isDownloadable, store.localDirectory(spec) == nil {
             if settings.offline || NetworkPolicy.isOffline {
                 readiness = .failed(spec, "\(spec.name) is not on this device and offline mode is on."); return
@@ -141,6 +151,8 @@ public final class Engine {
                 case .downloaded: haptics.emit(.downloadFinished); break
                 case .failed(let msg): readiness = .failed(spec, msg); haptics.emit(.error); return
                 case .paused, .notDownloaded: readiness = .failed(spec, "download stopped"); return
+                case .needsDrive(let d): readiness = .failed(spec, "\(spec.name) is on \(d). Plug it in to use it."); return
+                case .moving: continue
                 }
                 break
             }
@@ -159,6 +171,7 @@ public final class Engine {
         }
         let dir = spec.isDownloadable ? store.localDirectory(spec) : nil
         if spec.isDownloadable && dir == nil {
+            if let drive = store.storage.missingDrive(for: spec) { readiness = .failed(spec, "\(spec.name) is on \(drive). Plug it in to use it."); return }
             readiness = .failed(spec, "\(spec.name) is not downloaded yet"); return
         }
         do {
@@ -171,8 +184,12 @@ public final class Engine {
             if previous != nil || !transcript.items.isEmpty { transcript.note("Switched to \(spec.name)") }
             haptics.emit(.modelLoaded)
         } catch {
-            readiness = previous.map { .ready($0) } ?? .failed(spec, error.localizedDescription)
-            lastError = error.localizedDescription
+            // A drive pulled mid-load reads as a missing file: say which drive, not "No such file".
+            let reason = store.storage.location(of: spec.id).isExternal && store.storage.directory(for: spec) == nil
+                ? "\(store.locationName(spec)) was disconnected while loading \(spec.name)."
+                : error.localizedDescription
+            readiness = previous.map { .ready($0) } ?? .failed(spec, reason)
+            lastError = reason
             haptics.emit(.error)
         }
     }
