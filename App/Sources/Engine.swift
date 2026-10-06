@@ -41,7 +41,10 @@ public final class AppSettings {
     public static let defaultSystemPrompt = "You are loopl, a helpful assistant running fully on this device. Use tools when they help; answer concisely. Your only memory between conversations is the remember and recall tools: when the user asks you to remember something, call remember; before answering anything about the user, call recall."
     /// Build ≤ 9 default — an unedited stored prompt equal to it is upgraded to the current default on launch.
     public static let legacyDefaultSystemPrompts: Set<String> = ["You are loopl, a helpful assistant running fully on this device. Use tools when they help; answer concisely."]
-    public static let allToolNames = ["current_time", "calculator", "device_info", "remember", "recall", "http"]
+    public static let allToolNames = ["current_time", "calculator", "device_info", "remember", "recall", "http", "manage_messages"]
+    /// Portable tools added after build 12 — switched ON for installs whose saved set predates them (once; a user
+    /// who turns one off afterwards stays off because the name is then recorded in `loopl.toolsSeen`).
+    public static let laterCoreTools = ["manage_messages"]
 
     public init() {
         let d = UserDefaults.standard
@@ -50,6 +53,9 @@ public final class AppSettings {
         systemPrompt = stored.map { Self.legacyDefaultSystemPrompts.contains($0) ? Self.defaultSystemPrompt : $0 } ?? Self.defaultSystemPrompt
         var saved = Set((d.array(forKey: "loopl.tools") as? [String]) ?? Self.allToolNames)
         if saved.remove("http_get") != nil { saved.insert("http") }     // 0.1 → http (http_get is a deprecated SDK alias)
+        var seen = Set((d.array(forKey: "loopl.toolsSeen") as? [String]) ?? [])
+        for name in Self.laterCoreTools where !seen.contains(name) { saved.insert(name); seen.insert(name) }
+        d.set(Array(seen), forKey: "loopl.toolsSeen")
         enabledTools = saved
         askBefore = ApprovalPolicy.Mode(rawValue: d.string(forKey: Self.askBeforeKey) ?? "") ?? .mutating
         showPerformance = d.bool(forKey: "loopl.perf")
@@ -130,7 +136,7 @@ public final class Engine {
     }
     public var loadProgress: Double? { if case .loading(_, let p) = readiness { return p }; return nil }
     public var isGenerating: Bool { transcript.isRunning }
-    public var allTools: [any Tool] { [CurrentTimeTool(), CalculatorTool(), DeviceInfoTool(), RememberTool(), RecallTool(), HttpTool()] }
+    public var allTools: [any Tool] { [CurrentTimeTool(), CalculatorTool(), DeviceInfoTool(), RememberTool(), RecallTool(), HttpTool(), ManageMessagesTool()] }
     /// Human-in-the-loop policy: reads Settings › Ask before on every call, so no agent rebuild is needed.
     private let approvalPolicy = ApprovalPolicy(modeProvider: {
         ApprovalPolicy.Mode(rawValue: UserDefaults.standard.string(forKey: AppSettings.askBeforeKey) ?? "") ?? .mutating
