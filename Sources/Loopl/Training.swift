@@ -244,7 +244,7 @@ public struct TrainingPlan: Hashable, Sendable, Codable {
                  "--epochs", epochs.argument, "--method", method.rawValue]
         if stitch != .none { a += ["--stitch", stitch.rawValue] }
         if tunedBase != nil, !includeAllShards { a.append("--new-shards-only") }
-        if skipMLX { a.append("--skip-mlx") }
+        if skipMLX { a.append("--skip-mlx") } else { a.append("--expect-vision") }   // every base here sees; a text-only export is a failure, not a model
         if skipGGUF { a.append("--skip-gguf") }
         return a
     }
@@ -362,6 +362,10 @@ public struct TrainingOutput: Hashable, Sendable {
     public var toolNameMatch: String?     // "7/9" — probes that called the right tool
     public var wallSeconds: Double?
     public var scriptVersion: String?
+    /// `out.vision.visual_tensors` of the MLX export (loopl_sft.py ≥ 1.2.1): > 0 means the phone model sees. nil = the script did not say.
+    public var visionTensors: Int?
+    /// The MLX export kept its vision tower (vision_config + visual tensors + preprocessor_config).
+    public var keptVision: Bool? { visionTensors.map { $0 > 0 } }
     // script 1.2.0
     public var round: Int?
     public var lineage: [String]?         // ["Qwen/Qwen3.5-0.8B", "me/loopl-app-sim"] → this model
@@ -472,6 +476,7 @@ public struct TrainingProgress: Hashable, Sendable {
             if let out = d?["out"] {
                 o.merged = out["merged"]?.stringValue; o.mlx = out["mlx"]?.stringValue
                 o.gguf = out["gguf"]?.stringValue; o.ggufFile = out["gguf_file"]?.stringValue
+                if let v = out["vision"]?["visual_tensors"]?.doubleValue { o.visionTensors = Int(v) }
             }
             o.mlxError = d?["out"]?["mlx_error"]?.stringValue ?? d?["mlx_error"]?.stringValue
             o.ggufError = d?["out"]?["gguf_error"]?.stringValue ?? d?["gguf_error"]?.stringValue

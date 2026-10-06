@@ -14,7 +14,7 @@ import AVFAudio
 /// identity-out-tools/TOOLS-E2E.md carries them as device-proof requests. Runs with `LOOPL_AUDIT_DIR`; writes
 /// `LOOPL_AUDIT_OUT/<model>-tools.jsonl` + `-tools-summary.txt`.
 final class ToolsE2ETests: XCTestCase {
-    struct Row: Codable { var model: String; var tool: String; var run: Int; var called: Bool; var status: String; var answer: String; var outcome: String; var pass: Bool; var seconds: Double; var calls: [String]; var raw: String }
+    struct Row: Codable { var model: String; var tool: String; var run: Int; var called: Bool; var status: String; var answer: String; var outcome: String; var pass: Bool; var seconds: Double; var calls: [String]; var results: [String]; var raw: String }
 
     struct Case {
         let tool: String
@@ -72,7 +72,7 @@ final class ToolsE2ETests: XCTestCase {
             // Availability on this host decides offered-or-not exactly as Engine.activeTools does (AppleToolPrefs.active).
             if AppleTools.names.contains(c.tool), !AppleTools.availability(of: c.tool).available {
                 let why = AppleTools.availability(of: c.tool).reason
-                let row = Row(model: name, tool: c.tool, run: 0, called: false, status: "unavailable", answer: "", outcome: "unavailable(\(why))", pass: false, seconds: 0, calls: [], raw: "")
+                let row = Row(model: name, tool: c.tool, run: 0, called: false, status: "unavailable", answer: "", outcome: "unavailable(\(why))", pass: false, seconds: 0, calls: [], results: [], raw: "")
                 try Self.append(row, to: file); summary.append("\(c.tool): unavailable here — \(why)"); print("TOOLS-E2E \(name) \(c.tool): UNAVAILABLE — \(why)"); continue
             }
             var passes = 0
@@ -89,7 +89,8 @@ final class ToolsE2ETests: XCTestCase {
                     let input: Agent.Input = c.images.isEmpty ? .text(c.prompt) : .messages([Message(role: .user, content: [.text(c.prompt)] + c.images.map { .image($0) })])
                     for try await ev in agent.stream(input) {
                         rec.event(ev)
-                        if case .interruptRaised(let intr) = ev { if await agent.resolve(approval: intr.id, .approve) { approved += 1 } }
+                        // Exactly what Engine.resolve(_:_:) does when the user taps Approve on the card.
+                        if case .approvalRequested(let req) = ev { if await agent.resolve(approval: req.id, .approve) { approved += 1 } }
                         if case .toolResultMessage(let m) = ev, let r = m.toolResults.first(where: { $0.name == c.tool }) { status = r.status.rawValue }
                         if case .result(let r) = ev { answer = r.message.text }
                     }
@@ -102,8 +103,8 @@ final class ToolsE2ETests: XCTestCase {
                 let outcome = "called=\(called) status=\(status)\(needsApproval ? " approved=\(approved)" : "") answer=\(c.judge(answer))"
                 if pass { passes += 1 }
                 try Self.append(Row(model: name, tool: c.tool, run: i, called: called, status: status, answer: answer, outcome: outcome, pass: pass,
-                                    seconds: Date().timeIntervalSince(t0), calls: calls, raw: cycles.first?.raw ?? ""), to: file)
-                print("TOOLS-E2E \(name) \(c.tool) run \(i): \(pass ? "PASS" : "FAIL") — \(outcome) · \(answer.prefix(90).replacingOccurrences(of: "\n", with: " "))")
+                                    seconds: Date().timeIntervalSince(t0), calls: calls, results: cycles.flatMap(\.results), raw: cycles.first?.raw ?? ""), to: file)
+                print("TOOLS-E2E \(name) \(c.tool) run \(i): \(pass ? "PASS" : "FAIL") — \(outcome) · \(answer.prefix(90).replacingOccurrences(of: "\n", with: " ")) · results=\(cycles.flatMap(\.results).map { $0.prefix(100) })")
             }
             summary.append("\(c.tool): \(passes)/\(runs)")
         }
