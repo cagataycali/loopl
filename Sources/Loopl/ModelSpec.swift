@@ -13,7 +13,7 @@ public struct ModelSpec: Sendable, Codable, Hashable, Identifiable {
     public var ctxNominal: Int            // max_position_embeddings
     public var ctxUsable8GB: Int          // what we budget on an 8 GB iPhone (RAM, not the model) — `ctxRecommended8GB` in the research catalog
     public var minRAMGB: Double
-    public var gated: Bool                // must be false for every catalog row
+    public var gated: Bool                // private/gated repo → needs the user's HF token (Settings › Hugging Face); false for every public row
     public var notes: String?
     public var revision: String? = nil
     /// GGUF: the single file to download (e.g. `Qwen3-1.7B-Q4_K_M.gguf`).

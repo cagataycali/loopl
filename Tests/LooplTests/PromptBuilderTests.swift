@@ -69,7 +69,12 @@ final class PromptBuilderTests: XCTestCase {
         let data = try Data(contentsOf: XCTUnwrap(url))
         let c = try JSONDecoder().decode(Catalog.self, from: data)
         XCTAssertGreaterThanOrEqual(c.models.count, 12)
-        XCTAssertTrue(c.models.allSatisfy { !$0.gated }, "catalog must list public repos only")
+        // Phase 5: the catalog may carry the owner's PRIVATE loopl models (gated → "sign in to Hugging Face", Bearer download);
+        // everything else, and always the default, stays public so a signed-out user is never blocked.
+        let gated = c.models.filter(\.gated)
+        XCTAssertTrue(gated.allSatisfy { $0.id.hasPrefix("loopl-") && $0.repo.hasPrefix("cagataydev/loopl-") },
+                      "only loopl v1 rows may be private: \(gated.map(\.id))")
+        XCTAssertFalse(try XCTUnwrap(c.defaultModel).gated, "default model must be public")
         XCTAssertEqual(c.defaultModelId, "qwen3-0.6b-4bit")
         XCTAssertEqual(c.models.first?.id, "qwen3-0.6b-4bit")
         XCTAssertEqual(c.defaultModel?.repo, "mlx-community/Qwen3-0.6B-4bit")
