@@ -67,6 +67,15 @@ import CoreGraphics
         #expect(MarkdownBody.blocks("Score: 1") == [.paragraph("Score: 1")])
     }
 
+    @Test func aBareNumberWithAPeriodIsProseNotAListItem() {
+        // Seen in History (IMPROVE #10 capture): the final answer "42." rendered as an empty "1." list row.
+        #expect(MarkdownBody.blocks("42.") == [.paragraph("42.")])
+        #expect(MarkdownBody.blocks("The answer is\n1081.") == [.paragraph("The answer is 1081.")])
+        #expect(MarkdownBody.blocks("1. ") == [.numbered([""])], "marker + space while the first word is still coming")
+        #expect(MarkdownBody.blocks("1. one\n2. two") == [.numbered(["one", "two"])])
+        #expect(MarkdownBody.blocks("42.", streaming: true) == [], "held back one token while streaming (marker prefix)")
+    }
+
     @Test func streamingPrefixesNeverReflowAnEarlierBlock() {
         // Every character-boundary prefix of a streamed answer: when one more character lands, every block but
         // the one being written must keep its kind (no paragraph turning into a list or a code card later).

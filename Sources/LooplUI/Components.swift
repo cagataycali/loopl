@@ -100,7 +100,11 @@ public struct MarkdownBody: View {
             // A marker may arrive before its first word while streaming ("- ", "1. "): it is already a list item,
             // not a one-character paragraph — otherwise the block re-flows (and the document moves) a token later.
             if let m = t.firstMatch(of: /^[-*•](?:\s+(.*))?$/) { flushPara(); if !numbers.isEmpty { flushLists() }; bullets.append(String(m.1 ?? "")); continue }
-            if let m = t.firstMatch(of: /^\d+[.)](?:\s+(.*))?$/) { flushPara(); if !bullets.isEmpty { flushLists() }; numbers.append(String(m.1 ?? "")); continue }
+            // "1. " (marker + space, content still to come) is a list item; a bare "42." or "1081." — a whole answer that is a
+            // number — is prose. The trimmed `t` cannot tell them apart, so the raw line's trailing whitespace decides.
+            if let m = t.firstMatch(of: /^\d+[.)](?:\s+(.*))?$/), m.1 != nil || line.last?.isWhitespace == true {
+                flushPara(); if !bullets.isEmpty { flushLists() }; numbers.append(String(m.1 ?? "")); continue
+            }
             flushLists(); para.append(t)
         }
         flushAll()

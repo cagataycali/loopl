@@ -8,7 +8,15 @@ import LooplUI
 /// The transcript is what is kept (what you saw), not the model's raw messages.
 struct SavedConversation: Codable, Identifiable, Hashable {
     enum Item: Codable, Hashable {
-        case user(String), assistant(String), tool(name: String, args: [String: JSONValue], result: String?, isError: Bool, ms: Double), note(String)
+        /// `images`: the pictures the user attached / a tool produced, kept as ≤ 512 px thumbnails (see `HistoryImage`)
+        /// so a reopened vision thread still shows what was sent. Optional + decodeIfPresent — 0.1 files decode as nil.
+        case user(String, images: [ImageBlock]?), assistant(String), tool(name: String, args: [String: JSONValue], result: String?, isError: Bool, ms: Double, images: [ImageBlock]?), note(String)
+
+        /// Text-only spellings (fixtures, tests, the pre-images call sites).
+        static func user(_ s: String) -> Item { .user(s, images: nil) }
+        static func tool(name: String, args: [String: JSONValue], result: String?, isError: Bool, ms: Double) -> Item {
+            .tool(name: name, args: args, result: result, isError: isError, ms: ms, images: nil)
+        }
     }
     var id: UUID
     var title: String
@@ -30,9 +38,9 @@ struct SavedConversation: Codable, Identifiable, Hashable {
     static func from(_ t: Transcript, id: UUID, modelName: String?, editedAt: Date? = nil, modelId: String? = nil, tools: [ToolSpec]? = nil) -> SavedConversation? {
         let items: [Item] = t.items.compactMap {
             switch $0.kind {
-            case .user(let s): .user(s)
+            case .user(let s): .user(s, images: HistoryImage.thumbnails($0.images))
             case .assistant(let s): .assistant(s)
-            case .toolUse(let c, let r): .tool(name: c.name, args: c.input, result: r?.content, isError: r?.isError ?? false, ms: r?.durationMs ?? 0)
+            case .toolUse(let c, let r): .tool(name: c.name, args: c.input, result: r?.content, isError: r?.isError ?? false, ms: r?.durationMs ?? 0, images: HistoryImage.thumbnails($0.images))
             case .note(let s): .note(s)
             case .approval(let req, let d):
                 switch d {
@@ -44,7 +52,7 @@ struct SavedConversation: Codable, Identifiable, Hashable {
             }
         }
         guard items.contains(where: { if case .user = $0 { return true }; return false }) else { return nil }
-        let first = items.compactMap { if case .user(let s) = $0 { return s }; return nil }.first ?? "Conversation"
+        let first = items.compactMap { if case .user(let s, _) = $0 { return s }; return nil }.first ?? "Conversation"
         return SavedConversation(id: id, title: String(first.prefix(60)), updated: Date(), modelName: modelName, items: items, editedAt: editedAt, modelId: modelId, tools: tools)
     }
 
@@ -59,9 +67,9 @@ struct SavedConversation: Codable, Identifiable, Hashable {
 
     /// Replace the user message at `index` (must be a `.user` item) and drop everything after it.
     func replacing(userAt index: Int, with text: String) -> SavedConversation? {
-        guard items.indices.contains(index), case .user = items[index] else { return nil }
+        guard items.indices.contains(index), case .user(_, let images) = items[index] else { return nil }
         var c = truncated(before: index)
-        c.items.append(.user(text))
+        c.items.append(.user(text, images: images))
         if index == 0 { c.title = String(text.prefix(60)) }
         return c
     }
@@ -72,9 +80,9 @@ struct SavedConversation: Codable, Identifiable, Hashable {
         var messages: [Message] = []
         for item in items {
             switch item {
-            case .user(let s): messages.append(.user(s))
+            case .user(let s, _): messages.append(.user(s))     // the dataset schema is text-only; thumbnails are not training data
             case .assistant(let s): messages.append(.assistant(s))
-            case .tool(let name, let args, let result, let isError, let ms):
+            case .tool(let name, let args, let result, let isError, let ms, _):
                 guard let result else { continue }
                 let use = ToolUse(name: name, input: args)
                 messages.append(.assistant(text: "", toolUses: [use]))
@@ -89,16 +97,36 @@ struct SavedConversation: Codable, Identifiable, Hashable {
         var t = Transcript()
         t.items = items.map {
             switch $0 {
-            case .user(let s): return TranscriptItem(kind: .user(s))
+            case .user(let s, let images): return TranscriptItem(kind: .user(s), images: images ?? [])
             case .assistant(let s): return TranscriptItem(kind: .assistant(s))
-            case .tool(let name, let args, let result, let isError, let ms):
+            case .tool(let name, let args, let result, let isError, let ms, let images):
                 let use = ToolUse(name: name, input: args)
-                return TranscriptItem(kind: .toolUse(use, result: result.map { ToolResult(toolUseId: use.toolUseId, name: name, status: isError ? .error : .success, content: $0, durationMs: ms) }))
+                return TranscriptItem(kind: .toolUse(use, result: result.map { ToolResult(toolUseId: use.toolUseId, name: name, status: isError ? .error : .success, content: $0, durationMs: ms) }), images: images ?? [])
             case .note(let s): return TranscriptItem(kind: .note(s))
             }
         }
         t.isRunning = false
         return t
+    }
+}
+
+/// Pictures in saved conversations: a ≤ 512 px JPEG per image (≈ 40–120 KB) so History stays small and the
+/// reopened thread still shows what was sent. Nothing is ever upscaled; already-small PNGs keep their bytes.
+enum HistoryImage {
+    static let maxEdge: CGFloat = 512
+    static let maxStoredBytes = 400_000
+
+    static func thumbnails(_ images: [ImageBlock]) -> [ImageBlock]? {
+        guard !images.isEmpty else { return nil }
+        return images.compactMap(thumbnail)
+    }
+
+    static func thumbnail(_ b: ImageBlock) -> ImageBlock? {
+        if b.data.count <= maxStoredBytes, let w = b.width, let h = b.height, max(w, h) <= Int(maxEdge) { return b }
+        guard let ui = UIImage(data: b.data) else { return nil }
+        let scaled = ui.normalizedOrientation().downscaled(maxEdge: maxEdge)
+        guard let jpeg = scaled.jpegData(compressionQuality: 0.8) else { return nil }
+        return ImageBlock(data: jpeg, mime: "image/jpeg", width: Int(scaled.size.width * scaled.scale), height: Int(scaled.size.height * scaled.scale), alt: b.alt)
     }
 }
 
@@ -272,9 +300,9 @@ struct HistoryList: View {
     private func copyTranscript(_ c: SavedConversation) {
         let text = c.items.compactMap { item -> String? in
             switch item {
-            case .user(let s): "You: \(s)"
+            case .user(let s, let imgs): (imgs?.isEmpty == false ? "You: [\(imgs!.count) image\(imgs!.count == 1 ? "" : "s")] " : "You: ") + s
             case .assistant(let s): "loopl: \(s)"
-            case .tool(let n, _, let r, _, _): "[\(n)] \(r ?? "…")"
+            case .tool(let n, _, let r, _, _, _): "[\(n)] \(r ?? "…")"
             case .note: nil
             }
         }.joined(separator: "\n\n")
