@@ -58,17 +58,21 @@ public enum Readiness: Hashable, Sendable {
     case idle
     case downloading(ModelSpec, done: Int64, total: Int64)
     case loading(ModelSpec, progress: Double)
+    /// Re-fetching the model's small files (tokenizer/template/config) from the Hub after a tokenizer load error — weights stay.
+    case repairing(ModelSpec)
     case ready(ModelSpec)
     case failed(ModelSpec?, String)
 
     public var spec: ModelSpec? {
         switch self {
         case .idle: nil
-        case .downloading(let s, _, _), .loading(let s, _), .ready(let s): s
+        case .downloading(let s, _, _), .loading(let s, _), .repairing(let s), .ready(let s): s
         case .failed(let s, _): s
         }
     }
-    public var isBusy: Bool { if case .downloading = self { return true }; if case .loading = self { return true }; return false }
+    public var isBusy: Bool {
+        switch self { case .downloading, .loading, .repairing: true; default: false }
+    }
     public var isFailed: Bool { if case .failed = self { return true }; return false }
 }
 
@@ -193,7 +197,11 @@ public final class Engine {
         await load(spec)
     }
 
-    public func load(_ spec: ModelSpec) async {
+    public func load(_ spec: ModelSpec) async { await load(spec, repaired: false) }
+
+    /// Loads `spec`; when the load fails ON THE TOKENIZER FILES (unknown tokenizer_class, missing chat template) and the
+    /// model came from the Hub, refresh its small files once (`ModelStore.repairFiles`, weights untouched) and retry.
+    private func load(_ spec: ModelSpec, repaired: Bool) async {
         lastError = nil
         let previous = loadedModel
         readiness = .loading(spec, progress: 0)
@@ -217,6 +225,27 @@ public final class Engine {
             if previous != nil || !transcript.items.isEmpty { transcript.note("Switched to \(spec.name)") }
             haptics.emit(.modelLoaded)
         } catch {
+            if !repaired, spec.isDownloadable, spec.runtime == .mlx, TokenizerFiles.isTokenizerError(error),
+               !settings.offline, !NetworkPolicy.isOffline {
+                // The files next to the weights are wrong for this app (e.g. a repo exported with transformers 5 that has
+                // since been fixed on the Hub). Refresh just those — a few KB — and try once more. Never the weights.
+                readiness = .repairing(spec)
+                transcript.note("Repairing \(spec.name)'s model files…")
+                do {
+                    let changed = try await store.repairFiles(spec)
+                    if !changed.isEmpty { await load(spec, repaired: true); return }
+                    lastError = nil
+                    readiness = .failed(spec, "\(spec.name) can't load: \(error.localizedDescription). Its files match Hugging Face, so the repo itself needs fixing.")
+                } catch let repairError {
+                    readiness = .failed(spec, TokenizerFiles.repairMessage(for: spec.name) + " Repair failed: \(repairError.localizedDescription)")
+                }
+                haptics.emit(.error)
+                return
+            }
+            if TokenizerFiles.isTokenizerError(error), spec.isDownloadable, spec.runtime == .mlx {
+                readiness = .failed(spec, TokenizerFiles.repairMessage(for: spec.name) + " (\(error.localizedDescription))")
+                lastError = nil; haptics.emit(.error); return
+            }
             // A drive pulled mid-load reads as a missing file: say which drive, not "No such file".
             let reason = store.storage.location(of: spec.id).isExternal && store.storage.directory(for: spec) == nil
                 ? "\(store.locationName(spec)) was disconnected while loading \(spec.name)."

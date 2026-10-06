@@ -58,6 +58,8 @@ let spec = try await hub.resolve(hits[0].id)                 // runtime, size, c
 
 `ModelSpec.minRAMGB` and `ctxUsable8GB` are what the app checks before a download. The bundled `Catalog` is listed on [Models](../models.md).
 
+A repo exported with transformers 5 names a `tokenizer_class` the Swift tokenizer has never heard of (`Qwen3_5Tokenizer`). The MLX runtime loads it anyway — the BPE in `tokenizer.json` is the same — and when a load still fails on those files, `HFDownloader.repairSmallFiles` refreshes only the small files whose git blob hash differs from the Hub's; the weights stay. `TokenizerFiles.audit(dir)` tells you beforehand.
+
 ## Speed
 
 | Device | Model | tok/s |

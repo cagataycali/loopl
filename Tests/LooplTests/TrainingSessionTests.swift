@@ -19,7 +19,7 @@ final class TrainingSessionTests: XCTestCase {
         func paths(_ method: String) -> [String] { lock.withLock { requests.filter { $0.httpMethod == method }.map { $0.url!.path } } }
     }
 
-    static let script = Data("# /// script\nSCRIPT_VERSION = \"1.0.2\"\nprint('hi')\n".utf8)
+    static let script = Data("# /// script\nSCRIPT_VERSION = \"1.0.3\"\nprint('hi')\n".utf8)
     static let jobJSON = #"{"type":"job","id":"6ac4711f404719ba3765bbc4","createdAt":"2026-10-06T03:55:00Z","dockerImage":"ghcr.io/astral-sh/uv:python3.12-bookworm","command":["bash","-lc","x"],"flavor":"a10g-small","status":{"stage":"RUNNING","message":null},"labels":{}}"#
     static let doneJSON = jobJSON.replacingOccurrences(of: "RUNNING", with: "COMPLETED")
     static func sse(_ lines: [String]) -> String {
@@ -39,7 +39,7 @@ final class TrainingSessionTests: XCTestCase {
         t.on("GET", "/api/jobs/cagataydev/6ac4711f404719ba3765bbc4", Self.doneJSON)
         t.on("GET", "/api/jobs/cagataydev/6ac4711f404719ba3765bbc4/logs", Self.sse(TrainingTests.smokeJobLog))
         let s = makeSession(t)
-        XCTAssertEqual(s.scriptVersion, "1.0.2")
+        XCTAssertEqual(s.scriptVersion, "1.0.3")
         let id = try await s.launch(now: Date(timeIntervalSince1970: 1_791_000_000))
         XCTAssertEqual(id, "6ac4711f404719ba3765bbc4")
         XCTAssertEqual(t.paths("POST"), ["/api/datasets/cagataydev/loopl-app-smoke-data/commit/main", "/api/jobs/cagataydev"], "script first, then the job")

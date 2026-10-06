@@ -131,7 +131,7 @@ struct ChatView: View {
     private var placeholder: String {
         switch engine.readiness {
         case .ready: engine.canSeeImages ? "Message or photo" : "Message"
-        case .downloading, .loading: "Model is getting ready…"
+        case .downloading, .loading, .repairing: "Model is getting ready…"
         case .failed: "Pick a model to start"
         case .idle: "No model loaded"
         }
@@ -140,7 +140,7 @@ struct ChatView: View {
     private var emptyHint: String {
         switch engine.readiness {
         case .ready(let s): "**\(s.name)** is ready. Everything runs on this device."
-        case .downloading, .loading: "Getting your model ready — the first launch downloads it once."
+        case .downloading, .loading, .repairing: "Getting your model ready — the first launch downloads it once."
         case .failed: "Pick a model in **Models** to get started."
         case .idle: "Runs on this \(LooplDesign.deviceName). Nothing leaves it."
         }
@@ -156,6 +156,8 @@ struct ChatView: View {
                          action: ("Pause", { store.pause(spec) }))   // the first-launch download could not be stopped from here
         case .loading(let spec, let p):
             ReadinessRow(title: "Loading \(spec.name)", detail: p > 0 && p < 1 ? "\(Int(p * 100))%" : "warming up", progress: p > 0 ? p : nil)
+        case .repairing(let spec):
+            ReadinessRow(title: "Repairing \(spec.name)", detail: "refreshing its tokenizer files from Hugging Face · weights stay", progress: nil)
         case .failed(let spec, let msg):
             VStack(alignment: .leading, spacing: 8) {
                 Label(msg, systemImage: LooplDesign.iconWarning).font(.footnote).foregroundStyle(.secondary)

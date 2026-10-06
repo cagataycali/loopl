@@ -21,7 +21,26 @@ public struct HFDownloader: Sendable {
         public var path: String
         public var size: Int64
         public var type: String
-        public init(path: String, size: Int64, type: String) { self.path = path; self.size = size; self.type = type }
+        /// Git blob hash of a non-LFS file (the tree API's `oid`; LFS files report their pointer's oid instead and carry
+        /// the real sha256 under `lfs`). Compared with `TokenizerFiles.gitBlobSHA1` to see whether a small file changed.
+        public var oid: String?
+        /// Present for LFS-stored files (weights, and tokenizer.json above ~10 MB): `oid` is the content's SHA-256.
+        public var lfs: LFS?
+        public struct LFS: Sendable, Hashable, Decodable {
+            public var oid: String
+            public var size: Int64?
+            public init(oid: String, size: Int64? = nil) { self.oid = oid; self.size = size }
+        }
+        public init(path: String, size: Int64, type: String, oid: String? = nil, lfs: LFS? = nil) {
+            self.path = path; self.size = size; self.type = type; self.oid = oid; self.lfs = lfs
+        }
+        /// Does the local file at `url` hold exactly what the Hub has? LFS → SHA-256 of the content; plain git blob →
+        /// `TokenizerFiles.gitBlobSHA1`; no hash from the API → size only.
+        public func matches(_ url: URL) -> Bool {
+            if let lfs { return TokenizerFiles.sha256(contentsOf: url) == lfs.oid.lowercased() }
+            if let oid { return TokenizerFiles.gitBlobSHA1(contentsOf: url) == oid.lowercased() }
+            return ((try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? Int64) == size
+        }
     }
 
     public enum DLError: LocalizedError, Equatable {

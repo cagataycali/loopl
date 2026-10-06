@@ -114,6 +114,21 @@ public final class ModelStore {
         states[spec.id]?.isDownloaded == true ? storage.directory(for: spec) : nil
     }
 
+    /// Re-fetch the SMALL files (tokenizer, templates, configs) of a downloaded MLX model from the Hub when they differ
+    /// from the Hub's current version — the weights are never downloaded again. This is how a model whose repo was
+    /// fixed after the download (tokenizer_class "Qwen3_5Tokenizer" → Qwen2Tokenizer, 2026-10-06) heals in place.
+    /// Returns the file names that changed; throws `HFDownloader.DLError` (offline, denied, http).
+    @discardableResult
+    public func repairFiles(_ spec: ModelSpec) async throws -> [String] {
+        guard spec.runtime == .mlx, let dir = localDirectory(spec) else { return [] }
+        let dl = HFDownloader(token: HFAccount.shared.provider)
+        let changed = try await dl.repairSmallFiles(repo: spec.repo, revision: spec.revision ?? "main", in: dir)
+        log.info("repair \(spec.id, privacy: .public): \(changed.isEmpty ? "all small files current" : changed.joined(separator: ", "), privacy: .public)")
+        storage.diagnostics.log("\(spec.id): repaired small files \(changed)")
+        refresh()
+        return changed
+    }
+
     /// Human label for where a model lives ("This iPhone" / the drive's name).
     public func locationName(_ spec: ModelSpec) -> String { storage.name(of: storage.location(of: spec.id).volumeId) }
 
