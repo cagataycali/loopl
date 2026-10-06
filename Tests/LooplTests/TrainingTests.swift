@@ -69,10 +69,23 @@ final class TrainingTests: XCTestCase {
         XCTAssertEqual(capMinutes, small.capSeconds / 60)
     }
 
+    /// Owner decision (2026-10-06): a fresh round trains from the PUBLIC loopl checkpoint of the size, not stock Qwen —
+    /// `--base cagataydev/loopl-<size>`; the Qwen root stays the lineage root for sizes and estimates.
+    func testFreshRoundStartsFromTheLooplCheckpoint() {
+        for b in TrainingBase.allCases {
+            XCTAssertEqual(b.trainingRepo, "cagataydev/loopl-\(b.rawValue)")
+            XCTAssertTrue(b.hubId.hasPrefix("Qwen/Qwen3.5-"), "root stays Qwen for size/estimate logic")
+            XCTAssertEqual(TrainingPlan(dataset: "me/d", conversations: 10, base: b).baseArgument, b.trainingRepo)
+            XCTAssertTrue(b.label.hasPrefix("loopl "), b.label)
+        }
+        let tuned = TrainingTunedBase(repo: "me/loopl-mine-4bit", bf16Repo: "me/loopl-mine", round: 1, size: .b2)
+        XCTAssertEqual(TrainingPlan(dataset: "me/d", conversations: 10, base: .b0_8, tunedBase: tuned).baseArgument, "me/loopl-mine", "a tuned model still wins")
+    }
+
     func testPlanSummaryReadsInPlainWords() {
         let fresh = TrainingPlan(dataset: "me/loopl-app-conversations", conversations: 191, base: .b0_8)
         let s = fresh.summary(user: "me")
-        XCTAssertTrue(s.hasPrefix("Starts from Qwen3.5 0.8B and learns from your 191 conversations in up to 3 passes, keeping the one that scores best"), s)
+        XCTAssertTrue(s.hasPrefix("Starts from loopl 0.8B and learns from your 191 conversations in up to 3 passes, keeping the one that scores best"), s)
         XCTAssertTrue(s.contains("A small LoRA adapter is trained and merged in on an A10G 24 GB at Hugging Face"), s)
         XCTAssertTrue(TrainingPlan(dataset: "me/d", conversations: 10, base: .b0_8, flavor: .t4Small).summary(user: "me").contains("on a T4 16 GB"))
         XCTAssertTrue(TrainingPlan(dataset: "me/d", conversations: 10, base: .b0_8, flavor: .h200).summary(user: "me").contains("on an H200"))
@@ -91,7 +104,7 @@ final class TrainingTests: XCTestCase {
         XCTAssertEqual(spec.dockerImage, "ghcr.io/astral-sh/uv:python3.12-bookworm")
         XCTAssertEqual(spec.command, ["bash", "-lc",
             "set -euo pipefail; curl -fsSL -H \"Authorization: Bearer $HF_TOKEN\" \"$LOOPL_SCRIPT_URL\" -o /tmp/loopl_sft.py && exec uv run /tmp/loopl_sft.py \"$@\"",
-            "loopl", "--dataset", "cagataydev/loopl-app-smoke-data", "--base", "0.8b", "--out", "cagataydev/loopl-app-smoke", "--epochs", "2", "--method", "lora", "--expect-vision"])
+            "loopl", "--dataset", "cagataydev/loopl-app-smoke-data", "--base", "cagataydev/loopl-0.8b", "--out", "cagataydev/loopl-app-smoke", "--epochs", "2", "--method", "lora", "--expect-vision"])
         XCTAssertEqual(spec.environment, ["LOOPL_SCRIPT_URL": "https://huggingface.co/datasets/cagataydev/loopl-app-smoke-data/resolve/main/train/loopl_sft.py"])
         XCTAssertEqual(spec.secrets, ["HF_TOKEN": "hf_secret"])
         XCTAssertEqual(spec.flavor, "a10g-small")
