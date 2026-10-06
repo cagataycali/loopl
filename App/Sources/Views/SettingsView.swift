@@ -53,8 +53,9 @@ struct SettingsView: View {
                     } label: { Label("Appearance", systemImage: "circle.lefthalf.filled") }
                     Toggle(isOn: $settings.haptics) { Label("Haptics", systemImage: "hand.tap") }
                     Toggle("Show performance details", isOn: $settings.showPerformance)
+                    Toggle("Show GGUF builds", isOn: $settings.showGGUF).accessibilityIdentifier("settings-show-gguf")
                 } header: { Text("Look & feel") } footer: {
-                    Text("Haptics: a soft tap when you send, when a tool starts and finishes, when a model is loaded. Performance: a quiet line under the conversation — tokens per second, time to first token, context used.")
+                    Text("Haptics: a soft tap when you send, when a tool starts and finishes, when a model is loaded. Performance: a quiet line under the conversation — tokens per second, time to first token, context used. GGUF: llama.cpp builds (text only) in the Models tab, next to the MLX models.")
                 }
 
                 Section {
