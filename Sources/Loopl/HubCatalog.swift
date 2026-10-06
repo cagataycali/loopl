@@ -42,14 +42,18 @@ public struct HubCatalog: Sendable {
         public var author: String { id.split(separator: "/").first.map(String.init) ?? "" }
         public var name: String { id.split(separator: "/").last.map(String.init) ?? id }
         /// Hub search also returns ASR/TTS/embedding/vision checkpoints; chat needs a text generator.
+        /// Vision-language repos (image-text-to-text) pass when loopl can run them (MLX only).
         public var isTextGeneration: Bool {
+            if isVision { return kind == .mlx }
             if let pipeline, pipeline != "text-generation" { return false }
             let t = (modelType ?? "").lowercased(), n = name.lowercased()
-            for bad in ["asr", "tts", "embedding", "rerank", "_vl", "vl-", "-vl", "clip", "whisper", "omni", "audio", "speech", "mtp", "_mtp"] {
+            for bad in ["asr", "tts", "embedding", "rerank", "clip", "whisper", "omni", "audio", "speech", "mtp", "_mtp"] {
                 if t.contains(bad) || n.contains(bad) { return false }
             }
             return true
         }
+        /// A vision-language checkpoint (`HubCatalog.isVision`).
+        public var isVision: Bool { HubCatalog.isVision(repo: id, pipeline: pipeline, modelType: modelType) }
     }
 
     public struct File: Sendable, Hashable, Codable {
@@ -97,6 +101,8 @@ public struct HubCatalog: Sendable {
         }
 
         public var kind: Kind { files.contains(where: \.isGGUF) && !files.contains(where: { $0.path.hasSuffix(".safetensors") }) ? .gguf : .mlx }
+        /// A vision-language checkpoint (`HubCatalog.isVision`).
+        public var isVision: Bool { HubCatalog.isVision(repo: id, pipeline: pipeline, modelType: modelType) }
         public var ggufFiles: [File] { files.filter(\.isGGUF).filter { !$0.path.contains("/") }.sorted { $0.size < $1.size } }
         public var mlxFiles: [File] { files.filter { HFDownloader.wanted(.init(path: $0.path, size: $0.size, type: "file")) } }
         public var mlxBytes: Int64 { mlxFiles.reduce(0) { $0 + $1.size } }
@@ -108,7 +114,7 @@ public struct HubCatalog: Sendable {
     }
 
     public enum HubError: LocalizedError {
-        case offline, http(Int, String), gated(String), noWeights(String), badJSON(String)
+        case offline, http(Int, String), gated(String), noWeights(String), badJSON(String), visionGGUF(String)
         public var errorDescription: String? {
             switch self {
             case .offline: "offline mode is on — browsing Hugging Face needs the network (models already on this device still load)"
@@ -116,6 +122,7 @@ public struct HubCatalog: Sendable {
             case .gated(let r): "\(r) is gated — loopl downloads public models only"
             case .noWeights(let r): "\(r) has no MLX safetensors and no .gguf file loopl can run"
             case .badJSON(let p): "unexpected response for \(p)"
+            case .visionGGUF(let r): "\(r) is a vision model in GGUF — loopl runs vision models through MLX only; pick an mlx-community build"
             }
         }
     }
@@ -169,6 +176,30 @@ public struct HubCatalog: Sendable {
             return .init(family: .generic, verified: false, label: modelType ?? "generic")
         }
         return .init(family: .generic, verified: false, label: modelType?.isEmpty == false ? modelType! : "unknown")
+    }
+
+    /// Architectures mlx-swift-lm 3.32.3's MLXVLM factory can instantiate (its `VLMTypeRegistry`).
+    public static let visionModelTypes: Set<String> = [
+        "qwen2_vl", "qwen2_5_vl", "qwen3_vl", "qwen3_vl_moe", "qwen3_5", "qwen3_5_moe", "gemma3", "gemma4", "idefics3", "smolvlm",
+        "fastvlm", "llava_qwen2", "pixtral", "paligemma", "mistral3", "lfm2_vl", "glm_ocr",
+    ]
+
+    /// Does this checkpoint carry a vision tower loopl can drive? `pipeline_tag` is the Hub's own
+    /// word (`image-text-to-text`); `model_type` is config.json; the name catches un-tagged mirrors (`…-VL-…`).
+    /// `qwen3_5` is natively image-text-to-text; its `*-Text` / `qwen3_5_text` exports are text-only.
+    public static func isVision(repo: String, pipeline: String?, modelType: String?) -> Bool {
+        let t = (modelType ?? "").lowercased(), r = repo.lowercased()
+        if t == "qwen3_5_text" || r.hasSuffix("-text") || r.contains("-text-") { return false }
+        if let pipeline, pipeline == "image-text-to-text" || pipeline == "video-text-to-text" { return true }
+        if !t.isEmpty, visionModelTypes.contains(t) { return true }
+        let name = r.split(separator: "/").last.map(String.init) ?? r
+        return name.contains("-vl-") || name.hasSuffix("-vl") || name.contains("_vl_") || name.contains("smolvlm") || name.contains("fastvlm")
+    }
+
+    /// Weights the fit badge must budget. A vision tower adds its own activations and the image
+    /// tokens' KV (≤ 1280 tokens per picture on Qwen3-VL at the default budget) ≈ +15 % over text.
+    public static func fitBytes(weights: Int64, vision: Bool) -> Int64 {
+        vision ? Int64(Double(weights) * 1.15) : weights
     }
 
     /// Quantization from the repo name when config.json does not say ("…-4bit", "…-8bit", "…-bf16" → 16).
@@ -293,16 +324,19 @@ public struct HubCatalog: Sendable {
         let guess = detectFamily(repo: repo.id, modelType: config?.modelType ?? repo.modelType)
         var id = "hub:" + repo.id.lowercased()
         if let file { id += ":" + file.path.lowercased() }
+        let vision = repo.isVision || (config.map { isVision(repo: repo.id, pipeline: repo.pipeline, modelType: $0.modelType) } ?? false)
+        if vision, kind == .gguf { throw HubError.visionGGUF(repo.id) }
         var notes = "From Hugging Face · \(guess.label)"
+        if vision { notes += " · vision" }
         if !guess.verified { notes += " · tool calls unverified" }
         let qwen3 = repo.id.lowercased().contains("qwen3")
         return ModelSpec(id: id, name: name.replacingOccurrences(of: "_", with: " "), repo: repo.id,
                          runtime: kind.runtime, family: guess.family, paramsB: params ?? 0, sizeBytes: bytes,
                          ctxNominal: ctx, ctxUsable8GB: ctxUsable8GB(paramsB: params, ctxNominal: ctx),
-                         minRAMGB: (Double(bytes) * 1.3 / 1e9).rounded(.up), gated: repo.gated,
+                         minRAMGB: (Double(fitBytes(weights: bytes, vision: vision)) * 1.3 / 1e9).rounded(.up), gated: repo.gated,
                          notes: notes, revision: nil, file: file?.path, temperature: nil,
                          chatTemplateKwargs: qwen3 ? ["enable_thinking": .bool(false)] : nil,
-                         toolsUnverified: guess.verified ? nil : true)
+                         toolsUnverified: guess.verified ? nil : true, vision: vision ? true : nil)
     }
 
     // MARK: - Network

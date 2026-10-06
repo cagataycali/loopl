@@ -14,7 +14,9 @@ public struct TranscriptItem: Identifiable, Sendable, Hashable {
     }
     public var id = UUID()
     public var kind: Kind
-    public init(id: UUID = UUID(), kind: Kind) { self.id = id; self.kind = kind }
+    /// Pictures attached to this item — a user turn's attachments, or a tool's produced images (`ToolResult.images`).
+    public var images: [ImageBlock] = []
+    public init(id: UUID = UUID(), kind: Kind, images: [ImageBlock] = []) { self.id = id; self.kind = kind; self.images = images }
 }
 
 public struct Transcript: Sendable, Hashable {
@@ -32,7 +34,7 @@ public struct Transcript: Sendable, Hashable {
 
     public init() {}
 
-    public mutating func user(_ text: String) { items.append(.init(kind: .user(text))); isRunning = true }
+    public mutating func user(_ text: String, images: [ImageBlock] = []) { items.append(.init(kind: .user(text), images: images)); isRunning = true }
     public mutating func note(_ text: String) { items.append(.init(kind: .note(text))) }
     public mutating func clear() { items.removeAll(); metrics = Metrics(); cycle = 0; streamingIndex = nil; reasoningIndex = nil; isRunning = false; lastResult = nil }
 
@@ -84,9 +86,9 @@ public struct Transcript: Sendable, Hashable {
         case .toolResult(let r):
             if let idx = items.lastIndex(where: { if case .toolUse(let u, nil) = $0.kind { return u.toolUseId == r.toolUseId }; return false }),
                case .toolUse(let u, _) = items[idx].kind {
-                items[idx].kind = .toolUse(u, result: r)
+                items[idx].kind = .toolUse(u, result: r); items[idx].images = r.images
             } else {
-                items.append(.init(kind: .toolUse(ToolUse(toolUseId: r.toolUseId, name: r.name, input: [:]), result: r)))
+                items.append(.init(kind: .toolUse(ToolUse(toolUseId: r.toolUseId, name: r.name, input: [:]), result: r), images: r.images))
             }
         case .toolResultMessage: break
         case .forceStop(let why): items.append(.init(kind: .note("stopped: \(why)")))
