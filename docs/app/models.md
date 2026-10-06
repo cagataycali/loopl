@@ -32,7 +32,7 @@ Paste a Hugging Face token in **Settings › Hugging Face** (read is enough to d
 
 ## loopl v1
 
-`loopl-0.8b`, `loopl-2b` and `loopl-4b` — Qwen3.5 post-trained on loopl's own tools and docs — are in the catalog as MLX 4‑bit (with vision) and GGUF (text). They are **gated**: the row asks you to sign in, and downloads with your token once you have access. loopl's identity prompt is sent first for these models (Settings › System prompt shows it).
+`loopl-0.8b`, `loopl-2b` and `loopl-4b` — Qwen3.5 post-trained on loopl's own tools and docs — are in the catalog as MLX 4‑bit (with vision) and GGUF (text). They are **gated**: the row asks you to sign in, and downloads with your token once you have access. Their identity is in the weights — the app sends only your own system prompt, to every model.
 
 ## Vision, honestly
 
