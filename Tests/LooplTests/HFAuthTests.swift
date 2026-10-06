@@ -197,3 +197,71 @@ final class HFAuthLiveTests: XCTestCase {
         catch let e as HubCatalog.HubError { XCTAssertEqual(e, .signInRequired(repo)) }
     }
 }
+
+final class HFAccountTests: XCTestCase {
+    func testTokenStoreRoundTripAndProvider() {
+        let acct = HFAccount(store: MemoryTokenStore())
+        XCTAssertNil(acct.token); XCTAssertFalse(acct.isSignedIn)
+        XCTAssertNil(HFDownloader(token: acct.provider).request(URL(string: "https://huggingface.co/api/models/a/b")!).value(forHTTPHeaderField: "Authorization"))
+        // A token already in the store (previous launch) is picked up lazily.
+        let acct2 = HFAccount(store: MemoryTokenStore("hf_abcdefghijklmnopqrstuvwxyz"))
+        XCTAssertEqual(acct2.token, "hf_abcdefghijklmnopqrstuvwxyz")
+        XCTAssertEqual(HubCatalog(token: acct2.provider).request(URL(string: "https://huggingface.co/api/models?author=x")!).value(forHTTPHeaderField: "Authorization"), "Bearer hf_abcdefghijklmnopqrstuvwxyz")
+        acct2.signOut()
+        XCTAssertNil(acct2.token)
+        XCTAssertNil(HubCatalog(token: acct2.provider).request(URL(string: "https://huggingface.co/x")!).value(forHTTPHeaderField: "Authorization"), "Remove goes anonymous on the next request")
+    }
+
+    func testSignInRejectsNonTokensBeforeAnyNetwork() async {
+        let acct = HFAccount(store: MemoryTokenStore())
+        for bad in ["", "hello", "hf_short", "hf_ with space in it long enough"] {
+            do { try await acct.signIn(bad); XCTFail(bad) }
+            catch let e as HFAccount.AccountError { XCTAssertEqual(e, .notAToken, bad) }
+            catch { XCTFail("\(error)") }
+        }
+        XCTAssertNil(acct.token)
+        XCTAssertTrue(HFAccount.looksLikeToken("hf_abcdefghijklmnopqrstuvwxyz"))
+    }
+
+    func testWhoamiClassicWriteToken() throws {
+        let data = Data(#"{"type":"user","id":"6498ef778fadf0ae7639b982","name":"cagataydev","fullname":"Cagatay Cali","avatarUrl":"https://cdn-avatars.huggingface.co/v1/production/uploads/x/y.jpeg","auth":{"type":"access_token","accessToken":{"displayName":"mac-mini","role":"write","createdAt":"2026-03-02T02:23:02.604Z"}}}"#.utf8)
+        let who = try HFAccount.parseWhoami(data)
+        XCTAssertEqual(who.name, "cagataydev")
+        XCTAssertEqual(who.fullname, "Cagatay Cali")
+        XCTAssertEqual(who.avatarURL?.host, "cdn-avatars.huggingface.co")
+        XCTAssertFalse(who.isOrg)
+        XCTAssertEqual(who.tokenName, "mac-mini")
+        XCTAssertEqual(who.role, "write")
+        XCTAssertEqual(who.scopes, [.read, .write, .jobs])
+    }
+
+    func testWhoamiReadTokenAndFineGrained() throws {
+        let read = try HFAccount.parseWhoami(Data(#"{"type":"user","name":"u","auth":{"accessToken":{"displayName":"phone","role":"read"}}}"#.utf8))
+        XCTAssertEqual(read.scopes, [.read])
+        let fg = try HFAccount.parseWhoami(Data(#"{"type":"user","name":"u","avatarUrl":"/avatars/abc.svg","auth":{"accessToken":{"displayName":"fg","role":"fineGrained","fineGrained":{"global":["inference.serverless.write","jobs.write"],"scoped":[{"entity":{"type":"user","name":"u"},"permissions":["repo.content.read","repo.write"]}]}}}}"#.utf8))
+        XCTAssertEqual(fg.scopes, [.read, .write, .jobs])
+        XCTAssertEqual(fg.avatarURL?.absoluteString, "https://huggingface.co/avatars/abc.svg", "relative avatar paths are made absolute")
+        let fgRead = try HFAccount.parseWhoami(Data(#"{"type":"user","name":"u","auth":{"accessToken":{"role":"fineGrained","fineGrained":{"global":[],"scoped":[{"permissions":["repo.content.read"]}]}}}}"#.utf8))
+        XCTAssertEqual(fgRead.scopes, [.read])
+        XCTAssertEqual(Array(fg.scopes).sorted(), [.read, .write, .jobs])
+    }
+
+    func testWhoamiBadJSON() {
+        XCTAssertThrowsError(try HFAccount.parseWhoami(Data("{}".utf8)))
+        XCTAssertThrowsError(try HFAccount.parseWhoami(Data("nope".utf8)))
+    }
+}
+
+extension HFAuthLiveTests {
+    func testLiveWhoami() async throws {
+        guard let token = HFAuthLiveTests.token else { throw XCTSkip("LOOPL_HF_LIVE=1") }
+        let acct = HFAccount(store: MemoryTokenStore())
+        let who = try await acct.signIn(token)
+        XCTAssertFalse(who.name.isEmpty)
+        XCTAssertTrue(who.scopes.contains(.read))
+        XCTAssertEqual(acct.token, token)
+        print("LIVE whoami name=\(who.name) role=\(who.role ?? "-") scopes=\(who.scopes.sorted().map(\.rawValue)) token=\(who.tokenName ?? "-")")
+        do { _ = try await acct.whoami("hf_definitelynotavalidtoken000000"); XCTFail() }
+        catch let e as HFAccount.AccountError { XCTAssertEqual(e, .invalidToken) }
+    }
+}
