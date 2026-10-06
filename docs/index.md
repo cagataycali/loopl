@@ -173,7 +173,7 @@ func ask(_ model: any Model) async throws -> String {
 
 <footer class="l-foot">
 <span>© 2026 Çağatay Çalı · open source · no data collected</span>
-<nav aria-label="Footer"><a href="start/">Start</a><a href="sdk/agent/">SDK</a><a href="models/">Models</a><a href="app/">App</a><a href="privacy/">Privacy</a><a href="faq/">FAQ</a><a href="changelog/">Changelog</a><a href="api/">API</a><a href="https://github.com/cagataycali/loopl">GitHub</a></nav>
+<nav aria-label="Footer"><a href="start/">Get started</a><a href="sdk/agent/">SDK</a><a href="models/">Models</a><a href="app/">App</a><a href="privacy/">Privacy</a><a href="faq/">FAQ</a><a href="changelog/">Changelog</a><a href="api/">API</a><a href="https://github.com/cagataycali/loopl">GitHub</a></nav>
 </footer>
 
 </div>
