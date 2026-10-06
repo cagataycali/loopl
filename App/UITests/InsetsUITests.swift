@@ -122,7 +122,16 @@ final class InsetsUITests: XCTestCase {
         let app = launch(tab: "settings")
         let list = pane(app, "pane-settings", sidebar: "Settings")
         let btn = app.buttons["Delete conversation history"]
+        // Two steps, and both are needed. `scrollUntilVisible` only brings the row
+        // into the accessibility tree (a `List` does not instantiate far-off rows,
+        // which is why this test used to fail outright on an iPhone SE) — but it
+        // stops the instant `isHittable` flips, and hit-testing goes by the centre
+        // point, so the row's BOTTOM edge can still be a hair inside the tab bar
+        // (iPhone 16 Pro Max measured -0.33 pt there). The clearance is a property
+        // of the SETTLED list, so settle it at the end before measuring.
         scrollUntilVisible(list, btn)
+        scrollToEnd(list, times: 10)
+        XCTAssertTrue(btn.exists, "the delete-history row left the hierarchy")
         check(btn, app, "settings-delete-history")
     }
 
