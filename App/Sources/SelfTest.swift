@@ -98,7 +98,13 @@ enum SelfTest {
             // 1) download if missing
             NetworkPolicy.setOffline(false)
             store.refresh()
-            if store.localDirectory(spec) == nil {
+            // Apple Intelligence has no weights to fetch (`isDownloadable == false`, empty repo), so the
+            // download/localDirectory dance below does not apply to it — without this branch
+            // `--selftest-model apple-fm` tried to download "" and died on "model directory missing".
+            // This is how the FM runtime gets proven on real hardware (the UI is the only other route).
+            if !spec.isDownloadable {
+                emit("\(spec.name) needs no download — runtime \(spec.runtime.rawValue)")
+            } else if store.localDirectory(spec) == nil {
                 if offline { throw ModelError("--selftest-offline but \(spec.name) is not on disk; run the online selftest first") }
                 emit("downloading \(spec.repo) (\(spec.sizeLabel))…")
                 let t0 = Date()
@@ -122,7 +128,14 @@ enum SelfTest {
             } else {
                 emit("\(spec.name) already on disk")
             }
-            guard let dir = store.localDirectory(spec) else { throw ModelError("model directory missing after download") }
+            // Nothing is read from `dir` for a runtime that owns no files; Documents is a valid, existing URL.
+            let dir: URL
+            if spec.isDownloadable {
+                guard let d = store.localDirectory(spec) else { throw ModelError("model directory missing after download") }
+                dir = d
+            } else {
+                dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            }
 
             if offline {
                 NetworkPolicy.setOffline(true)
