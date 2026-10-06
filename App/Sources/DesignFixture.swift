@@ -131,6 +131,8 @@ enum DesignFixture {
             for w in "Okay — I won't post it. Tell me if you'd like it changed first.".split(separator: " ") { _ = engine.transcript.apply(.text(String(w) + " ")); await sleep(0.04) }
         }
         _ = engine.transcript.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("done"), metrics: EventLoopMetrics())))
+    }
+
     @MainActor static func replayApple(_ engine: Engine) async {
         func sleep(_ s: Double) async { try? await Task.sleep(for: .seconds(s)) }
         let t0 = Date()
