@@ -40,6 +40,14 @@ flowchart LR
 2. **Run tools** — all calls in the turn, concurrently (`ConcurrentToolExecutor`). Results are appended as a user message.
 3. **Recurse** while the stop reason is `toolUse`. The only bounds are the context window and cancellation. No `maxIterations`, no loop detector — same as Strands.
 
+Before a tool runs, its input is checked against the tool's JSON schema (Strands
+`validate_and_prepare_tools`). A call a small model broke never reaches the tool: it gets an
+error `ToolResult` in its place — so the toolUse and toolResult lists stay paired and the model
+reads what it did wrong and usually fixes it next cycle. Quoted numbers (`"3"`), `"yes"` for a
+boolean and a single bare-string argument are coerced rather than refused; a missing required
+field, a genuinely wrong type, a duplicate `toolUseId` or an invalid tool name are refused with
+the expected shape. `ToolValidation.coerce(_:to:)` is public if you want the check on its own.
+
 Also ported: throttle retries (`ModelRetryStrategy`, 6 attempts, 4 → 240 s backoff), context-overflow trimming via the [conversation manager](hooks.md), and `maxTokens` recovery — the partial turn is kept and `MaxTokensReachedError` is thrown so you can simply call again:
 
 ```swift
@@ -88,6 +96,50 @@ func show(_ agent: Agent, _ prompt: String) async throws {
 
 For SwiftUI, `Transcript` folds events into rows — `LooplUI` renders it.
 
+## Interrupts
+
+A hook or a tool can stop mid-loop and ask a human. One mechanism, two shapes:
+
+- **`.suspend`** (default) — only the call that raised it waits, inside the actor. The stream
+  stays alive, the other tools of the same message keep running, and the UI answers with
+  `agent.resolve(interrupt:response:)`. Tool approval ([Human in the loop](hitl.md)) is exactly
+  this with a nicer card.
+- **`.stop`** — Strands' shape: the loop stops, `result.stopReason == .interrupt`,
+  `result.interrupts` lists the questions, and you resume later. Tool results already produced
+  are kept and **not re-run**, and the resumed cycle replays the assistant message instead of
+  calling the model again.
+
+```swift
+// snippet: compile
+import Loopl
+
+/// A tool that needs a number from the human before it can finish.
+struct AskingTool: Tool {
+    let name = "ask_budget"
+    let description = "ask the human for a budget"
+    let parameters: JSONValue = ToolSchema.object([:])
+    func call(_ args: [String: JSONValue]) async throws -> String {
+        let answer = try InterruptScope.interrupt("budget", reason: .string("how much may I spend?"))
+        return "budget = \(answer.compact)"
+    }
+}
+
+func runWithStop(_ model: any Model) async throws {
+    let agent = Agent(model: model, tools: [AskingTool()], interruptMode: .stop)
+    var result = try await agent("book the cheapest flight")
+    while result.stopReason == .interrupt {
+        let answers = result.interrupts.map {
+            InterruptResponse(interruptId: $0.id, response: .number(500))     // ask the human here
+        }
+        result = try await agent.resume(answers)
+    }
+    print(result.text)
+}
+```
+
+`InterruptScope.interrupt` throws the first time and returns the answer when the tool body runs
+again — so a tool is written once and resumes where it stopped.
+
 ## Persist
 
 `Message` is `Codable`; the history is the whole state. For metrics, the system prompt and what a run was suspended on, snapshot the lot — [Checkpoints](checkpoints.md).
@@ -117,6 +169,11 @@ func restore(_ model: any Model, from url: URL) throws -> Agent {
 | `ModelThrottledException` · `ContextWindowOverflowException` · `MaxTokensReachedException` | `ModelThrottledError` · `ContextWindowOverflowError` · `MaxTokensReachedError` |
 | `StopReason` strings | `StopReason` enum (+ `.cancelled`) |
 | `TypedEvent` classes | `AgentEvent` cases |
+| `Interrupt` · `InterruptException` · `PendingToolExecution` · `_InterruptState` | same names; `InterruptMode.stop` is Strands' behaviour, `.suspend` is loopl's in-process default |
+| `event.interrupt(name, reason=…)` on hook events · `ToolContext.interrupt` | `try event.interrupt("name", reason:)` (`InterruptibleEvent`) · `try InterruptScope.interrupt("name")` inside a tool |
+| `validate_and_prepare_tools` | `ToolValidation.validateAndPrepare(toolUses:tools:)` + coercions for small-model JSON |
+| `after_tools_event.end_turn` · `request_state["stop_event_loop"]` | `AfterToolsEvent.endTurn` · `AfterToolsEvent.requestState["stopEventLoop"]` |
+| `_estimate_input_tokens` (usage baseline) | the last model call's measured usage + an estimate of only the new messages (`EventLoopMetrics.usageBaselineTokens`) |
 | — (no built-in HITL; `BeforeToolCallEvent` cancel + interrupts) | `Tool.requiresApproval` → `.approvalRequested` suspends the call, `agent.resolve(approval:)` resumes, `ApprovalPolicy` hook decides ([Human in the loop](hitl.md)) |
 | `structured_output_model=…` (Pydantic + forced `tool_choice`) | `agent.structured(As:prompt:)` — schema from `Decodable`, forced pass with that tool only ([Structured output](structured-output.md)) |
 | `SessionManager` / `SnapshotSessionManager` | `AgentCheckpoint` + `CheckpointStore` ([Checkpoints](checkpoints.md)) |

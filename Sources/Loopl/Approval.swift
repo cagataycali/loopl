@@ -115,3 +115,61 @@ public struct ApprovalPolicy: HookProvider, Sendable {
         }
     }
 }
+
+// MARK: - Approval as an interrupt
+
+// An approval IS an interrupt (`Interrupt.name == "approval"`, scoped to the toolUseId):
+// one suspend mechanism, one resume path, one place where a human answer arrives.
+// `reason` carries the request, `response` carries the decision — both as `JSONValue`
+// so interrupt state stays `Codable` for session restore.
+
+extension ApprovalRequest {
+    /// The request as an interrupt `reason`.
+    public var interruptReason: JSONValue {
+        guard let data = try? JSONEncoder().encode(self),
+              let text = String(data: data, encoding: .utf8),
+              let value = JSONValue.parse(text) else {
+            return .object(["id": .string(id), "toolName": .string(toolName), "title": .string(title)])
+        }
+        return value
+    }
+
+    /// Rebuild a request from an interrupt `reason` (a UI restoring pending cards).
+    public init?(interruptReason: JSONValue) {
+        guard let data = interruptReason.compact.data(using: .utf8),
+              let decoded = try? JSONDecoder().decode(ApprovalRequest.self, from: data) else { return nil }
+        self = decoded
+    }
+
+    /// `"tool:<toolUseId>:approval"` → `<toolUseId>`.
+    public static func toolUseId(fromInterruptId id: String) -> String {
+        let parts = id.split(separator: ":")
+        guard parts.count >= 3, parts.first == "tool" else { return id }
+        return parts.dropFirst().dropLast().joined(separator: ":")
+    }
+}
+
+extension ApprovalDecision {
+    /// The decision as an interrupt `response`.
+    public var interruptResponse: JSONValue {
+        switch self {
+        case .approve: .object(["decision": .string("approve")])
+        case .deny(let reason): .object(["decision": .string("deny"), "reason": reason.map(JSONValue.string) ?? .null])
+        case .approveEdited(let input): .object(["decision": .string("approveEdited"), "input": .object(input)])
+        }
+    }
+
+    /// Read a decision back out of an interrupt response.
+    public init?(interruptResponse: JSONValue) {
+        guard case .object(let o) = interruptResponse, case .string(let kind)? = o["decision"] else { return nil }
+        switch kind {
+        case "approve": self = .approve
+        case "deny":
+            if case .string(let r)? = o["reason"] { self = .deny(reason: r) } else { self = .deny(reason: nil) }
+        case "approveEdited":
+            guard case .object(let input)? = o["input"] else { return nil }
+            self = .approveEdited(input)
+        default: return nil
+        }
+    }
+}

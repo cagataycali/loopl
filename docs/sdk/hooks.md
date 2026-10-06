@@ -45,11 +45,61 @@ func make(_ model: any Model) -> Agent { Agent(model: model, hooks: [Telemetry()
 |---|---|---|
 | `BeforeInvocationEvent` / `AfterInvocationEvent` | once per `agent(…)` | — |
 | `BeforeModelCallEvent` / `AfterModelCallEvent` | each model call | `stopResponse` |
-| `BeforeToolsEvent` / `AfterToolsEvent` | each tool round | — |
+| `BeforeToolsEvent` / `AfterToolsEvent` | each tool round (**always paired**) | `endTurn`, `requestState` |
 | `BeforeToolCallEvent` / `AfterToolCallEvent` | each tool | `cancelTool`, `selectedTool`, `result` |
 | `MessageAddedEvent` | every message appended | — |
 
 After-events run in reverse registration order, as in Strands.
+
+`AfterToolsEvent` is guaranteed: it fires once for every `BeforeToolsEvent`, including when a
+BeforeTools hook throws, a tool throws, the turn is cancelled, or an interrupt stops the loop
+(Strands builds it in a `finally`). So it is the right place to close a span or flush a log.
+
+### Ending the turn after tools
+
+Two early stops, both Strands':
+
+```swift
+// snippet: compile
+import Loopl
+
+func stopAfterTools(_ agent: Agent) async {
+    // (a) endTurn — the loop does NOT call the model again; this text becomes the answer.
+    await agent.hooks.addCallback(AfterToolsEvent.self) { event in
+        let failures = event.message.content.compactMap(\.toolResult).filter { $0.isError }
+        if failures.count > 2 { event.endTurn = .text("Too many tools failed; stopping here.") }
+    }
+    // (b) stopEventLoop — stop after this round, keeping the cycle's own stop reason.
+    await agent.hooks.addCallback(AfterToolsEvent.self) { event in
+        event.requestState["stopEventLoop"] = .bool(true)
+    }
+}
+```
+
+`endTurn` takes `.flag` (a neutral line), `.text(…)` or `.content([…])`.
+
+### Interrupting from a hook
+
+`BeforeToolsEvent` and `BeforeToolCallEvent` can ask a human mid-loop. The first call raises;
+after the answer the same callback runs again and the call returns it — Strands' exact semantics.
+
+```swift
+// snippet: compile
+import Loopl
+
+func confirmDeletes(_ agent: Agent) async {
+    await agent.hooks.addCallback(BeforeToolCallEvent.self) { event in
+        guard event.toolUse.name == "delete_file" else { return }
+        let answer = try event.interrupt("confirm_delete", reason: .string(event.toolUse.input.description))
+        if answer != .string("yes") { event.cancelTool = "the user did not confirm" }
+    }
+}
+```
+
+With the default `InterruptMode.suspend` that one call waits inside the agent (the other tools of
+the message keep running) and you answer with `agent.resolve(interrupt:response:)`. With
+`.stop` the loop returns `stopReason .interrupt` instead — see
+[Agent & event loop](agent.md#interrupts) and [Human in the loop](hitl.md).
 
 ## Conversation managers
 

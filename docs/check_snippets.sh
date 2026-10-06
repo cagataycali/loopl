@@ -32,6 +32,10 @@ fi
 CC_FLAGS=()
 for m in "$SCRATCH"/"$CFG"/*.build/module.modulemap; do [[ -f "$m" ]] && CC_FLAGS+=(-Xcc "-fmodule-map-file=$m"); done
 while IFS= read -r d; do CC_FLAGS+=(-Xcc "-I$d"); done < <(find "$SCRATCH"/checkouts -path "*/include/module.modulemap" -not -path "*/Tests/*" -not -path "*/Benchmarks/*" 2>/dev/null | xargs -n1 dirname)
+# LooplRuntimes links llama as a binary xcframework: point swiftc at the host slice's framework
+# directory, or every `snippet: compile(runtimes)` block fails with "missing required module 'llama'".
+LLAMA_SLICE="Vendor/llama.xcframework/macos-arm64_x86_64"
+[[ -d "$LLAMA_SLICE" ]] && CC_FLAGS+=(-F "$LLAMA_SLICE")
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 total=0; failed=0; files=()

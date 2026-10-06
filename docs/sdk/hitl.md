@@ -53,6 +53,10 @@ No answer within `approvalTimeout` (default 120 s) denies the call; so does canc
 
 ## In SwiftUI
 
+Under the hood an approval **is** an interrupt (`Interrupt(name: "approval")`, scoped to the
+`toolUseId`), so it shares the suspend/resume machinery with hook- and tool-raised interrupts —
+see [Agent & event loop](agent.md#interrupts). The API above is unchanged by that.
+
 `Transcript` folds the events into `TranscriptItem.Kind.approval`; `AgentTranscriptView` renders an `ApprovalCard` inline — method badge, host and path, redacted headers, collapsible body, **Approve · Deny · Edit** (the editor rewrites the input first). Route answers with `.onApproval { request, decision in … }`. Motion uses `LooplDesign.Motion`, haptics `HapticEvent.approvalNeeded`, and Reduce Motion crossfades. In the app, **Settings › Ask before** sets the policy.
 
 ## Strands
