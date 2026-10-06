@@ -47,7 +47,7 @@ public extension Transcript {
         return t
     }
 
-    /// The model-facing history that corresponds to the visible items, in Strands shape:
+    /// The model-facing history that corresponds to the visible items, as `Message`s:
     /// user text (+images) → `user`; assistant text → `assistant`; a tool row → an `assistant`
     /// message carrying the `toolUse` block followed by the `user` message carrying its `toolResult`
     /// (adjacent tool rows of one round fold into one assistant / one user message, like the loop
