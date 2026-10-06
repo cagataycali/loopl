@@ -29,6 +29,14 @@ final class TrainUITests: XCTestCase {
         let app = launch("form")
         XCTAssertTrue(app.staticTexts["Train your own"].waitForExistence(timeout: 15))
         XCTAssertTrue(find(app, "train-base", scroll: 0).exists, "base picker missing")
+        // script 1.2.0 controls: continue a Mine model (round badge), epochs Auto + 1–4 with the heuristic, stitch picker with its preview
+        XCTAssertTrue(find(app, "train-continue", scroll: 1).exists, "'Continue a model' picker missing (Mine bases)")
+        XCTAssertTrue(find(app, "train-epochs", scroll: 1).exists, "epochs picker missing")
+        let epochsNote = find(app, "train-epochs-note", scroll: 1)
+        XCTAssertTrue(epochsNote.exists && epochsNote.label.contains("3–4"), "heuristic footnote: \(epochsNote.label)")
+        XCTAssertTrue(find(app, "train-stitch", scroll: 1).exists, "stitch picker missing")
+        let blocked = find(app, "train-continue-blocked", scroll: 1)
+        XCTAssertTrue(blocked.exists && blocked.label.contains("loopl-old-GGUF"), "a Mine model without a bf16 twin is named as not continuable")
         shoot(app, "train-form")
         let start = find(app, "train-start")
         XCTAssertTrue(start.exists, "Train button missing")
@@ -60,6 +68,14 @@ final class TrainUITests: XCTestCase {
         XCTAssertTrue(find(app, "train-loss").exists, "held-out loss before → after")
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS '2.38'")).firstMatch.exists)
         XCTAssertTrue(find(app, "train-add-model", scroll: 1).exists)
+        // 1.2.0 result: per-epoch held-out loss + lineage of a round-2 model
+        let chart = find(app, "train-epochs-chart", scroll: 1)
+        XCTAssertTrue(chart.exists, "per-epoch eval-loss chart missing")
+        XCTAssertTrue(chart.label.contains("epoch 2 2.15"), "chart reads the epoch lines: \(chart.label)")
+        let lineage = find(app, "train-lineage", scroll: 1)
+        XCTAssertTrue(lineage.exists, "lineage missing")
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Qwen3.5-0.8B → loopl-app-sim'")).firstMatch.exists, "lineage chain text")
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'round 2'")).firstMatch.exists)
         shoot(app, "train-done-result")
     }
 

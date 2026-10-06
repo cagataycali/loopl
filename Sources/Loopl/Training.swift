@@ -29,6 +29,102 @@ public enum TrainingBase: String, CaseIterable, Sendable, Codable, Identifiable 
     public var quantizedBytes: Int64 { switch self { case .b0_8: 450_000_000; case .b2: 1_300_000_000; case .b4: 2_500_000_000 } }
     /// README-app.md: < 300 conversations → 0.8B · 300–2 000 → 2B · > 2 000 → 4B.
     public static func recommended(forConversations n: Int) -> TrainingBase { n < 300 ? .b0_8 : (n <= 2000 ? .b2 : .b4) }
+    /// "0.8b" / "2b" / "4b" as written in a repo name (`loopl-2b-4bit`, `Qwen3.5-0.8B`), nil when absent.
+    public static func sizeToken(in name: String) -> String? {
+        let lower = name.lowercased()
+        for t in ["0.8b", "2b", "4b"] {
+            var i = lower.startIndex
+            while let r = lower.range(of: t, range: i..<lower.endIndex) {
+                let before = r.lowerBound == lower.startIndex ? nil : lower[lower.index(before: r.lowerBound)]
+                let after = r.upperBound == lower.endIndex ? nil : lower[r.upperBound]
+                let ok = (before.map { !$0.isNumber && $0 != "." } ?? true) && (after.map { !$0.isLetter && !$0.isNumber } ?? true)
+                if ok { return t }
+                i = r.upperBound
+            }
+        }
+        return nil
+    }
+}
+
+/// What `--base` names: a stock Qwen3.5 size, or a model the user already tuned (continual tuning, script 1.2.0).
+/// A tuned model trains from its **bf16** repo — the `-4bit` Mine row maps to it by name (`loopl-x-4bit` → `loopl-x`);
+/// the script refuses quantized weights, so `bf16Repo == nil` greys the choice out with the reason.
+public struct TrainingTunedBase: Hashable, Sendable, Codable, Identifiable {
+    public var repo: String             // the Mine repo the user tapped (usually the -4bit one)
+    public var bf16Repo: String?        // what `--base` gets; nil = no bf16 checkpoint next to it
+    public var round: Int               // rounds already closed (card `loopl_round`); this run is `round + 1`
+    public var size: TrainingBase       // the Qwen root's size → recipe + estimate
+    public var id: String { repo }
+    public init(repo: String, bf16Repo: String?, round: Int = 1, size: TrainingBase) {
+        self.repo = repo; self.bf16Repo = bf16Repo; self.round = round; self.size = size
+    }
+    public var name: String { repo.split(separator: "/").last.map(String.init) ?? repo }
+    public var isTrainable: Bool { bf16Repo != nil }
+    /// "tuned from loopl-2b · round 2" — Mine's badge and the base picker's subtitle.
+    public var roundLabel: String { "round \(round)" }
+
+    /// `x/loopl-mine-4bit` → `x/loopl-mine`, `x/loopl-mine-GGUF` → `x/loopl-mine`; a bf16 repo id maps to itself.
+    public static func bf16Sibling(of repo: String) -> String {
+        for suffix in ["-4bit", "-8bit", "-GGUF", "-gguf", "-mlx"] where repo.hasSuffix(suffix) { return String(repo.dropLast(suffix.count)) }
+        return repo
+    }
+    /// From a Mine listing: the runnable repos the user owns (`-4bit`/`-GGUF`) grouped by their bf16 sibling; a group whose
+    /// bf16 repo is in `allRepos` is trainable. `rounds` = card `loopl_round` per bf16 repo when known (default 1 — a loopl
+    /// output always closed one round). Size from the name (`0.8b`/`2b`/`4b`), else `fallbackSize`.
+    /// From `HubCatalog.owned(author:)`: Mine's runnable rows → one trainable base per bf16 twin (card `loopl_round` → round).
+    public static func fromOwned(runnable: [String], owned: [HubCatalog.OwnedRepo], fallbackSize: TrainingBase = .b0_8) -> [TrainingTunedBase] {
+        var rounds: [String: Int] = [:]
+        for o in owned { if let r = o.looplRound { rounds[o.id] = r } }
+        // an export's card names its bf16 parent — trust it over the name
+        let runnableResolved = runnable.map { r in owned.first { $0.id == r }?.looplParent.map { _ in r } ?? r }
+        var bases = fromMine(runnable: runnableResolved, allRepos: owned.map(\.id), rounds: rounds, fallbackSize: fallbackSize)
+        for i in bases.indices where bases[i].bf16Repo == nil {
+            if let parent = owned.first(where: { $0.id == bases[i].repo })?.looplParent, owned.contains(where: { $0.id == parent }) {
+                bases[i].bf16Repo = parent; bases[i].round = max(1, rounds[parent] ?? 1)
+            }
+        }
+        return bases
+    }
+
+    public static func fromMine(runnable: [String], allRepos: [String], rounds: [String: Int] = [:], fallbackSize: TrainingBase = .b0_8) -> [TrainingTunedBase] {
+        var seen = Set<String>(), out: [TrainingTunedBase] = []
+        for r in runnable {
+            let bf16 = bf16Sibling(of: r)
+            guard !seen.contains(bf16) else { continue }
+            seen.insert(bf16)
+            let size = TrainingBase.allCases.first { TrainingBase.sizeToken(in: bf16) == $0.rawValue } ?? fallbackSize
+            out.append(TrainingTunedBase(repo: r, bf16Repo: allRepos.contains(bf16) ? bf16 : nil, round: max(1, rounds[bf16] ?? 1), size: size))
+        }
+        return out
+    }
+}
+
+/// How many passes over the data: the script's `--epochs auto` (≤ 3, best-eval checkpoint, early stop) or a fixed 1–4.
+public enum TrainingEpochs: Hashable, Sendable, Codable {
+    case auto
+    case fixed(Int)
+    public var argument: String { switch self { case .auto: "auto"; case .fixed(let n): String(max(1, min(4, n))) } }
+    public var label: String { switch self { case .auto: "Auto (recommended)"; case .fixed(let n): "\(n)" } }
+    /// The heuristic the owner agreed on, exactly as the script prints it: < 200 conversations → 3–4 · 200–1 000 → 2 · > 1 000 → 1–2.
+    public static func heuristic(forConversations n: Int) -> (text: String, autoMax: Int) {
+        n < 200 ? ("3–4", 3) : (n <= 1000 ? ("2", 2) : ("1–2", 2))
+    }
+    /// Epochs the estimate should bill for.
+    public func planned(forConversations n: Int) -> Int { switch self { case .auto: Self.heuristic(forConversations: n).autoMax; case .fixed(let k): max(1, min(4, k)) } }
+}
+
+/// `--stitch`: connect related conversations into one multi-turn sample (script 1.2.0).
+public enum TrainingStitch: String, CaseIterable, Sendable, Codable, Identifiable {
+    case none, day, topic
+    public var id: String { rawValue }
+    public var label: String { switch self { case .none: "Off"; case .day: "By day"; case .topic: "By topic" } }
+    public var footnote: String {
+        switch self {
+        case .none: "Each conversation trains on its own."
+        case .day: "Conversations shared on the same day are joined, oldest first, into one longer sample — the model learns to carry context across chats. Shares without a date stay separate."
+        case .topic: "Conversations about the same thing (their most frequent word) are joined into one longer sample."
+        }
+    }
 }
 
 /// LoRA adapters or a full fine-tune.
@@ -71,24 +167,44 @@ public struct TrainingPlan: Hashable, Sendable, Codable {
     public var dataset: String              // "<user>/<conversations-dataset>" (private, owned by the token's user)
     public var conversations: Int           // rows in the dataset (for the estimate)
     public var withTools: Int = 0           // rows that carry tool calls (rendered in two dialects → 1.6×)
-    public var base: TrainingBase
+    public var base: TrainingBase           // the Qwen size (recipe + estimate) — the root of a tuned base's lineage
+    public var tunedBase: TrainingTunedBase? = nil   // continual tuning: `--base <bf16 repo>` instead of the stock size
     public var method: TrainingMethod
     public var flavor: TrainingFlavor
-    public var epochs: Int = 2
+    public var epochs: TrainingEpochs = .auto
+    public var includeAllShards: Bool = true // round ≥ 2: replay every shard (off → `--new-shards-only`)
+    public var stitch: TrainingStitch = .none
     public var outputName: String           // bare repo name, e.g. "loopl-mine-0.8b" → <user>/loopl-mine-0.8b
     public var hoursCap: Double = 2         // → timeoutSeconds; HF kills the job (and the bill) there
     public var skipGGUF: Bool = false
     public var skipMLX: Bool = false
 
-    public init(dataset: String, conversations: Int, withTools: Int = 0, base: TrainingBase, method: TrainingMethod? = nil,
-                flavor: TrainingFlavor? = nil, epochs: Int = 2, outputName: String? = nil, hoursCap: Double = 2,
-                skipGGUF: Bool = false, skipMLX: Bool = false) {
-        self.dataset = dataset; self.conversations = conversations; self.withTools = withTools; self.base = base
-        self.method = method ?? base.defaultMethod
+    public init(dataset: String, conversations: Int, withTools: Int = 0, base: TrainingBase, tunedBase: TrainingTunedBase? = nil,
+                method: TrainingMethod? = nil, flavor: TrainingFlavor? = nil, epochs: TrainingEpochs = .auto, includeAllShards: Bool = true,
+                stitch: TrainingStitch = .none, outputName: String? = nil, hoursCap: Double = 2, skipGGUF: Bool = false, skipMLX: Bool = false) {
+        self.dataset = dataset; self.conversations = conversations; self.withTools = withTools; self.base = tunedBase?.size ?? base
+        self.tunedBase = tunedBase
+        self.method = method ?? (tunedBase != nil ? .lora : base.defaultMethod)   // the script's round ≥ 2 default is LoRA r32
         self.flavor = flavor ?? base.recommendedFlavor
-        self.epochs = epochs
-        self.outputName = outputName ?? Self.defaultOutputName(dataset: dataset, base: base)
+        self.epochs = epochs; self.includeAllShards = includeAllShards; self.stitch = stitch
+        self.outputName = outputName ?? (tunedBase.map { Self.defaultOutputName(continuing: $0) } ?? Self.defaultOutputName(dataset: dataset, base: base))
         self.hoursCap = hoursCap; self.skipGGUF = skipGGUF; self.skipMLX = skipMLX
+    }
+
+    /// Round this job closes: 1 from a stock base, `tunedBase.round + 1` when continuing.
+    public var round: Int { (tunedBase?.round ?? 0) + 1 }
+    /// `--base` as the script receives it.
+    public var baseArgument: String { tunedBase?.bf16Repo ?? base.rawValue }
+    /// "Qwen3.5 0.8B" or "loopl-app-sim · round 2".
+    public var baseLabel: String { tunedBase.map { "\($0.name) · round \(round)" } ?? base.label }
+    /// Epochs the estimate bills for (auto → the heuristic's upper bound).
+    public var plannedEpochs: Int { epochs.planned(forConversations: conversations) }
+
+    /// "loopl-app-sim" → "loopl-app-sim-r2" (round-aware, so each round keeps its own repo).
+    public static func defaultOutputName(continuing t: TrainingTunedBase) -> String {
+        var name = TrainingTunedBase.bf16Sibling(of: t.repo).split(separator: "/").last.map(String.init) ?? t.name
+        if let r = name.range(of: "-r", options: .backwards), Int(name[r.upperBound...]) != nil { name = String(name[..<r.lowerBound]) }
+        return repoSafe("\(name)-r\(t.round + 1)")
     }
 
     /// "<dataset-name>" → "loopl-<dataset-name>-<size>", repo-name safe.
@@ -124,8 +240,10 @@ public struct TrainingPlan: Hashable, Sendable, Codable {
 
     /// The script's CLI (after the leading `loopl` argv[0] of the bash -lc trampoline).
     public func scriptArguments(user: String) -> [String] {
-        var a = ["--dataset", dataset, "--base", base.rawValue, "--out", outputRepo(user: user),
-                 "--epochs", String(epochs), "--method", method.rawValue]
+        var a = ["--dataset", dataset, "--base", baseArgument, "--out", outputRepo(user: user),
+                 "--epochs", epochs.argument, "--method", method.rawValue]
+        if stitch != .none { a += ["--stitch", stitch.rawValue] }
+        if tunedBase != nil, !includeAllShards { a.append("--new-shards-only") }
         if skipMLX { a.append("--skip-mlx") }
         if skipGGUF { a.append("--skip-gguf") }
         return a
@@ -150,7 +268,7 @@ public struct TrainingEstimate: Hashable, Sendable {
 
     public init(plan: TrainingPlan) {
         let rows = Double(plan.conversations - plan.withTools) + 1.6 * Double(plan.withTools)
-        steps = max(1, Int((rows * Double(plan.epochs) / 16).rounded(.up)))
+        steps = max(1, Int((rows * Double(plan.plannedEpochs) / 16).rounded(.up)))
         let perStep = plan.base.secondsPerStep * (plan.base.recommendedFlavor.speed / max(plan.flavor.speed, 0.01))
         trainSeconds = Double(steps) * perStep * Self.safetyFactor
         var overhead = 4 * 60 + 95.0                                   // install + model download + Triton warm-up
@@ -244,8 +362,48 @@ public struct TrainingOutput: Hashable, Sendable {
     public var toolNameMatch: String?     // "7/9" — probes that called the right tool
     public var wallSeconds: Double?
     public var scriptVersion: String?
+    // script 1.2.0
+    public var round: Int?
+    public var lineage: [String]?         // ["Qwen/Qwen3.5-0.8B", "me/loopl-app-sim"] → this model
+    public var epochsTrained: Double?
+    public var bestEpoch: Int?
+    public var evalHistory: [TrainingEpochLoss]?
+    public var stitched: Int?
     /// The repo the phone can run: MLX 4-bit first, else GGUF.
     public var runnableRepo: String? { mlx ?? gguf }
+}
+
+/// One evaluation: `[loopl] epoch=2 eval_loss=2.1454 best=2.1454`, or an `eval_history` entry.
+public struct TrainingEpochLoss: Hashable, Sendable, Codable, Identifiable {
+    public var epoch: Int
+    public var evalLoss: Double
+    public var id: Int { epoch }
+    public init(epoch: Int, evalLoss: Double) { self.epoch = epoch; self.evalLoss = evalLoss }
+}
+
+/// `[loopl] plan {…}` — what the script decided after reading the data (round, lineage, epochs mode, stitching).
+public struct TrainingPlanInfo: Hashable, Sendable {
+    public var round: Int?
+    public var base: String?
+    public var lineage: [String]?
+    public var epochsMode: String?        // "auto" | "fixed"
+    public var epochsMax: Double?
+    public var heuristic: String?         // "3–4"
+    public var earlyStop: Bool?
+    public var replay: Bool?
+    public var stitchMode: String?
+    public var stitched: Int?
+    public var unkeyed: Int?
+    public init() {}
+    public init(json d: JSONValue) {
+        round = d["round"]?.doubleValue.map(Int.init); base = d["base"]?.stringValue
+        lineage = d["lineage"]?.arrayValue?.compactMap(\.stringValue)
+        epochsMode = d["epochs"]?["mode"]?.stringValue; epochsMax = d["epochs"]?["max"]?.doubleValue
+        heuristic = d["epochs"]?["heuristic"]?.stringValue; earlyStop = d["epochs"]?["early_stop"]?.boolValue
+        replay = d["replay"]?.boolValue
+        stitchMode = d["stitch"]?["mode"]?.stringValue; stitched = d["stitch"]?["stitched"]?.doubleValue.map(Int.init)
+        unkeyed = d["stitch"]?["unkeyed"]?.doubleValue.map(Int.init)
+    }
 }
 
 /// Incremental parser over job log lines. Feed every line (duplicates are fine — stages are keyed by name).
@@ -257,6 +415,8 @@ public struct TrainingProgress: Hashable, Sendable {
     public private(set) var loss: Double?
     public private(set) var lastLine: String?
     public private(set) var lineCount = 0
+    public private(set) var plan: TrainingPlanInfo?
+    public private(set) var evalHistory: [TrainingEpochLoss] = []
 
     public init() {}
 
@@ -320,8 +480,32 @@ public struct TrainingProgress: Hashable, Sendable {
             o.toolNameMatch = d?["tool_name_match"]?.stringValue
             o.wallSeconds = d?["wall_s"]?.doubleValue
             o.scriptVersion = d?["script"]?.stringValue
+            o.round = d?["round"]?.doubleValue.map(Int.init)
+            o.lineage = d?["lineage"]?.arrayValue?.compactMap(\.stringValue)
+            o.epochsTrained = d?["epochs_trained"]?.doubleValue
+            o.bestEpoch = d?["best_epoch"]?.doubleValue.map(Int.init)
+            o.stitched = d?["stitched"]?.doubleValue.map(Int.init)
+            if let h = d?["eval_history"]?.arrayValue {
+                let hist = h.compactMap { e -> TrainingEpochLoss? in
+                    guard let ep = e["epoch"]?.doubleValue, let l = e["eval_loss"]?.doubleValue else { return nil }
+                    return TrainingEpochLoss(epoch: Int(ep.rounded()), evalLoss: l)
+                }
+                o.evalHistory = hist.isEmpty ? (evalHistory.isEmpty ? nil : evalHistory) : hist
+            } else if !evalHistory.isEmpty { o.evalHistory = evalHistory }
             output = o
             upsert(TrainingStage(name: "done", elapsed: nil, detail: d))
+        } else if body.hasPrefix("plan ") {
+            if let d = JSONValue.parse(String(body.dropFirst(5))) { plan = TrainingPlanInfo(json: d) }
+        } else if body.hasPrefix("epoch=") {
+            var epoch: Int?, l: Double?
+            for kv in body.split(separator: " ") {
+                let parts = kv.split(separator: "=", maxSplits: 1)
+                guard parts.count == 2 else { continue }
+                if parts[0] == "epoch" { epoch = Int(parts[1]) } else if parts[0] == "eval_loss" { l = Double(parts[1]) }
+            }
+            if let epoch, let l {
+                if let i = evalHistory.firstIndex(where: { $0.epoch == epoch }) { evalHistory[i].evalLoss = l } else { evalHistory.append(TrainingEpochLoss(epoch: epoch, evalLoss: l)) }
+            }
         } else if body.hasPrefix("error") || body.hasPrefix("fatal") {
             error = String(body.drop { !$0.isWhitespace }.drop { $0 == " " || $0 == ":" })
             upsert(TrainingStage(name: "error", elapsed: nil, detail: nil))

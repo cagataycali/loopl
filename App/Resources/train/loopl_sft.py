@@ -34,6 +34,19 @@ What it does (stages are printed as `[loopl] stage=<name>` lines so a UI can sho
   gguf      llama.cpp <tag> convert (--no-mtp: transformers drops Qwen3.5's MTP head) + Q4_K_M → <out>-GGUF
   done      `[loopl] done {…json…}` with every repo id, counts and timings
 
+1.2.0 — continual tuning (owner, 2026-10-06: "people can keep post-tuning their own models"):
+  --base <repo>      any repo with a bf16 checkpoint, including a model this script produced. A `-4bit` / `-GGUF` repo resolves to its
+                     bf16 sibling (card `loopl_parent`, then the name); 4-bit weights are refused with the sibling named. The output
+                     card carries `base_model` + `loopl_lineage` + `loopl_round`, so Mine can show "tuned from loopl-2b · round 2".
+                     Round ≥ 2 defaults: LoRA r32 α64, lr 5e-5, REPLAY on every shard of the dataset (`--new-shards-only` opts out;
+                     `--replay-from <dataset>` mixes another dataset in). The vision tower is always frozen.
+  --epochs auto      ≤ 3 epochs, evaluate every epoch, keep the best-eval checkpoint, stop as soon as eval loss rises. The plan
+                     prints the heuristic (< 200 conversations → 3–4 · 200–1 000 → 2 · > 1 000 → 1–2) and every epoch prints
+                     `[loopl] epoch=<n> eval_loss=<x>`; per-epoch losses land in scorecard.json `eval_history`.
+  --stitch day|topic concatenate related threads (same day from `gen.ts` / same keyword cluster; deterministic) into one multi-turn
+                     sample under the context budget (min(max_length, max_position_embeddings, 8192); oldest threads drop first),
+                     tool-call/result pairs and `weight: 0` kept. Stitched samples are ADDED to the originals and counted in the plan.
+
 Data format (loopl-train schema, see schema/conversation.schema.json): one JSON object per line,
   {"messages":[{"role":"system|user|assistant|tool","content":str|parts, "tool_calls":[…], "tool_call_id":…,"name":…}],
    "tools":[{"type":"function","function":{"name","description","parameters"}}], "source":{…}}
@@ -53,7 +66,7 @@ import sys
 import time
 from pathlib import Path
 
-SCRIPT_VERSION = "1.1.0"
+SCRIPT_VERSION = "1.2.2"
 LLAMA_TAG_DEFAULT = "b11401"  # the llama.cpp build the loopl app vendors (scripts/fetch-llama-xcframework.sh)
 
 BASES = {"0.8b": "Qwen/Qwen3.5-0.8B", "2b": "Qwen/Qwen3.5-2B", "4b": "Qwen/Qwen3.5-4B"}
@@ -328,6 +341,231 @@ def apply_guard(sample: dict, denylist: list[str], pii: bool) -> tuple[dict | No
     return walk(sample), hits
 
 
+# ----------------------------------------------------------------------------- continual base (1.2.0)
+STITCH_BUDGET_CAP = 8192
+EPOCHS_AUTO_MAX = 3
+
+
+def infer_size(name: str) -> str | None:
+    """'Qwen/Qwen3.5-0.8B', 'cagataydev/loopl-2b-4bit', 'loopl-mine-4b-…' → '0.8b' | '2b' | '4b'."""
+    m = re.search(r"(?<![\d.])(0\.8|2|4)[bB](?![\w])", name)
+    return (m.group(1) + "b") if m else None
+
+
+def epochs_heuristic(conversations: int) -> tuple[str, int]:
+    """(what the owner agreed on, what `auto` runs up to): < 200 → 3–4, 200–1 000 → 2, > 1 000 → 1–2."""
+    if conversations < 200:
+        return "3–4", min(EPOCHS_AUTO_MAX, 3)
+    if conversations <= 1000:
+        return "2", 2
+    return "1–2", 2
+
+
+def _hub_json(repo: str, name: str, token: str | None):
+    from huggingface_hub import hf_hub_download
+    try:
+        return json.loads(Path(hf_hub_download(repo, name, token=token)).read_text())
+    except Exception:  # noqa: BLE001 — missing file, private repo without access, network
+        return None
+
+
+def _card_meta(repo: str, token: str | None) -> dict:
+    from huggingface_hub import HfApi
+    try:
+        info = HfApi(token=token).model_info(repo, token=token)
+        return dict(getattr(info, "card_data", None) or {}) if info else {}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def is_quantized(cfg: dict | None) -> bool:
+    if not cfg:
+        return False
+    return any(k in cfg for k in ("quantization", "quantization_config")) or any(
+        isinstance(v, dict) and any(k in v for k in ("quantization", "quantization_config")) for v in cfg.values())
+
+
+def resolve_base(base: str, token: str | None) -> dict:
+    """Turn --base into a bf16 training base + its lineage.
+
+    Returns {"repo": bf16 repo, "root": the Qwen repo the chain started from, "size": '0.8b'|…|None, "round": N (this run),
+             "lineage": [root, …, repo], "trained_files": [...], "trained_dataset": str|None}.
+    A `-4bit` / `-GGUF` / `-mlx` repo is mapped to its bf16 sibling (card `loopl_parent`, then the stripped name); a repo whose
+    config.json carries a quantization block is refused — the app's Mine rows are 4-bit, the bf16 twin is what trains."""
+    if base.lower() in BASES:
+        root = BASES[base.lower()]
+        return {"repo": root, "root": root, "size": base.lower(), "round": 1, "lineage": [root], "trained_files": [], "trained_dataset": None}
+    repo = base
+    meta = _card_meta(repo, token)
+    parent = meta.get("loopl_parent")
+    m = re.match(r"^(.*?)-(4bit|8bit|mlx|GGUF|gguf)$", repo)
+    if parent or m:
+        candidate = parent or m.group(1)
+        if _hub_json(candidate, "config.json", token) is not None:
+            log(f"base {repo} is an export → training from its bf16 sibling {candidate}")
+            repo, meta = candidate, _card_meta(candidate, token)
+    cfg = _hub_json(repo, "config.json", token)
+    if cfg is None:
+        raise SystemExit(f"--base {repo}: no config.json readable (private repo without access, or not a transformers checkpoint)")
+    if is_quantized(cfg):
+        sibling = meta.get("loopl_parent") or (m.group(1) if m else None)
+        hint = (f"Use {sibling} (its bf16 checkpoint)." if sibling and _hub_json(sibling, "config.json", token) is not None
+                else "No bf16 sibling was found — for a stock Qwen3.5 base pass 0.8b | 2b | 4b; a loopl output keeps its bf16 twin next to the -4bit repo.")
+        raise SystemExit(f"--base {repo} holds quantized weights — training from 4-bit weights is refused. {hint}")
+    summary = _hub_json(repo, "train_summary.json", token) or {}
+    lineage = list(meta.get("loopl_lineage") or summary.get("lineage") or [])
+    if not lineage:
+        prev = summary.get("base") or meta.get("base_model")
+        if isinstance(prev, list):
+            prev = prev[0] if prev else None
+        lineage = [prev] if isinstance(prev, str) and prev and prev != repo else []
+    if lineage and lineage[-1] != repo:
+        lineage = lineage + [repo]
+    elif not lineage:
+        lineage = [repo]
+    root = lineage[0]
+    size = infer_size(root) or infer_size(repo) or next((infer_size(x) for x in lineage if infer_size(x)), None)
+    if size is None and isinstance(cfg.get("text_config") or cfg, dict):
+        hidden = (cfg.get("text_config") or cfg).get("hidden_size")
+        size = {1024: "0.8b", 2048: "2b", 2560: "4b"}.get(hidden)
+    is_loopl_output = bool(summary) or bool(meta.get("loopl_round")) or bool(meta.get("loopl_lineage"))
+    # lineage = [root, …, repo]: a loopl output already closed one round per hop, so this run is round len(lineage)
+    rnd = len(lineage) if is_loopl_output else 1
+    return {"repo": repo, "root": root, "size": size, "round": rnd, "lineage": lineage,
+            "trained_files": list((summary.get("data") or {}).get("files") or []), "trained_dataset": summary.get("dataset")}
+
+
+# ----------------------------------------------------------------------------- stitching (1.2.0)
+_STOP = set("the a an and or of to in on for with is are was were be been i you it this that my me we our your what how can do does "
+            "did please about from at as by not no yes ok okay thanks thank hi hello there here just so if then than also into over "
+            "up down out would could should will shall may might one two three some any all more most other another its it's im i'm".split())
+_WORD = re.compile(r"[a-zA-ZçğıöşüÇĞİÖŞÜ][a-zA-Z0-9çğıöşüÇĞİÖŞÜ'-]{2,}")
+
+
+def sample_day(s: dict) -> str | None:
+    """Calendar day of an app row (`gen.ts` ISO-8601) or of a loopl-train row (`source[].ts`) — None when unknown."""
+    gen = s.get("gen") or {}
+    ts = gen.get("ts") if isinstance(gen, dict) else None
+    if not ts:
+        for src in s.get("source") or []:
+            if isinstance(src, dict) and src.get("ts"):
+                ts = src["ts"]; break
+    if not isinstance(ts, str) or len(ts) < 10:
+        return None
+    return ts[:10]
+
+
+def sample_topic(s: dict) -> str | None:
+    """Deterministic keyword cluster: the most frequent non-stop word across the user turns (ties → alphabetical)."""
+    counts: dict[str, int] = {}
+    for m in s.get("messages") or []:
+        if m.get("role") != "user":
+            continue
+        c = m.get("content")
+        text = c if isinstance(c, str) else "".join(p.get("text", "") for p in c or [] if isinstance(p, dict))
+        for w in _WORD.findall(text.lower()):
+            if w not in _STOP:
+                counts[w] = counts.get(w, 0) + 1
+    if not counts:
+        return None
+    return sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
+
+
+def _sort_key(s: dict) -> tuple:
+    gen = s.get("gen") or {}
+    return (str(gen.get("ts") if isinstance(gen, dict) else ""), str(s.get("id") or s.get("_key") or ""))
+
+
+def _body(messages: list[dict]) -> list[dict]:
+    return [m for m in messages if m.get("role") != "system"]
+
+
+def _system(messages: list[dict]) -> str | None:
+    return messages[0].get("content") if messages and messages[0].get("role") == "system" else None
+
+
+def _tools_union(a: list, b: list) -> list:
+    seen = {json.dumps(t, sort_keys=True) for t in a}
+    return a + [t for t in b if json.dumps(t, sort_keys=True) not in seen]
+
+
+def stitch(samples: list[dict], mode: str, count_tokens, budget: int) -> tuple[list[dict], dict]:
+    """Concatenate related conversations into multi-turn samples. mode ∈ {day, topic}. Threads are atomic (tool pairs and
+    `weight: 0` travel with them). A group is walked oldest-first; when the next thread would push the window past `budget`
+    tokens the window so far becomes one sample and a new window starts with that thread (a day with 100 chats → several
+    budget-sized samples, nothing silently lost; a thread too long on its own stays unstitched — it trains alone anyway).
+    Threads with a different system prompt never stitch together. Returns (new samples, stats)."""
+    keyf = sample_day if mode == "day" else sample_topic
+    groups: dict[tuple, list[dict]] = {}
+    for s in samples:
+        k = keyf(s)
+        if k is None:
+            continue
+        sysp = _system(s["messages"])
+        groups.setdefault((k, sysp), []).append(s)
+    out: list[dict] = []
+    stats = {"mode": mode, "groups": 0, "stitched": 0, "threads_in": 0, "windows_split": 0, "too_long_alone": 0,
+             "unkeyed": sum(keyf(s) is None for s in samples)}
+    for (k, sysp), members in sorted(groups.items(), key=lambda kv: (str(kv[0][0]), str(kv[0][1] or ""))):
+        if len(members) < 2:
+            continue
+        members = sorted(members, key=_sort_key)
+        stats["groups"] += 1
+        window: list[dict] = []
+
+        def flush():
+            if len(window) < 2:
+                return
+            msgs = ([{"role": "system", "content": sysp}] if sysp else [])
+            tools: list = []
+            for t in window:
+                msgs += [dict(m) for m in _body(t["messages"])]
+                tools = _tools_union(tools, t.get("tools") or [])
+            key = hashlib.sha1(json.dumps(msgs, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+            out.append({"id": f"stitch-{mode}-{key[:10]}", "family": "u", "messages": msgs, "tools": tools, "_key": key,
+                        "source": [{"kind": "stitch", "mode": mode, "key": str(k), "threads": [t.get("id") for t in window]}]})
+            stats["stitched"] += 1
+            stats["threads_in"] += len(window)
+
+        for t in members:
+            if count_tokens([t], sysp) > budget:
+                stats["too_long_alone"] += 1
+                continue
+            if window and count_tokens(window + [t], sysp) > budget:
+                flush()
+                stats["windows_split"] += 1
+                window = []
+            window.append(t)
+        flush()
+    return out, stats
+
+
+def stitch_token_counter(tokenizer):
+    def count(window: list[dict], sysp: str | None) -> int:
+        msgs = ([{"role": "system", "content": sysp}] if sysp else [])
+        tools: list = []
+        for t in window:
+            m, tl = normalize({"messages": _body(t["messages"]), "tools": t.get("tools") or []})
+            msgs += m
+            tools = _tools_union(tools, tl)
+        try:
+            return len(tokenizer(render(tokenizer, msgs, tools, "native"), add_special_tokens=False).input_ids)
+        except Exception:  # noqa: BLE001
+            return budget_guess(msgs)
+    return count
+
+
+def budget_guess(msgs: list[dict]) -> int:
+    return sum(len(str(m.get("content") or "")) // 3 + 8 for m in msgs)
+
+
+def context_budget(base_repo: str, token: str | None, max_length: int) -> int:
+    cfg = _hub_json(base_repo, "config.json", token) or {}
+    node = cfg.get("text_config") or cfg
+    mpe = node.get("max_position_embeddings") or STITCH_BUDGET_CAP
+    return max(512, min(int(mpe), STITCH_BUDGET_CAP, max_length))
+
+
 # ----------------------------------------------------------------------------- discovery
 def _read_jsonl(path: Path):
     with open(path) as fh:
@@ -342,8 +580,9 @@ def _read_jsonl(path: Path):
 
 
 def discover(dataset: str, revision: str | None, token: str | None, eval_frac: float, limit: int | None,
-             denylist: list[str], pii: bool) -> tuple[list[dict], list[dict], dict]:
-    """Load the dataset (Hub repo or local path/file), validate, guard, de-duplicate and split."""
+             denylist: list[str], pii: bool, exclude_files: list[str] | None = None) -> tuple[list[dict], list[dict], dict]:
+    """Load the dataset (Hub repo or local path/file), validate, guard, de-duplicate and split.
+    `exclude_files` (--new-shards-only): shard names the base already trained on are skipped."""
     files: list[Path] = []
     p = Path(dataset)
     if p.exists():
@@ -364,10 +603,15 @@ def discover(dataset: str, revision: str | None, token: str | None, eval_frac: f
         for n in wanted:
             files.append(Path(hf_hub_download(dataset, n, repo_type="dataset", token=token, revision=revision)))
         source = f"{dataset}@{revision}"
+    skipped: list[str] = []
+    if exclude_files:
+        skipped = [f.name for f in files if f.name in set(exclude_files)]
+        files = [f for f in files if f.name not in set(exclude_files)]
+        log(f"--new-shards-only: skipping {len(skipped)} shard(s) the base already trained on: {', '.join(skipped) or '-'}")
     if not files:
-        raise SystemExit(f"no .jsonl files found in {dataset}")
+        raise SystemExit(f"no .jsonl files found in {dataset}" + (" (every shard was already trained on — drop --new-shards-only)" if skipped else ""))
     stats = {"files": [f.name for f in files], "revision": revision, "read": 0, "invalid": 0, "duplicates": 0,
-             "denylisted": 0, "pii_scrubbed": 0}
+             "denylisted": 0, "pii_scrubbed": 0, "skipped_files": skipped}
     explicit_eval = [f for f in files if f.name == "eval.jsonl"]
     seen: set[str] = set()
     train, held = [], []
@@ -716,25 +960,42 @@ def model_card(a, s: dict, kind: str, parent: str | None = None) -> str:
     lib = {"merged": "transformers", "mlx": "mlx", "gguf": "gguf"}[kind]
     method = "full fine-tune" if s["method"] == "full" else f"LoRA r={a.lora_r} α={a.lora_alpha} → merged"
     sc = s.get("scorecard") or {}
+    lineage = s.get("lineage") or [a.base]
+    rnd = s.get("round") or 1
+    ep_mode = s.get("epochs_mode") or "fixed"
+    trained = sc.get("epochs_trained") or s.get("epochs")
+    epochs_txt = (f"epochs auto → {trained:g} trained (best epoch {sc.get('best_epoch', '?')}, stop when eval loss rises)"
+                  if ep_mode == "auto" else f"{float(s.get('epochs') or 0):g} epochs, best-eval-loss checkpoint")
+    chain = " → ".join(f"`{x}`" for x in lineage)
+    tuned_from = (f"\nRound **{rnd}** of continual tuning — lineage {chain} → `{a.out}`"
+                  + (f" · replayed every shard of the dataset" if s.get("replay") else "") + ".") if rnd > 1 else ""
+    stitched = s.get("stitch") or {}
+    stitch_txt = (f" · {stitched.get('stitched', 0)} stitched multi-thread samples (`--stitch {stitched.get('mode')}`)"
+                  if stitched.get("stitched") else "")
+    parent_meta = f"\nloopl_parent: {parent}" if parent else ""
     return f"""---
 base_model: {a.base}
 library_name: {lib}
 license: apache-2.0
 tags: [loopl, post-tuned, sft, trl, on-device, qwen3_5{', mlx' if kind == 'mlx' else ''}{', gguf, llama.cpp' if kind == 'gguf' else ''}]
 language: [en]
+loopl_round: {rnd}
+loopl_lineage: {json.dumps(lineage)}
+loopl_script: {SCRIPT_VERSION}{parent_meta}
 ---
 
 # {name}
 
-Post-tuned with **[loopl](https://loopl.dev)** from **{n} conversations** (`{a.dataset}`{'@' + s['data']['revision'][:8] if s['data'].get('revision') else ''}).
-Base `{a.base}` · {method} · {a.epochs:g} epochs, best-eval-loss checkpoint · assistant-only loss · both loopl tool dialects
-(native Qwen3.5 `<function=…>` and hermes JSON `<tool_call>`) · `enable_thinking=false`-style empty think blocks.{extra}
+Post-tuned with **[loopl](https://loopl.dev)** from **{n} conversations** (`{a.dataset}`{'@' + s['data']['revision'][:8] if s['data'].get('revision') else ''}){stitch_txt}.
+Base `{a.base}` · {method} · {epochs_txt} · assistant-only loss · both loopl tool dialects
+(native Qwen3.5 `<function=…>` and hermes JSON `<tool_call>`) · `enable_thinking=false`-style empty think blocks.{tuned_from}{extra}
 
 | | |
 |---|---|
 | eval loss base → tuned | {sc.get('eval_loss_base', 'n/a')} → {sc.get('eval_loss_tuned', 'n/a')} ({s['data']['eval']} held-out conversations) |
 | tool-call probes | name match {sc.get('tool_name_match', 'n/a')} / {sc.get('tool_turns', 'n/a')} turns · prose stayed prose {sc.get('prose_kept_prose', 'n/a')} / {sc.get('prose_turns', 'n/a')} |
 | rows / tokens | {s['rows']} · {s['tokens']:,} (max_length {a.max_length}) |
+| eval loss per epoch | {', '.join(f"e{h.get('epoch', 0):g} {h.get('eval_loss')}" for h in sc.get('eval_history') or []) or 'n/a'} |
 | job | {s.get('job_id') or 'local'} · {s['wall_s']} s · loopl_sft.py {SCRIPT_VERSION} |
 
 Artifacts: `{a.out}` (merged, transformers) · `{a.out}-4bit` (MLX) · `{a.out}-GGUF` (Q4_K_M). Full numbers in `scorecard.json`.
@@ -747,14 +1008,24 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--dataset", default=None, help="HF dataset repo (user/name) or a local .jsonl / directory (required unless --from-merged)")
     ap.add_argument("--revision", default=None, help="dataset revision to pin (default: current sha, recorded)")
-    ap.add_argument("--base", default="0.8b", help="0.8b | 2b | 4b or any HF model repo")
+    ap.add_argument("--base", default="0.8b",
+                    help="0.8b | 2b | 4b, any HF repo with a bf16 checkpoint, or a model this script produced (continual tuning; "
+                         "a -4bit/-GGUF repo resolves to its bf16 sibling, 4-bit weights are refused)")
     ap.add_argument("--out", required=True, help="HF model repo for the merged model, e.g. me/loopl-mine-0.8b")
-    ap.add_argument("--epochs", type=float, default=2.0)
+    ap.add_argument("--epochs", default="2",
+                    help="a number, or `auto` = up to 3 with best-eval checkpoint + early stop when eval loss rises "
+                         "(heuristic: < 200 conversations 3–4 · 200–1k 2 · > 1k 1–2)")
     ap.add_argument("--method", choices=["auto", "full", "lora"], default="auto",
-                    help="auto = full fine-tune for ≤ 2B when the GPU has ≥ 40 GB, else LoRA r64")
-    ap.add_argument("--lr", type=float, default=None)
-    ap.add_argument("--lora-r", type=int, default=64)
-    ap.add_argument("--lora-alpha", type=int, default=128)
+                    help="auto = full fine-tune for ≤ 2B when the GPU has ≥ 40 GB, else LoRA r64; round ≥ 2 → LoRA r32")
+    ap.add_argument("--lr", type=float, default=None, help="default per recipe; round ≥ 2 → 5e-5")
+    ap.add_argument("--lora-r", type=int, default=None, help="default 64 (round ≥ 2: 32)")
+    ap.add_argument("--lora-alpha", type=int, default=None, help="default 2 × r")
+    ap.add_argument("--new-shards-only", action="store_true",
+                    help="round ≥ 2: train only on shards the base has not seen (default = REPLAY every shard of the dataset)")
+    ap.add_argument("--replay-from", default=None, metavar="DATASET",
+                    help="mix in another dataset's conversations (e.g. the previous round's data after switching datasets)")
+    ap.add_argument("--stitch", choices=["none", "day", "topic"], default="none",
+                    help="add multi-thread samples: related conversations (same day / same keyword cluster) concatenated under the context budget")
     ap.add_argument("--batch", type=int, default=None)
     ap.add_argument("--grad-accum", type=int, default=None)
     ap.add_argument("--max-length", type=int, default=4096)
@@ -768,6 +1039,9 @@ def main():
     ap.add_argument("--pii", action="store_true", help="scrub emails / phone numbers / API tokens from every text field")
     ap.add_argument("--public", action="store_true", help="create the output repos public (default private)")
     ap.add_argument("--skip-mlx", action="store_true")
+    ap.add_argument("--expect-vision", action="store_true",
+                    help="fail the MLX stage unless the export keeps a vision tower (vision_config + visual tensors + preprocessor_config) — "
+                         "what the loopl app passes for the Qwen3.5 bases, which all see")
     ap.add_argument("--skip-gguf", action="store_true")
     ap.add_argument("--q-bits", type=int, default=4)
     ap.add_argument("--q-group", type=int, default=64)
@@ -786,29 +1060,77 @@ def main():
         load_schema(a.schema)
     if not a.dataset and not a.from_merged:
         ap.error("--dataset is required (or --from-merged REPO)")
-    size = a.base.lower() if a.base.lower() in BASES else None
-    if size:
-        a.base = BASES[size]
-    recipe = RECIPES.get(size or "0.8b")
-    if a.batch is None:
-        a.batch = recipe["batch"]
-    if a.grad_accum is None:
-        a.grad_accum = recipe["accum"]
     denylist = [t.strip() for t in a.denylist.split(",") if t.strip()]
     work = Path(a.work)
     work.mkdir(parents=True, exist_ok=True)
     log(f"loopl_sft.py {SCRIPT_VERSION} · base {a.base} · dataset {a.dataset} · out {a.out} · python {sys.version.split()[0]}")
 
     if a.from_merged:
+        a.root = a.base
         return reexport(a, token, work)
 
-    train_s, eval_s, dstats = discover(a.dataset, a.revision, token, a.eval_frac, a.limit, denylist, a.pii)
+    # ---- base + lineage (1.2.0): a tuned model as the base trains from its bf16 checkpoint with the Qwen root's recipe
+    rb = resolve_base(a.base, token)
+    a.base, a.root, size, rnd, lineage = rb["repo"], rb["root"], rb["size"], rb["round"], rb["lineage"]
+    recipe = RECIPES.get(size or "0.8b")
+    if a.batch is None:
+        a.batch = recipe["batch"]
+    if a.grad_accum is None:
+        a.grad_accum = recipe["accum"]
+    if a.lora_r is None:
+        a.lora_r = 32 if rnd >= 2 else 64
+    if a.lora_alpha is None:
+        a.lora_alpha = 2 * a.lora_r
+    if rnd >= 2:
+        log(f"continual round {rnd}: lineage {' → '.join(lineage)} · defaults LoRA r{a.lora_r} α{a.lora_alpha} lr {a.lr or 5e-5} · "
+            f"{'new shards only' if a.new_shards_only else 'replay on every shard'}")
+    elif a.new_shards_only:
+        log("--new-shards-only ignored: the base has no training history (round 1)")
+        a.new_shards_only = False
+
+    exclude = rb["trained_files"] if (a.new_shards_only and rb["trained_dataset"] in (None, a.dataset)) else None
+    train_s, eval_s, dstats = discover(a.dataset, a.revision, token, a.eval_frac, a.limit, denylist, a.pii, exclude)
+    if a.replay_from:
+        r_train, r_eval, r_stats = discover(a.replay_from, None, token, a.eval_frac, None, denylist, a.pii)
+        keys = {s_["_key"] for s_ in train_s + eval_s}
+        r_train = [s_ for s_ in r_train if s_["_key"] not in keys]
+        r_eval = [s_ for s_ in r_eval if s_["_key"] not in keys]
+        train_s += r_train
+        eval_s += r_eval
+        dstats["replay_from"] = {"dataset": a.replay_from, "train": len(r_train), "eval": len(r_eval), "revision": r_stats.get("revision")}
+        log(f"--replay-from {a.replay_from}: +{len(r_train)} train / +{len(r_eval)} eval conversations")
+
+    # ---- epochs (1.2.0): a number, or `auto` with the agreed heuristic + early stop
+    n_conv = len(train_s) + len(eval_s)
+    heuristic, auto_max = epochs_heuristic(n_conv)
+    epochs_mode = "auto" if str(a.epochs).lower() == "auto" else "fixed"
+    a.epochs = float(auto_max) if epochs_mode == "auto" else float(a.epochs)
+    if epochs_mode == "auto" and not eval_s:
+        log("epochs auto without a held-out split → no early stop; running the heuristic's upper bound")
 
     stage("render")
     from transformers import AutoTokenizer
     tok = AutoTokenizer.from_pretrained(a.base, token=token)
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
+
+    # ---- stitch (1.2.0): related threads → one multi-turn sample, added to the originals
+    sstats = {"mode": a.stitch, "stitched": 0}
+    if a.stitch != "none":
+        budget = context_budget(a.base, token, a.max_length)
+        stitched, sstats = stitch(train_s, a.stitch, stitch_token_counter(tok), budget)
+        sstats["budget_tokens"] = budget
+        train_s = train_s + stitched
+        log(f"stitch {a.stitch}: {sstats['stitched']} samples from {sstats['threads_in']} threads in {sstats['groups']} groups "
+            f"(budget {budget} tokens, {sstats['windows_split']} windows split at the budget, {sstats['too_long_alone']} threads too long alone, "
+            f"{sstats['unkeyed']} threads without a key)")
+
+    plan = {"round": rnd, "base": a.base, "root": a.root, "lineage": lineage, "size": size,
+            "epochs": {"mode": epochs_mode, "max": a.epochs, "heuristic": heuristic, "conversations": n_conv, "early_stop": epochs_mode == "auto" and bool(eval_s)},
+            "replay": (not a.new_shards_only) if rnd >= 2 else None, "replay_from": a.replay_from,
+            "stitch": sstats, "lora": {"r": a.lora_r, "alpha": a.lora_alpha} if a.method != "full" else None}
+    log("plan " + json.dumps(plan, ensure_ascii=False))
+
     ds, rstats = build_rows(tok, train_s, a.format, a.max_length, a.oversample_tools)
     lens = [len(r) for r in ds["input_ids"]]
     log(f"train rows={len(ds)} tokens mean={sum(lens)/len(lens):.0f} max={max(lens)} sum={sum(lens)} stats={json.dumps(rstats)}")
@@ -830,13 +1152,20 @@ def main():
             print("----- LOSS TOKENS -----")
             print(tok.decode([i for i, b in zip(ids, m) if b]))
         print(json.dumps({"dry_run": True, "train": len(train_s), "eval": len(eval_s), "rows": len(ds), "steps": steps,
-                          "tokens": sum(lens), "data": dstats, "render": rstats}, indent=1))
+                          "tokens": sum(lens), "data": dstats, "render": rstats, "plan": plan}, indent=1))
         return
 
     import torch
     from peft import LoraConfig
-    from transformers import AutoModelForCausalLM, AutoModelForImageTextToText
+    from transformers import AutoModelForCausalLM, AutoModelForImageTextToText, EarlyStoppingCallback, TrainerCallback
     from trl import SFTConfig, SFTTrainer
+
+    class EpochLines(TrainerCallback):
+        """`[loopl] epoch=<n> eval_loss=<x> best=<y>` after every evaluation — the app's per-epoch chart reads these."""
+        def on_evaluate(self, args, state, control, metrics=None, **kw):
+            if metrics and "eval_loss" in metrics and state.epoch:
+                hist = [h["eval_loss"] for h in state.log_history if "eval_loss" in h] + [metrics["eval_loss"]]
+                log(f"epoch={round(state.epoch):d} eval_loss={metrics['eval_loss']:.4f} best={min(hist):.4f}")
 
     try:
         import fla  # noqa: F401
@@ -849,10 +1178,10 @@ def main():
     params_b = {"0.8b": 0.9, "2b": 2.3, "4b": 4.7}.get(size or "", 0)
     method = a.method
     if method == "auto":
-        method = "full" if (params_b and params_b <= 2.5 and gpu_gb >= 40) else "lora"
-    lr = a.lr or (recipe["full_lr"] if method == "full" else recipe["lora_lr"])
-    log(f"gpu={gpu_gb:.0f} GB method={method} lr={lr} batch={a.batch}x{a.grad_accum} epochs={a.epochs}")
-    stage("train", method=method, steps=steps, rows=len(ds))
+        method = "lora" if rnd >= 2 else ("full" if (params_b and params_b <= 2.5 and gpu_gb >= 40) else "lora")
+    lr = a.lr or (5e-5 if rnd >= 2 else (recipe["full_lr"] if method == "full" else recipe["lora_lr"]))
+    log(f"gpu={gpu_gb:.0f} GB method={method} lr={lr} batch={a.batch}x{a.grad_accum} epochs={a.epochs:g} ({epochs_mode}) round={rnd}")
+    stage("train", method=method, steps=steps, rows=len(ds), epochs=a.epochs, epochs_mode=epochs_mode, round=rnd)
 
     try:
         model = AutoModelForImageTextToText.from_pretrained(a.base, dtype=dtype, token=token)
@@ -895,9 +1224,15 @@ def main():
         completion_only_loss=False,  # assistant_masks provided by us
         dataset_kwargs={"skip_prepare_dataset": False}, remove_unused_columns=True, report_to=[], seed=a.seed,
     )
-    trainer = SFTTrainer(model=model, args=cfg, train_dataset=ds, eval_dataset=eval_ds, processing_class=tok, peft_config=peft_config)
-    scorecard: dict = {"script": SCRIPT_VERSION, "base": a.base, "dataset": a.dataset, "revision": dstats.get("revision"),
-                       "method": method, "epochs": a.epochs, "train_conversations": len(train_s), "eval_conversations": len(eval_s)}
+    callbacks = [EpochLines()]
+    if epochs_mode == "auto" and eval_ds is not None:
+        callbacks.append(EarlyStoppingCallback(early_stopping_patience=1, early_stopping_threshold=0.0))
+    trainer = SFTTrainer(model=model, args=cfg, train_dataset=ds, eval_dataset=eval_ds, processing_class=tok, peft_config=peft_config,
+                         callbacks=callbacks)
+    scorecard: dict = {"script": SCRIPT_VERSION, "base": a.base, "root": a.root, "dataset": a.dataset, "revision": dstats.get("revision"),
+                       "method": method, "epochs": a.epochs, "epochs_mode": epochs_mode, "epochs_heuristic": heuristic,
+                       "round": rnd, "lineage": lineage, "stitched": sstats.get("stitched", 0),
+                       "train_conversations": len(train_s), "eval_conversations": len(eval_s)}
     if eval_ds is not None:
         base_eval = trainer.evaluate()
         scorecard["eval_loss_base"] = round(base_eval.get("eval_loss", float("nan")), 4)
@@ -910,6 +1245,10 @@ def main():
         scorecard["eval_history"] = [{k: round(v, 4) if isinstance(v, float) else v for k, v in h.items() if k in ("epoch", "eval_loss")}
                                      for h in trainer.state.log_history if "eval_loss" in h]
         scorecard["best_checkpoint"] = trainer.state.best_model_checkpoint
+        if scorecard["eval_history"]:
+            best = min(scorecard["eval_history"], key=lambda h: h["eval_loss"])
+            scorecard["best_epoch"] = round(best.get("epoch", 0))
+    scorecard["epochs_trained"] = round(float(trainer.state.epoch or a.epochs), 2)
     scorecard["train_loss"] = round(metrics.get("train_loss", float("nan")), 4)
     log(f"train metrics: {json.dumps({k: v for k, v in metrics.items() if isinstance(v, (int, float))})}")
 
@@ -931,12 +1270,14 @@ def main():
     cfg_path.write_text(json.dumps(cfg_json, indent=2))
     from huggingface_hub import HfApi, hf_hub_download
     for f in ("preprocessor_config.json", "video_preprocessor_config.json", "chat_template.jinja", "generation_config.json"):
-        try:
-            src = hf_hub_download(a.base, f, token=token)
-            if not (merged_dir / f).exists():
-                shutil.copy(src, merged_dir / f)
-        except Exception:  # noqa: BLE001
-            pass
+        for src_repo in dict.fromkeys([a.base, a.root]):
+            try:
+                src = hf_hub_download(src_repo, f, token=token)
+                if not (merged_dir / f).exists():
+                    shutil.copy(src, merged_dir / f)
+                break
+            except Exception:  # noqa: BLE001
+                continue
 
     stage("eval", probes=min(a.probes, len(eval_s)))
     if eval_s and a.probes > 0:
@@ -951,7 +1292,9 @@ def main():
         del trainer
         torch.cuda.empty_cache()
 
-    summary = {"base": a.base, "dataset": a.dataset, "method": method, "lr": lr, "epochs": a.epochs, "rows": len(ds),
+    summary = {"base": a.base, "root": a.root, "round": rnd, "lineage": lineage, "dataset": a.dataset, "method": method, "lr": lr,
+               "epochs": a.epochs, "epochs_mode": epochs_mode, "epochs_trained": scorecard["epochs_trained"],
+               "replay": (not a.new_shards_only) if rnd >= 2 else None, "replay_from": a.replay_from, "stitch": sstats, "rows": len(ds),
                "tokens": sum(lens), "max_length": a.max_length, "batch": a.batch, "grad_accum": a.grad_accum,
                "lora": None if method == "full" else {"r": a.lora_r, "alpha": a.lora_alpha, "target_regex": pattern},
                "data": dstats, "render": rstats, "metrics": {k: v for k, v in metrics.items() if isinstance(v, (int, float))},
@@ -964,7 +1307,7 @@ def main():
     log("scorecard: " + json.dumps({k: v for k, v in scorecard.items() if k != "examples"}))
 
     api = HfApi(token=token)
-    make_app_loadable(merged_dir, a.base, token, "merged")
+    make_app_loadable(merged_dir, a.root, token, "merged")
     if not a.no_push:
         stage("push", repo=a.out)
         api.create_repo(a.out, private=not a.public, exist_ok=True)
@@ -982,6 +1325,7 @@ def reexport(a, token, work: Path):
     summary = json.loads((merged_dir / "train_summary.json").read_text()) if (merged_dir / "train_summary.json").exists() else {}
     scorecard = json.loads((merged_dir / "scorecard.json").read_text()) if (merged_dir / "scorecard.json").exists() else {}
     a.base = summary.get("base", a.base)
+    a.root = summary.get("root", a.root if getattr(a, "root", None) else a.base)
     a.dataset = summary.get("dataset", a.dataset)
     summary.setdefault("data", {"train": summary.get("scorecard", {}).get("train_conversations", 0),
                                 "eval": summary.get("scorecard", {}).get("eval_conversations", 0), "revision": None})
@@ -1000,7 +1344,7 @@ def export_artifacts(a, api, work: Path, merged_dir: Path, summary: dict, scorec
         try:
             mlx_dir = work / "mlx"
             convert_mlx(merged_dir, mlx_dir, a.q_bits, a.q_group)
-            make_app_loadable(mlx_dir, a.base, os.environ.get("HF_TOKEN"), "mlx")
+            make_app_loadable(mlx_dir, getattr(a, "root", a.base), os.environ.get("HF_TOKEN"), "mlx")
             (mlx_dir / "scorecard.json").write_text(json.dumps(scorecard, indent=1))
             (mlx_dir / "README.md").write_text(model_card(a, summary, "mlx", parent=a.out))
             if not a.no_push:
@@ -1033,6 +1377,9 @@ def export_artifacts(a, api, work: Path, merged_dir: Path, summary: dict, scorec
             out_ids["gguf_error"] = str(e)[:500]
 
     done = {"out": out_ids, **done_extra,
+            "round": summary.get("round"), "lineage": summary.get("lineage"), "base": summary.get("base"),
+            "epochs_trained": scorecard.get("epochs_trained"), "best_epoch": scorecard.get("best_epoch"),
+            "eval_history": scorecard.get("eval_history"), "stitched": scorecard.get("stitched"),
             "eval_loss_base": scorecard.get("eval_loss_base"), "eval_loss_tuned": scorecard.get("eval_loss_tuned"),
             "tool_name_match": f"{scorecard.get('tool_name_match', 0)}/{scorecard.get('tool_turns', 0)}",
             "wall_s": round(time.time() - T0), "script": SCRIPT_VERSION}

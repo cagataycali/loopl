@@ -509,6 +509,43 @@ public struct HubCatalog: Sendable {
         return try Self.parseMine(data).filter { $0.isTextGeneration }
     }
 
+    /// Every repo the author owns (any library — the bf16 `transformers` twins the Train screen needs are not MLX/GGUF rows) with the
+    /// loopl card metadata: `loopl_round` (rounds of continual tuning closed) and `loopl_parent` (an export's bf16 repo). 2-min TTL like `mine`.
+    public struct OwnedRepo: Sendable, Hashable, Identifiable {
+        public var id: String
+        public var library: String?
+        public var tags: [String]
+        public var looplRound: Int?
+        public var looplParent: String?
+        public init(id: String, library: String? = nil, tags: [String] = [], looplRound: Int? = nil, looplParent: String? = nil) {
+            self.id = id; self.library = library; self.tags = tags; self.looplRound = looplRound; self.looplParent = looplParent
+        }
+    }
+
+    public func ownedURL(author: String, limit: Int = 500) -> URL {
+        var c = URLComponents(string: "\(host)/api/models")!
+        var q: [URLQueryItem] = [URLQueryItem(name: "author", value: author), URLQueryItem(name: "sort", value: "lastModified"),
+                                 URLQueryItem(name: "limit", value: String(limit))]
+        for f in ["cardData", "library_name", "tags", "private"] { q.append(URLQueryItem(name: "expand[]", value: f)) }
+        c.queryItems = q
+        return c.url!
+    }
+
+    public func owned(author: String) async throws -> [OwnedRepo] {
+        try Self.parseOwned(try await fetch(ownedURL(author: author), ttl: 120, repo: author))
+    }
+
+    public static func parseOwned(_ data: Data) throws -> [OwnedRepo] {
+        guard let rows = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { throw HubError.badJSON("owned") }
+        return rows.compactMap { row in
+            guard let id = row["id"] as? String else { return nil }
+            let card = row["cardData"] as? [String: Any] ?? [:]
+            let round = (card["loopl_round"] as? NSNumber)?.intValue ?? (card["loopl_round"] as? String).flatMap(Int.init)
+            return OwnedRepo(id: id, library: row["library_name"] as? String, tags: row["tags"] as? [String] ?? [],
+                             looplRound: round, looplParent: card["loopl_parent"] as? String)
+        }
+    }
+
     public func repo(_ id: String) async throws -> Repo {
         let data = try await fetch(URL(string: "\(host)/api/models/\(id)?blobs=true")!, ttl: 86_400, repo: id)
         return try Self.parseRepo(data)
