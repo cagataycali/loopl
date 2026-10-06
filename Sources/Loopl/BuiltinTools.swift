@@ -86,12 +86,12 @@ public struct HttpTool: Tool {
         self.maxBytes = maxBytes; self.maxChars = maxChars; self.maxTimeout = maxTimeout
     }
     public let name = "http"
-    public let description = "Make an HTTPS request. method GET/HEAD/POST/PUT/PATCH/DELETE (default GET), optional headers object, body (string or JSON object), timeout seconds. Returns status, content-type and the body text (truncated). Writes may ask the user for approval. Unavailable in offline mode."
+    public let description = "Make an HTTPS request. `url` is required — pass the full https URL as the `url` argument, e.g. {\"url\": \"https://example.com\"}. Optional: method GET/HEAD/POST/PUT/PATCH/DELETE (default GET), headers object, body (string or JSON object), timeout seconds. Returns status, content-type and the body text (truncated). Writes may ask the user for approval. Unavailable in offline mode."
     public let parameters: JSONValue = [
         "type": "object",
         "properties": [
             "method": ["type": "string", "enum": ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"], "description": "HTTP method, default GET"],
-            "url": ["type": "string", "description": "https URL"],
+            "url": ["type": "string", "description": "full https URL, required", "examples": ["https://example.com"]],
             "headers": ["type": "object", "description": "request headers, e.g. {\"Accept\": \"application/json\"}"],
             "body": ["type": "string", "description": "request body — a string, or a JSON object which is sent as application/json"],
             "timeout": ["type": "number", "description": "seconds, default 20, max 60"],
@@ -114,8 +114,15 @@ public struct HttpTool: Tool {
     }
 
     public static func parse(_ args: [String: JSONValue], maxTimeout: TimeInterval = 60) throws -> Request {
-        guard let raw = args["url"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines), let url = URL(string: raw), let host = url.host else {
-            throw ToolError("need a url")
+        guard var raw = args["url"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
+            throw ToolError("need a url — pass it as the `url` argument, e.g. {\"url\": \"https://example.com\"}")
+        }
+        // `httpbin.org/delete` (Qwen3-0.6B, 2026-10-06): a host without a scheme means https.
+        if !raw.contains("://"), let first = raw.first, first.isLetter || first.isNumber, raw.split(separator: "/").first?.contains(".") == true {
+            raw = "https://" + raw
+        }
+        guard let url = URL(string: raw), let host = url.host else {
+            throw ToolError("need a valid url, got \(raw) — e.g. {\"url\": \"https://example.com\"}")
         }
         let loopback = ["localhost", "127.0.0.1", "::1", "[::1]"].contains(host.lowercased())
         guard url.scheme == "https" || (url.scheme == "http" && loopback) else { throw ToolError("only https urls are allowed") }

@@ -50,7 +50,7 @@ public struct ToolCallStreamGate: Sendable {
     }
 
     /// Openers we must not stream through. Order matters only for the prefix check.
-    static let openers = ["<tool_call>", "<|tool_call|>", "<function_call>", "<|python_tag|>", "```", "{\""]
+    static let openers = ["<tool_call>", "<|tool_call|>", "<function_call>", "<function=", "<|python_tag|>", "```", "{\""]
 
     /// Feed one decoded text piece; returns the stream events to emit now.
     public mutating func feed(_ piece: String) -> [StreamEvent] {
@@ -177,7 +177,7 @@ public struct ToolCallStreamGate: Sendable {
         }
         return false
     }
-    static func hasClosedMarkup(_ s: String) -> Bool { s.contains("</tool_call>") || s.contains("```\n") }
+    static func hasClosedMarkup(_ s: String) -> Bool { s.contains("</tool_call>") || s.contains("</function>") || s.contains("```\n") }
 
     /// Fence languages a tool call may use (`ToolCallParser` rule 3).
     static let callFenceLanguages: Set<String> = ["", "json", "JSON", "tool_call", "tool"]

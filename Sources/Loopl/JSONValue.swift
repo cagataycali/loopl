@@ -86,7 +86,7 @@ public enum JSONValue: Sendable, Hashable, Codable, CustomStringConvertible {
         case .bool(let b): return b ? "true" : "false"
         case .number(let n): return n == n.rounded() && abs(n) < 1e15 ? String(Int(n)) : String(n)
         case .string(let s):
-            let data = try? JSONSerialization.data(withJSONObject: [s])
+            let data = try? JSONSerialization.data(withJSONObject: [s], options: [.withoutEscapingSlashes])
             let arr = data.flatMap { String(data: $0, encoding: .utf8) } ?? "[\"\"]"
             return String(arr.dropFirst().dropLast())
         case .array(let a): return "[" + a.map(\.compact).joined(separator: ",") + "]"

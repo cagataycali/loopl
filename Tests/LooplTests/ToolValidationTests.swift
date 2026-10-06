@@ -75,7 +75,43 @@ final class ToolValidationTests: XCTestCase {
         XCTAssertTrue(out.valid.isEmpty)
         let text = out.results[0].content
         XCTAssertTrue(text.contains("missing required parameter 'b'"), text)
-        XCTAssertTrue(text.contains("\"a\": <number>"), text)
+        XCTAssertTrue(text.contains("{\"a\": 1, \"b\": 1}"), "a concrete example, not a type placeholder: \(text)")
+    }
+
+    // MARK: shapes small models actually send for `http` (lane LOOPL-HTTP-ARGS, 2026-10-06)
+
+    let http = HttpTool()
+
+    func testMissingUrlComplaintCarriesAConcreteExample() {
+        let out = ToolValidation.validateAndPrepare(toolUses: [ToolUse(toolUseId: "t1", name: "http", input: ["method": "GET"])], tools: [http])
+        XCTAssertTrue(out.valid.isEmpty)
+        let text = out.results[0].content
+        XCTAssertTrue(text.contains("missing required parameter 'url'"), text)
+        XCTAssertTrue(text.contains("{\"url\": \"https://example.com\"}"), text)
+    }
+
+    func testUrlAliasesAreRenamed() {
+        for alias in ["uri", "link", "href", "endpoint", "address", "URL", "Url"] {
+            let out = ToolValidation.validateAndPrepare(toolUses: [ToolUse(toolUseId: "t1", name: "http", input: [alias: "https://loopl.dev"])], tools: [http])
+            XCTAssertEqual(out.valid.first?.input["url"], "https://loopl.dev", alias)
+            XCTAssertNil(out.valid.first?.input[alias] ?? nil, "alias key removed: \(alias)")
+        }
+    }
+
+    func testAliasNeverOverridesTheRealKey() {
+        let out = ToolValidation.validateAndPrepare(toolUses: [ToolUse(toolUseId: "t1", name: "http", input: ["url": "https://a.dev", "link": "https://b.dev"])], tools: [http])
+        XCTAssertEqual(out.valid.first?.input["url"], "https://a.dev")
+    }
+
+    func testLooseValueFillsTheOneMissingRequiredKey() {
+        // `<method=HEAD>\nhttps://example.com\n</parameter>` → ["method": "HEAD", "_": "https://example.com"]
+        let out = ToolValidation.validateAndPrepare(toolUses: [ToolUse(toolUseId: "t1", name: "http", input: ["method": "HEAD", "_": "https://example.com"])], tools: [http])
+        XCTAssertEqual(out.valid.first?.input["url"], "https://example.com")
+        XCTAssertNil(out.valid.first?.input["_"] ?? nil)
+        // Two required keys missing → ambiguous, stays an error that names both.
+        let two = ToolValidation.validateAndPrepare(toolUses: [ToolUse(toolUseId: "t2", name: "add", input: ["_": "3"])], tools: tools)
+        XCTAssertTrue(two.valid.isEmpty)
+        XCTAssertTrue(two.results[0].content.contains("'a', 'b'"), two.results[0].content)
     }
 
     func testWrongTypeIsRefusedWithExpectedAndActual() {

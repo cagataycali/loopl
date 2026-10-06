@@ -14,6 +14,7 @@ breaking change is called out under **Changed** with the old → new symbol.
 
 ## Unreleased — human in the loop & `http`
 
+- **Fixed**: `http` "missing required parameter 'url'" with Qwen3.5 — the model writes flat calls (`{"name": "http", "url": …}`) under the hermes prompt and its own XML dialect (`<function=http><parameter=url>…`) under its chat template; `ToolCallParser` now reads both (plus `{"http": {…}}`, `tool`/`tool_name` keys), `ToolValidation` maps `URL`/`uri`/`link`/`href`/`endpoint` → `url`, places a loose value into the one missing required key, and its complaint carries a concrete example. 31 verbatim shapes captured from Qwen3.5-0.8B, Qwen3-0.6B and Apple Foundation Models are pinned in `HttpCallShapesTests`. `HttpTool` accepts a schemeless host (`loopl.dev` → `https://loopl.dev`). `JSONValue.compact` no longer escapes `/`.
 - **SDK**: `Tool.requiresApproval(for:)`, `ApprovalRequest` / `ApprovalDecision`, `ApprovalPolicy` (always · mutating · never + trusted hosts). The agent suspends a flagged call inside the actor, emits `.approvalRequested`, resumes on `agent.resolve(approval:)`; timeout (120 s) and cancellation deny; other concurrent tools keep running. [Human in the loop](sdk/hitl.md).
 - **Changed**: `HttpGetTool` (`http_get`) → `HttpTool` (`http`: GET/HEAD/POST/PUT/PATCH/DELETE, headers, body, timeout, capped response). `http_get` stays one release as a deprecated alias.
 - **LooplUI**: `ApprovalCard` (Approve · Deny · Edit) rendered inline by `AgentTranscriptView.onApproval`; `HapticEvent.approvalNeeded`.

@@ -89,6 +89,8 @@ _ = try OpenAppTool.parse(["url": "tinyapp://chat", "params": ["prompt": "summar
 ## How calls reach your code
 
 - Tool specs go through the model's chat template (`ToolSpec`); small models emit `<tool_call>` JSON, which `ToolCallParser` reads per `ToolFamily` (Qwen, Llama, Gemma, …).
+- The parser reads what small models actually write, not only the textbook shape: `{"name", "arguments"}`, flat calls (`{"name": "http", "url": "…"}`), `{"http": {…}}`, a JSON-string `arguments`, Llama's `<|python_tag|>`, fenced ```json, and Qwen3.5 / Qwen3-Coder XML (`<function=http><parameter=url>…</parameter></function>`, including its truncated and mis-closed variants).
+- `ToolValidation` then repairs against the schema (quoted numbers, `URL`/`uri`/`link` → `url`, a bare value into the one missing required key) and refuses the rest with a concrete example — `missing required parameter 'url'. Call it with arguments like {"url": "https://example.com"}` — so the model fixes its own call on the next cycle. Rejected calls are logged at debug level (`technology.tiny.loopl` / `ToolValidation`).
 - `ToolCallStreamGate` holds back the raw JSON so the UI never flashes it.
 - All calls in one turn run concurrently (`ConcurrentToolExecutor`); pass `SequentialToolExecutor` to serialise.
 - Veto or rewrite a call from a [hook](hooks.md) (`BeforeToolCallEvent.cancelTool`).

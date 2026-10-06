@@ -53,6 +53,89 @@ final class ToolCallParserTests: XCTestCase {
         XCTAssertTrue(r.calls.isEmpty)
     }
 
+    // MARK: shapes captured from real small models (lane LOOPL-HTTP-ARGS, 2026-10-06)
+
+    func testFlatCallTreatsTopLevelKeysAsArguments() {
+        // Qwen3.5-0.8B under the hermes prompt, 5/5 http calls.
+        let r = ToolCallParser(family: .hermes).parse(#"<tool_call>{"name": "http", "url": "https://loopl.dev", "method": "GET", "timeout": 30}</tool_call>"#)
+        XCTAssertEqual(r.calls.count, 1)
+        XCTAssertEqual(r.calls.first?.name, "http")
+        XCTAssertEqual(r.calls.first?.input["url"], "https://loopl.dev")
+        XCTAssertEqual(r.calls.first?.input["method"], "GET")
+        XCTAssertEqual(r.calls.first?.input["timeout"], 30)
+        XCTAssertNil(r.calls.first?.input["name"] ?? nil, "the envelope key is not an argument")
+    }
+
+    func testFlatCallWithIdAndTypeKeepsOnlyArguments() {
+        let r = ToolCallParser(family: .generic).parse(#"{"type": "function", "id": "call_1", "name": "calculator", "expression": "2+2"}"#)
+        XCTAssertEqual(r.calls.first?.toolUseId, "call_1")
+        XCTAssertEqual(r.calls.first?.input, ["expression": "2+2"])
+    }
+
+    func testCallKeyedByToolName() {
+        let r = ToolCallParser(family: .generic).parse("```json\n{\"http\": {\"url\": \"https://loopl.dev\"}}\n```")
+        XCTAssertEqual(r.calls.first?.name, "http")
+        XCTAssertEqual(r.calls.first?.input["url"], "https://loopl.dev")
+    }
+
+    func testToolKeyNamesTheFunction() {
+        let r = ToolCallParser(family: .generic).parse(#"{"tool": "http", "arguments": {"url": "https://loopl.dev"}}"#)
+        XCTAssertEqual(r.calls.first?.name, "http")
+        XCTAssertEqual(r.calls.first?.input["url"], "https://loopl.dev")
+    }
+
+    func testQwen35XMLOfficialShape() {
+        let raw = """
+        <tool_call>
+        <function=http>
+        <parameter=url>
+        https://loopl.dev
+        </parameter>
+        <parameter=headers>
+        {"Accept": "application/json"}
+        </parameter>
+        <parameter=timeout>
+        10
+        </parameter>
+        </function>
+        </tool_call>
+        """
+        let r = ToolCallParser(family: .hermes).parse(raw)
+        XCTAssertEqual(r.calls.count, 1)
+        XCTAssertEqual(r.calls.first?.name, "http")
+        XCTAssertEqual(r.calls.first?.input["url"], "https://loopl.dev")
+        XCTAssertEqual(r.calls.first?.input["headers"], ["Accept": "application/json"])
+        XCTAssertEqual(r.calls.first?.input["timeout"], 10)
+        XCTAssertEqual(r.text, "", "markup removed from the visible text")
+    }
+
+    func testQwen35XMLSloppyShapes() {
+        // Every variant mlx-community/Qwen3.5-0.8B-4bit produced in one 10-ask probe.
+        let keyAsTag = "<tool_call>\n<function=http>\n<url>\nhttps://loopl.dev\n</parameter>\n<method=GET>\n</parameter>\n</function>\n</tool_call>"
+        let inline = "<tool_call>\n<function=http>\n<method=POST>\n<url=https://httpbin.org/post>\n<body>{\"hello\": 1}</body>\n</function>\n</tool_call>"
+        let quoted = "<tool_call>\n<function=http>\n<method=\"PUT\">\n<url>\nhttps://httpbin.org/put\n</parameter>\n</function>\n</tool_call>"
+        let loose = "<tool_call>\n<function=http>\n<method=HEAD>\nhttps://example.com\n</parameter>\n</function>\n</tool_call>"
+        let p = ToolCallParser(family: .hermes)
+        XCTAssertEqual(p.parse(keyAsTag).calls.first?.input, ["url": "https://loopl.dev", "method": "GET"])
+        XCTAssertEqual(p.parse(inline).calls.first?.input, ["method": "POST", "url": "https://httpbin.org/post", "body": ["hello": 1]])
+        XCTAssertEqual(p.parse(quoted).calls.first?.input, ["method": "PUT", "url": "https://httpbin.org/put"])
+        XCTAssertEqual(p.parse(loose).calls.first?.input, ["method": "HEAD", "_": "https://example.com"], "the bare value is kept for ToolValidation to place")
+    }
+
+    func testXMLFunctionWithoutToolCallWrapperAndTruncated() {
+        let bare = "I'll fetch it.\n<function=http>\n<parameter=url>\nhttps://loopl.dev\n</parameter>\n</function>"
+        let r = ToolCallParser(family: .hermes).parse(bare)
+        XCTAssertEqual(r.calls.first?.input["url"], "https://loopl.dev")
+        XCTAssertEqual(r.text, "I'll fetch it.")
+        let cut = "<tool_call>\n<function=http>\n<parameter=url>\nhttps://loopl.dev"
+        XCTAssertEqual(ToolCallParser(family: .hermes).parse(cut).calls.first?.input["url"], "https://loopl.dev", "max_tokens mid-call still yields the url")
+    }
+
+    func testXMLInProseIsNotACall() {
+        let r = ToolCallParser(family: .hermes).parse("In XML you would write <function>…</function> and <parameter> tags.")
+        XCTAssertTrue(r.calls.isEmpty)
+    }
+
     func testArgumentsAsJSONString() {
         let r = ToolCallParser(family: .generic).parse("{\"name\": \"calculator\", \"arguments\": \"{\\\"expression\\\": \\\"1+1\\\"}\"}")
         XCTAssertEqual(r.calls.first?.input["expression"], .string("1+1"))
