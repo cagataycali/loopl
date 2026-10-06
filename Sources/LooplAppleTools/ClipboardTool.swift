@@ -13,7 +13,11 @@ import AppKit
 //
 // Two schema shapes exist so the real-model harness (`ClipboardShapeMeasurement`) can pick the one a
 // 0.8B calls correctly: shape A is ONE tool with `action: read|write`; shape B is `clipboard_read` +
-// `clipboard_write`. `AppleTools.all` ships the measured winner; the other stays for the test.
+// `clipboard_write`. MEASURED 2026-10-06 (temp 0.7, app prompt, full tool list, 3 runs × 3 scenarios):
+//   Qwen3.5-0.8B-4bit  A 0/9 — "What did I just copy?" became `clipboard{action:"write"}` 4 of 6 times
+//                       B 2/9 — reads right 2/3, writes with the right text 1/3
+//   loopl-2b-4bit      A 9/9 · B 9/9 (approval card approved=1 on every write)
+// `AppleTools.all` ships shape B; shape A stays for the measurement and the SDK.
 
 /// Pasteboard access that works on iOS (UIPasteboard) and on the macOS test host (NSPasteboard),
 /// so the harness executes the tool for real instead of recording "unavailable".
@@ -118,7 +122,7 @@ public enum Clipboard {
         var detail = "Replaces what is on the clipboard"
         if current.hasText || current.hasImage { detail += " (currently \(current.hasImage && !current.hasText ? "a picture" : "text"))" }
         return ApprovalRequest(toolName: toolName, title: "Copy to clipboard · \(preview)", method: "COPY", url: nil,
-                               bodyPreview: text, detail: detail, risk: .low, input: input)
+                               bodyPreview: text, detail: detail, risk: .medium, input: input)   // .low is auto-approved by the default .mutating policy — replacing the clipboard must ask
     }
 
     static let actions = ["read", "write"]
@@ -177,7 +181,7 @@ public struct ClipboardTool: AppleTool {
 public struct ClipboardReadTool: AppleTool {
     public init() {}
     public let name = "clipboard_read"
-    public let description = "Read what the user copied to the clipboard: text, a link or a picture. Use when the user says \"paste\", \"what I copied\" or \"my clipboard\"."
+    public let description = "Read what the user copied to the clipboard: text, a link or a picture. Use when the user says \"paste\", \"what I copied\", \"what's on my clipboard\" or asks you to use the copied text."
     public let parameters: JSONValue = ToolSchema.object([:])
     public static let onDeviceCopy = "Reads what you copied (text or a picture). Nothing leaves the device."
     public static var defaultOn: Bool { true }

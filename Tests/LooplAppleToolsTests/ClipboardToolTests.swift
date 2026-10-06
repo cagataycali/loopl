@@ -29,7 +29,7 @@ final class ClipboardToolTests: XCTestCase {
         XCTAssertEqual(req?.toolName, "clipboard")
         XCTAssertEqual(req?.method, "COPY")
         XCTAssertEqual(req?.bodyPreview, "hello from loopl")
-        XCTAssertEqual(req?.risk, .low)
+        XCTAssertEqual(req?.risk, .medium, "the default ApprovalPolicy(.mutating) auto-approves .low — a clipboard write must reach the card")
         XCTAssertTrue(req?.title.contains("hello from loopl") == true)
         XCTAssertNil(t.requiresApproval(for: ["action": .string("write"), "text": .string("")]), "empty text fails in call, no card")
         XCTAssertNotNil(ClipboardWriteTool().requiresApproval(for: ["text": .string("x")]))
@@ -75,10 +75,10 @@ final class ClipboardToolTests: XCTestCase {
     }
 
     func testRegistryAndDefaults() {
-        XCTAssertTrue(AppleTools.names.contains("clipboard"))
-        XCTAssertTrue(AppleTools.isDefaultOn("clipboard"))
+        XCTAssertEqual(AppleTools.names.filter { $0.hasPrefix("clipboard") }, ["clipboard_read", "clipboard_write"], "shape B — measured, see ClipboardTool.swift header")
+        XCTAssertTrue(AppleTools.isDefaultOn("clipboard_read")); XCTAssertTrue(AppleTools.isDefaultOn("clipboard_write"))
         XCTAssertTrue(AppleTools.isDefaultOn("flashlight"), "existing tools keep today's default")
         XCTAssertEqual(Set(AppleTools.defaultOnNames), Set(AppleTools.names), "nothing is off by default yet — the calendar/reminders/location lanes add the first ones")
-        XCTAssertFalse(AppleTools.names.contains("clipboard_read"), "shape B stays out of the app list unless the measurement picks it")
+        XCTAssertFalse(AppleTools.names.contains("clipboard"), "shape A lost the measurement on the 0.8B; it stays in the SDK only")
     }
 }

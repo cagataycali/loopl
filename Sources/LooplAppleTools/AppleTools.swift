@@ -57,7 +57,7 @@ public enum AppleTools {
         [GenerateImageTool(), GenerateVoiceTool(), DescribeImageTool(),
          TranslateTool(), TranscribeTool(),
          FlashlightTool(), VibrateTool(), OpenAppTool(),
-         ClipboardTool()]
+         ClipboardReadTool(), ClipboardWriteTool()]   // measured 2026-10-06: two tools beat one `action` tool on the 0.8B (ClipboardShapeMeasurement)
     }
     public static var names: [String] { all.map(\.name) }
     /// Names switched on by default (`defaultOn`) — the everyday set.

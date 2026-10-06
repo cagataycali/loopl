@@ -205,20 +205,20 @@ enum DesignFixture {
             // stops at the COPY approval card quoting the text. `--design-clipboard-approved` settles the card.
             t.user("What did I copy? Then copy a Turkish version of it for me.")
             t.apply(.startEventLoop(cycle: 1))
-            let r = ToolUse(toolUseId: "tooluse_cb1", name: "clipboard", input: ["action": .string("read")])
+            let r = ToolUse(toolUseId: "tooluse_cb1", name: "clipboard_read", input: [:])
             t.apply(.modelMessage(.assistant(text: "", toolUses: [r])))
-            t.apply(.toolStarted(r)); t.apply(.toolResult(ToolResult(toolUseId: "tooluse_cb1", name: "clipboard", content: "clipboard: text (14 characters)\nSee you at six", durationMs: 0.6)))
+            t.apply(.toolStarted(r)); t.apply(.toolResult(ToolResult(toolUseId: "tooluse_cb1", name: "clipboard_read", content: "clipboard: text (14 characters)\nSee you at six", durationMs: 0.6)))
             t.apply(.startEventLoop(cycle: 2))
             t.apply(.text("You copied *See you at six*. Copying the Turkish now."))
-            let w = ToolUse(toolUseId: "tooluse_cb2", name: "clipboard", input: ["action": .string("write"), "text": .string("Altıda görüşürüz")])
+            let w = ToolUse(toolUseId: "tooluse_cb2", name: "clipboard_write", input: ["text": .string("Altıda görüşürüz")])
             t.apply(.modelMessage(.assistant(text: "You copied *See you at six*. Copying the Turkish now.", toolUses: [w])))
             if CommandLine.arguments.contains("--design-clipboard-approved") {
-                t.apply(.toolStarted(w)); t.apply(.toolResult(ToolResult(toolUseId: "tooluse_cb2", name: "clipboard", content: "clipboard: replaced with 16 characters", durationMs: 0.4)))
+                t.apply(.toolStarted(w)); t.apply(.toolResult(ToolResult(toolUseId: "tooluse_cb2", name: "clipboard_write", content: "clipboard: replaced with 16 characters", durationMs: 0.4)))
                 t.apply(.startEventLoop(cycle: 3))
                 t.apply(.text("Done — **Altıda görüşürüz** is on your clipboard."))
                 t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("Done — **Altıda görüşürüz** is on your clipboard."), metrics: EventLoopMetrics())))
             } else {
-                t.apply(.approvalRequested(ClipboardTool().requiresApproval(for: w.input)!.with(id: w.toolUseId)))
+                t.apply(.approvalRequested(ClipboardWriteTool().requiresApproval(for: w.input)!.with(id: w.toolUseId)))
             }
         case "edit":
             // Hold-to-edit (lane EDIT-MESSAGE): a settled two-turn thread; holding "And in Tokyo?" → Edit /
