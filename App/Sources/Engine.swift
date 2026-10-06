@@ -113,10 +113,20 @@ public final class Engine {
             // Last used model lives on a drive that is not plugged in → start on the default instead, and say so.
             if let drive = store.storage.missingDrive(for: s) {
                 transcript.note("\(s.name) is on \(drive), which isn't plugged in — using the default model until it is.")
+            } else if let u = store.storage.unreadableDrive(for: s) {
+                transcript.note("\(s.name) is on \(u.name), which is connected but can't be read right now — re-grant its folder in Settings › Storage. Using the default model until then.")
             } else { return s }
         }
-        if let id = store.catalog.defaultModelId, let s = models.first(where: { $0.id == id }) { return s }
-        return models.filter(\.isDownloadable).min { $0.sizeBytes < $1.sizeBytes }
+        // The default (or anything else) sitting on a drive that is away/unreadable is not a startup candidate —
+        // a model that IS here beats a download, and a download beats a drive error on the launch screen.
+        let onDevice = models.filter { store.states[$0.id]?.isDownloaded == true }
+        if let id = store.catalog.defaultModelId, let s = models.first(where: { $0.id == id }) {
+            if store.storage.anyDriveProblem(for: s) == nil { return s }
+            if let here = onDevice.first { return here }
+            return s
+        }
+        if let here = onDevice.min(by: { $0.sizeBytes < $1.sizeBytes }) { return here }
+        return models.filter { $0.isDownloadable && store.storage.anyDriveProblem(for: $0) == nil }.min { $0.sizeBytes < $1.sizeBytes }
     }
 
     /// First launch: download the default model with inline progress, then load.
@@ -132,12 +142,20 @@ public final class Engine {
     /// Switch to `spec`: download if needed (progress inline), then load. Remembers the choice.
     public func select(_ spec: ModelSpec) async {
         lastError = nil
-        if let drive = store.storage.missingDrive(for: spec) {
-            readiness = loadedModel.map { .ready($0) } ?? .failed(spec, "\(spec.name) is on \(drive). Plug it in to use it.")
-            lastError = "\(spec.name) is on \(drive). Plug it in to use it."
+        if let problem = store.storage.anyDriveProblem(for: spec) {
+            readiness = loadedModel.map { .ready($0) } ?? .failed(spec, problem)
+            lastError = problem
             haptics.emit(.error); return
         }
         if spec.isDownloadable, store.localDirectory(spec) == nil {
+            // A model RECORDED on a drive is never re-downloaded behind the user's back: if its files are not
+            // where storage.json says, the row has to say so (needs drive / unreadable / gone), not fetch 500 MB.
+            if store.storage.location(of: spec.id).isExternal {
+                store.refresh()
+                let msg = store.storage.anyDriveProblem(for: spec) ?? "\(spec.name) should be on \(store.locationName(spec)) but its files are not there — download it again from Models."
+                store.storage.diagnostics.log("\(spec.id): select refused auto-download — \(msg)")
+                readiness = loadedModel.map { .ready($0) } ?? .failed(spec, msg); lastError = msg; haptics.emit(.error); return
+            }
             if settings.offline || NetworkPolicy.isOffline {
                 readiness = .failed(spec, "\(spec.name) is not on this device and offline mode is on."); return
             }
@@ -152,6 +170,7 @@ public final class Engine {
                 case .failed(let msg): readiness = .failed(spec, msg); haptics.emit(.error); return
                 case .paused, .notDownloaded: readiness = .failed(spec, "download stopped"); return
                 case .needsDrive(let d): readiness = .failed(spec, "\(spec.name) is on \(d). Plug it in to use it."); return
+                case .driveUnreadable(let d, _): readiness = .failed(spec, "\(d) is connected but loopl can't read it — re-grant its folder in Settings › Storage."); return
                 case .moving: continue
                 }
                 break
@@ -171,7 +190,7 @@ public final class Engine {
         }
         let dir = spec.isDownloadable ? store.localDirectory(spec) : nil
         if spec.isDownloadable && dir == nil {
-            if let drive = store.storage.missingDrive(for: spec) { readiness = .failed(spec, "\(spec.name) is on \(drive). Plug it in to use it."); return }
+            if let problem = store.storage.anyDriveProblem(for: spec) { readiness = .failed(spec, problem); return }
             readiness = .failed(spec, "\(spec.name) is not downloaded yet"); return
         }
         do {

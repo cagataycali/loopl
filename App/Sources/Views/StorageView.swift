@@ -12,6 +12,8 @@ struct StorageView: View {
     @Bindable var settings: AppSettings
     @Bindable var store: ModelStore
     @State private var pickingFolder = false
+    /// Non-nil while the picker is open to REPLACE this volume's grant (keeps its models).
+    @State private var regranting: StorageLocations.Volume?
     @State private var pickError: String?
     @State private var confirmForget: StorageLocations.Volume?
     @State private var confirmClear = false
@@ -25,7 +27,7 @@ struct StorageView: View {
     private var placed: [ModelSpec] {
         store.catalog.models.filter { s in
             guard s.isDownloadable, let st = store.states[s.id] else { return false }
-            return st.isDownloaded || st.isMoving || st.needsDrive != nil
+            return st.isDownloaded || st.isMoving || st.driveBlocked
         }
     }
 
@@ -41,13 +43,30 @@ struct StorageView: View {
 
             Section {
                 ForEach(storage.volumes) { v in
-                    VolumeRow(name: v.name, detail: v.connected ? "Folder “\(v.bookmark.folderName)”" : "Not connected — plug it in to use its models",
-                              connected: v.connected, used: v.used, free: v.free, system: "externaldrive")
+                    VStack(alignment: .leading, spacing: 6) {
+                        VolumeRow(name: v.name,
+                                  detail: !v.connected ? "Not connected — plug it in to use its models"
+                                        : v.usable ? "Folder “\(v.bookmark.folderName)”"
+                                        : "Connected, but loopl can't read folder “\(v.bookmark.folderName)”",
+                                  connected: v.usable, used: v.used, free: v.free, system: v.connected && !v.usable ? "externaldrive.badge.exclamationmark" : "externaldrive")
+                        if v.connected, !v.usable {
+                            Text(v.accessGranted ? "The folder could not be listed. Pick it again to renew the grant — your models stay where they are."
+                                                 : "iOS refused access to the folder. Pick it again to renew the grant — your models stay where they are.")
+                                .font(.caption).foregroundStyle(.orange)
+                            Button { LooplDesign.haptic(1); regranting = v; pickingFolder = true } label: {
+                                Label("Re-grant folder…", systemImage: "folder.badge.questionmark").font(.callout.weight(.semibold))
+                            }
+                            .accessibilityIdentifier("storage-regrant-\(v.name)")
+                        }
+                    }
                         .accessibilityIdentifier("storage-volume-\(v.name)")
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                             Button(role: .destructive) { confirmForget = v } label: { Label("Forget", systemImage: "eject") }
                         }
-                        .contextMenu { Button("Forget this drive", systemImage: "eject", role: .destructive) { confirmForget = v } }
+                        .contextMenu {
+                            Button("Re-grant folder…", systemImage: "folder.badge.questionmark") { regranting = v; pickingFolder = true }
+                            Button("Forget this drive", systemImage: "eject", role: .destructive) { confirmForget = v }
+                        }
                 }
                 Button {
                     LooplDesign.haptic(1); pickingFolder = true
@@ -98,6 +117,18 @@ struct StorageView: View {
                     Text("Models on a drive that is not connected are left alone — nothing on the phone to delete.")
                 }
             }
+
+            if !storage.volumes.isEmpty || FileManager.default.fileExists(atPath: storage.diagnostics.url.path) {
+                Section {
+                    ShareLink(item: storage.diagnostics.url) {
+                        Label("Diagnostics", systemImage: "doc.text.magnifyingglass")
+                    }
+                    .disabled(!FileManager.default.fileExists(atPath: storage.diagnostics.url.path))
+                    .accessibilityIdentifier("storage-diagnostics")
+                } footer: {
+                    Text("A small log of what happened with each drive (grant, mount, listing, writes). Share it when a drive misbehaves.")
+                }
+            }
         }
         .looplScrollClearance()
         .accessibilityIdentifier("pane-storage")
@@ -107,10 +138,13 @@ struct StorageView: View {
         .animation(LooplDesign.Motion.faded(LooplDesign.Motion.spring, reduceMotion), value: placed.map(\.id))
         .onAppear { store.refresh() }
         .onChange(of: scenePhase) { _, p in if p == .active { store.refresh() } }
-        .sheet(isPresented: $pickingFolder) {
+        .sheet(isPresented: $pickingFolder, onDismiss: { regranting = nil }) {
             FolderPicker { url in
                 guard let url else { return }
-                do { let v = try storage.add(folder: url); pickError = nil; store.refresh(); LooplDesign.success(); _ = v }
+                do {
+                    if let v = regranting { try storage.regrant(v.id, folder: url) } else { _ = try storage.add(folder: url) }
+                    pickError = nil; store.refresh(); LooplDesign.success()
+                }
                 catch { pickError = error.localizedDescription; LooplDesign.failure() }
             }
             .ignoresSafeArea()
@@ -132,7 +166,7 @@ struct StorageView: View {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(spec.name).font(.body.weight(.medium))
-                    Text(locationLine(spec, state)).font(.caption).foregroundStyle(state.needsDrive == nil ? Color.secondary : Color.orange)
+                    Text(locationLine(spec, state)).font(.caption).foregroundStyle(state.driveBlocked ? Color.orange : Color.secondary)
                 }
                 Spacer()
                 if state.isDownloaded {
@@ -159,13 +193,14 @@ struct StorageView: View {
             }
         }
         .padding(.vertical, 2)
-        .opacity(state.needsDrive == nil ? 1 : 0.55)
+        .opacity(state.driveBlocked ? 0.55 : 1)
         .accessibilityIdentifier("storage-model-\(spec.id)")
     }
 
     private func locationLine(_ spec: ModelSpec, _ state: ModelStore.State) -> String {
         switch state {
         case .needsDrive(let d): return "On \(d) — not connected"
+        case .driveUnreadable(let d, _): return "On \(d) — connected, but can't be read (re-grant the folder)"
         case .moving: return "Moving…"
         case .downloaded(let bytes): return "\(ByteSize.label(bytes)) on \(store.locationName(spec))"
         default: return store.locationName(spec)

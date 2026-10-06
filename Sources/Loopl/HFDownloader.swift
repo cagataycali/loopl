@@ -116,7 +116,11 @@ public struct HFDownloader: Sendable {
         var have: Int64 = (try? fm.attributesOfItem(atPath: part.path))?[.size] as? Int64 ?? 0
         if have > file.size { try? fm.removeItem(at: part); have = 0 }
         if have > 0 { onBytes(have) }
-        if !fm.fileExists(atPath: part.path) { fm.createFile(atPath: part.path, contents: nil) }
+        if !fm.fileExists(atPath: part.path) {
+            // On a removable volume `createFile` quietly returns false when the grant did not take
+            // (the FileHandle below would then report "config.json.part doesn't exist") — say what failed, where.
+            guard fm.createFile(atPath: part.path, contents: nil) else { throw DLError.io(Self.cannotCreate(part)) }
+        }
 
         let escaped = file.path.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? file.path
         let url = URL(string: "\(host)/\(repo)/resolve/\(revision)/\(escaped)")!
@@ -132,7 +136,8 @@ public struct HFDownloader: Sendable {
         if code == 416 { try? fm.removeItem(at: part); throw DLError.io("range mismatch for \(file.path); retry") }
         guard code == 200 || code == 206 else { throw DLError.http(code, file.path) }
         if code == 200, have > 0 {           // server ignored Range → start over
-            try fm.removeItem(at: part); fm.createFile(atPath: part.path, contents: nil)
+            try fm.removeItem(at: part)
+            guard fm.createFile(atPath: part.path, contents: nil) else { throw DLError.io(Self.cannotCreate(part)) }
             onBytes(-have); have = 0
         }
 
@@ -158,6 +163,16 @@ public struct HFDownloader: Sendable {
         guard final == file.size else { throw DLError.io("\(file.path): got \(final) of \(file.size) bytes") }
         if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
         try fm.moveItem(at: part, to: dest)
+    }
+}
+
+extension HFDownloader {
+    /// The message for a `.part` file that could not be created: names the folder and whether it is writable at all.
+    static func cannotCreate(_ part: URL) -> String {
+        let dir = part.deletingLastPathComponent()
+        let fm = FileManager.default
+        let why = !fm.fileExists(atPath: dir.path) ? "folder is missing" : (fm.isWritableFile(atPath: dir.path) ? "createFile returned false (grant not active?)" : "folder is read-only")
+        return "can't write \(part.lastPathComponent) to \(dir.path): \(why)"
     }
 }
 

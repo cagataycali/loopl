@@ -27,6 +27,10 @@ Each volume shows free space as iOS reports it for an important write (`volumeAv
 
 Models on it stay in the catalog, dimmed: *Needs SanDisk — plug it in to use*. They cannot be deleted from the phone (there is nothing on the phone to delete), and tapping one does nothing. If the model in use lived there and the drive is pulled, the next load says so by name — *SanDisk was disconnected while loading…* — and the app keeps running; at launch, loopl starts on the default model and leaves a note in the conversation. The default model and Apple's model always live on the phone, so the app works without the drive.
 
+## When the drive is here but can't be read
+
+iOS occasionally refuses a saved grant — most often for a bookmark to the **root** of a removable drive, or when the drive mounts a few seconds after loopl launched. loopl retries for about ten seconds and again every time it returns to the foreground. If the grant still fails, the drive row says **connected, but loopl can't read folder …** with **Re-grant folder…**: pick the same folder again and every model on it is back, nothing is downloaded twice. Prefer granting a sub-folder (for example `loopl`) rather than the drive root. **Diagnostics** at the bottom of the screen shares a small log of every grant, mount, listing and write outcome.
+
 ## Speed — the honest part
 
 Weights load more slowly from a drive than from the iPhone's own flash.
