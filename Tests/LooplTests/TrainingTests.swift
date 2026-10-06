@@ -184,10 +184,11 @@ final class TrainingTests: XCTestCase {
         p.ingest("[loopl] epoch=2 eval_loss=2.1477 best=2.1477")
         p.ingest("[loopl] epoch=2 eval_loss=2.1470 best=2.1470")   // a re-read line updates, never duplicates
         XCTAssertEqual(p.evalHistory.map(\.epoch), [1, 2]); XCTAssertEqual(p.evalHistory.last?.evalLoss, 2.147)
-        p.ingest(#"[loopl] done {"out": {"merged": "me/loopl-app-sim-r2", "mlx": "me/loopl-app-sim-r2-4bit"}, "round": 2, "lineage": ["Qwen/Qwen3.5-0.8B", "me/loopl-app-sim"], "epochs_trained": 3.0, "best_epoch": 2, "eval_history": [{"epoch": 1.0, "eval_loss": 2.241}, {"epoch": 2.0, "eval_loss": 2.147}, {"epoch": 3.0, "eval_loss": 2.17}], "stitched": 9, "eval_loss_base": 2.38, "eval_loss_tuned": 2.147, "script": "1.2.0"}"#)
+        p.ingest(#"[loopl] done {"out": {"merged": "me/loopl-app-sim-r2", "mlx": "me/loopl-app-sim-r2-4bit"}, "round": 2, "lineage": ["Qwen/Qwen3.5-0.8B", "me/loopl-app-sim"], "epochs_trained": 3.0, "best_epoch": 2, "eval_history": [{"epoch": 1.0, "eval_loss": 2.241}, {"epoch": 2.0, "eval_loss": 2.147}, {"epoch": 3.0, "eval_loss": 2.17}, {"epoch": 3.0, "eval_loss": 2.147}], "stitched": 9, "eval_loss_base": 2.38, "eval_loss_tuned": 2.147, "script": "1.2.0"}"#)
         let o = try! XCTUnwrap(p.output)
         XCTAssertEqual(o.round, 2); XCTAssertEqual(o.bestEpoch, 2); XCTAssertEqual(o.epochsTrained, 3); XCTAssertEqual(o.stitched, 9)
-        XCTAssertEqual(o.evalHistory?.map(\.epoch), [1, 2, 3]); XCTAssertEqual(o.lineage?.last, "me/loopl-app-sim")
+        XCTAssertEqual(o.evalHistory?.map(\.epoch), [1, 2, 3], "the final best-model evaluate (a 2nd 'epoch 3' from scripts < 1.2.3) is not a 4th bar")
+        XCTAssertEqual(o.evalHistory?.last?.evalLoss, 2.17); XCTAssertEqual(o.lineage?.last, "me/loopl-app-sim")
         // a 1.1.0 job without the new keys still parses (nil, not garbage)
         var old = TrainingProgress()
         old.ingest(#"[loopl] done {"out": {"merged": "x/y"}, "eval_loss_base": 2.3, "eval_loss_tuned": 2.1, "script": "1.1.0"}"#)

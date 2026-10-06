@@ -494,9 +494,11 @@ public struct TrainingProgress: Hashable, Sendable {
             o.bestEpoch = d?["best_epoch"]?.doubleValue.map(Int.init)
             o.stitched = d?["stitched"]?.doubleValue.map(Int.init)
             if let h = d?["eval_history"]?.arrayValue {
-                let hist = h.compactMap { e -> TrainingEpochLoss? in
-                    guard let ep = e["epoch"]?.doubleValue, let l = e["eval_loss"]?.doubleValue else { return nil }
-                    return TrainingEpochLoss(epoch: Int(ep.rounded()), evalLoss: l)
+                var hist: [TrainingEpochLoss] = []
+                for e in h {   // one bar per epoch: scripts < 1.2.3 appended the final best-model evaluate() as a second last epoch
+                    guard let ep = e["epoch"]?.doubleValue, let l = e["eval_loss"]?.doubleValue else { continue }
+                    let epoch = Int(ep.rounded())
+                    if !hist.contains(where: { $0.epoch == epoch }) { hist.append(TrainingEpochLoss(epoch: epoch, evalLoss: l)) }
                 }
                 o.evalHistory = hist.isEmpty ? (evalHistory.isEmpty ? nil : evalHistory) : hist
             } else if !evalHistory.isEmpty { o.evalHistory = evalHistory }

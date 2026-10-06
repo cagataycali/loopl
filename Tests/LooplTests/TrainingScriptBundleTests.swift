@@ -6,7 +6,7 @@ import XCTest
 /// The Train screen uploads App/Resources/train/loopl_sft.py into the user's dataset and runs it on HF Jobs.
 /// 1.0.3 exported MLX with mlx_lm.convert (text-only) → every model trained from the app lost its vision tower.
 /// 1.1.0 (loopl-train 523fafb) exports with mlx_vlm.convert and gates the vision triad.
-/// 1.2.0 (loopl-train 0bfd3d7) adds continual tuning (`--base <tuned model>`), `--epochs auto`, `--stitch`; 1.2.1 `--expect-vision`; 1.2.2 stitch splits a day into
+/// 1.2.0 (loopl-train 0bfd3d7) adds continual tuning (`--base <tuned model>`), `--epochs auto`, `--stitch`; 1.2.1 `--expect-vision`; 1.2.2 stitch splits a day into (1.2.3: one eval_history entry per epoch)
 /// several budget-sized samples — this file must stay byte-identical to loopl-train main.
 final class TrainingScriptBundleTests: XCTestCase {
     static let script = URL(fileURLWithPath: #filePath)
