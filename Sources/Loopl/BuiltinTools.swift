@@ -40,31 +40,58 @@ public struct CalculatorTool: Tool {
 }
 
 /// Notes in UserDefaults — `remember` writes, `recall` reads (all or by key).
+///
+/// Measured with the real stack (Qwen3.5-0.8B-4bit, the app's prompt and full tool list, `MemoryToolsAuditTests`,
+/// 2026-10-06): with "store a short note under a key" + a required `key` the model called `remember` in 8/15 turns and
+/// `recall` in 2/15 fresh conversations — it asked the user which key to use, or answered "I don't have your name".
+/// Small models need the description to say WHEN, the fact to be the only required argument, and a miss to show
+/// everything rather than hide it.
 public struct RememberTool: Tool {
     public init() {}
     public let name = "remember"
-    public let description = "Store a short note under a key so it can be recalled later in this app."
-    public let parameters: JSONValue = ["type": "object", "properties": ["key": ["type": "string"], "value": ["type": "string"]], "required": ["key", "value"]]
+    public let description = "Save a fact the user wants kept for later: their name, where they live, preferences, anything they say 'remember', 'note' or 'don't forget' about. Notes persist across conversations and app restarts. Put the fact in value; key is an optional short label (name, city, coffee)."
+    public let parameters: JSONValue = ["type": "object", "properties": [
+        "value": ["type": "string", "description": "the fact to keep, in the user's words"],
+        "key": ["type": "string", "description": "optional short label, e.g. name"],
+        "replace": ["type": "boolean", "description": "true to overwrite a note that already exists under key (only when the user asked to change it)"]], "required": ["value"]]
     public func call(_ args: [String: JSONValue]) async throws -> String {
-        guard let key = args["key"]?.stringValue, let value = args["value"]?.stringValue ?? args["value"].map(\.compact) else { throw ToolError("need key and value") }
+        // Flat/odd calls from small models: value under note/text/content/fact, or the key alone carrying the fact.
+        let value = (args["value"] ?? args["note"] ?? args["text"] ?? args["content"] ?? args["fact"]).map { $0.stringValue ?? $0.compact }?.trimmingCharacters(in: .whitespacesAndNewlines)
+        var key = args["key"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard let value, !value.isEmpty else {
+            if !key.isEmpty, args["value"] == nil { return try await call(["value": .string(key)]) }
+            throw ToolError("missing 'value' — call remember with the fact to keep, e.g. {\"value\": \"my name is Ada\"}")
+        }
         var notes = NotesStore.all()
+        if key.isEmpty { key = NotesStore.label(for: value, taken: Set(notes.keys)) }
+        // Measured (MemoryToolsAuditTests): asked "what is my name?" the model sometimes WRITES remember{name: "loopl"} or invents
+        // preferences — a silent overwrite would destroy what the user said. Keep the note, hand it back; an explicit replace wins.
+        if let existing = notes[key], existing != value, args["replace"]?.boolValue != true {
+            return "\(key) is already remembered as: \(existing). Kept it. If the user asked to change it, call remember again with replace: true."
+        }
         notes[key] = value
         NotesStore.save(notes)
-        return "remembered \(key)"
+        return "remembered \(key): \(value) (\(notes.count) note\(notes.count == 1 ? "" : "s") stored)"
     }
 }
 
-/// `recall`: read back a note `remember` stored, by key, or list them all.
+/// `recall`: read back what `remember` stored — everything, or one note by key.
 public struct RecallTool: Tool {
     public init() {}
     public let name = "recall"
-    public let description = "Read notes stored with remember. Pass a key, or omit it to list everything."
-    public let parameters: JSONValue = ["type": "object", "properties": ["key": ["type": "string"]], "required": []]
+    public let description = "Read the facts the user asked you to remember earlier (name, city, preferences, notes). Call it before answering any question about the user or about something they told you before — you have no other memory of past conversations. No arguments returns every note; key narrows to one."
+    public let parameters: JSONValue = ["type": "object", "properties": ["key": ["type": "string", "description": "optional label; omit to get everything"]], "required": []]
     public func call(_ args: [String: JSONValue]) async throws -> String {
         let notes = NotesStore.all()
-        if let key = args["key"]?.stringValue, !key.isEmpty { return notes[key].map { "\(key): \($0)" } ?? "nothing stored under '\(key)'" }
-        guard !notes.isEmpty else { return "no notes stored" }
-        return notes.keys.sorted().map { "\($0): \(notes[$0]!)" }.joined(separator: "\n")
+        guard !notes.isEmpty else { return "no notes stored yet — nothing has been remembered in this app" }
+        let all = notes.keys.sorted().map { "\($0): \(notes[$0]!)" }.joined(separator: "\n")
+        let key = (args["key"] ?? args["query"] ?? args["topic"])?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !key.isEmpty, key.lowercased() != "all", key != "*" else { return all }
+        if let v = notes[key] { return "\(key): \(v)" }
+        // A guessed label that misses (favorite_color vs colour) must not hide the notes: match loosely, else show all.
+        let near = notes.filter { NotesStore.matches(query: key, key: $0.key, value: $0.value) }
+        if !near.isEmpty { return near.keys.sorted().map { "\($0): \(near[$0]!)" }.joined(separator: "\n") }
+        return "no note labelled '\(key)'. Everything stored:\n" + all
     }
 }
 
@@ -73,6 +100,35 @@ public enum NotesStore {
     static let key = "loopl.notes"
     public static func all() -> [String: String] { (UserDefaults.standard.dictionary(forKey: key) as? [String: String]) ?? [:] }
     public static func save(_ n: [String: String]) { UserDefaults.standard.set(n, forKey: key) }
+
+    /// Lowercase, diacritics folded — "Çağatay" and "cagatay" compare equal.
+    static func fold(_ s: String) -> String { s.lowercased().folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil) }
+
+    /// Does a model's guessed label point at this note? Any word of the query (≥ 3 letters) against the words of the key
+    /// and the value, after folding, allowing a 2-letter tail difference ("color" ~ "colour", "name" ~ "name-cagatay").
+    static func matches(query: String, key: String, value: String) -> Bool {
+        let words = { (s: String) in fold(s).split { !$0.isLetter && !$0.isNumber }.map(String.init) }
+        let targets = words(key) + words(value)
+        return words(query).filter { $0.count >= 3 }.contains { q in
+            targets.contains { t in
+                let shared = q.commonPrefix(with: t).count
+                return shared >= max(4, min(q.count, t.count) - 2) || (q.count >= 3 && t == q)
+            }
+        }
+    }
+
+    /// A label for a note saved without a key: the first words of the fact, minus filler ("my name is Ada" → "name-is-ada"),
+    /// made unique against `taken`.
+    public static func label(for value: String, taken: Set<String>) -> String {
+        let filler: Set<String> = ["i", "my", "me", "the", "a", "an", "that", "is", "am", "are", "to", "of", "in", "please", "remember", "note"]
+        let words = fold(value).split { !$0.isLetter && !$0.isNumber }.map(String.init).filter { !filler.contains($0) }
+        var base = words.prefix(3).joined(separator: "-")
+        if base.isEmpty { base = "note" }
+        if base.count > 24 { base = String(base.prefix(24)) }
+        var candidate = base, n = 2
+        while taken.contains(candidate) { candidate = "\(base)-\(n)"; n += 1 }
+        return candidate
+    }
 }
 
 /// `http` — the one network tool: GET/HEAD/POST/PUT/PATCH/DELETE with headers,

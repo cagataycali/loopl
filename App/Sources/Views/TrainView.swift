@@ -367,6 +367,10 @@ struct TrainView: View {
                     .accessibilityIdentifier("train-loss")
             }
             if let m = out.toolNameMatch { LabeledContent("Tool calls right", value: m) }
+            if out.mlx != nil, let kept = out.keptVision {
+                LabeledContent("Vision") { Label(kept ? "kept ✓ (\(out.visionTensors ?? 0) tensors)" : "text-only", systemImage: kept ? "eye" : "eye.slash") }
+                    .accessibilityIdentifier("train-vision")
+            }
             if let hist = out.evalHistory ?? (s.progress.evalHistory.isEmpty ? nil : s.progress.evalHistory), !hist.isEmpty {
                 epochChart(hist, best: out.bestEpoch)
             }

@@ -61,7 +61,7 @@ final class TrainingTests: XCTestCase {
         XCTAssertEqual(spec.dockerImage, "ghcr.io/astral-sh/uv:python3.12-bookworm")
         XCTAssertEqual(spec.command, ["bash", "-lc",
             "set -euo pipefail; curl -fsSL -H \"Authorization: Bearer $HF_TOKEN\" \"$LOOPL_SCRIPT_URL\" -o /tmp/loopl_sft.py && exec uv run /tmp/loopl_sft.py \"$@\"",
-            "loopl", "--dataset", "cagataydev/loopl-app-smoke-data", "--base", "0.8b", "--out", "cagataydev/loopl-app-smoke", "--epochs", "2", "--method", "lora"])
+            "loopl", "--dataset", "cagataydev/loopl-app-smoke-data", "--base", "0.8b", "--out", "cagataydev/loopl-app-smoke", "--epochs", "2", "--method", "lora", "--expect-vision"])
         XCTAssertEqual(spec.environment, ["LOOPL_SCRIPT_URL": "https://huggingface.co/datasets/cagataydev/loopl-app-smoke-data/resolve/main/train/loopl_sft.py"])
         XCTAssertEqual(spec.secrets, ["HF_TOKEN": "hf_secret"])
         XCTAssertEqual(spec.flavor, "a10g-small")
@@ -148,7 +148,7 @@ final class TrainingTests: XCTestCase {
         XCTAssertEqual(plan.baseLabel, "loopl-app-sim-4bit · round 2")
         XCTAssertEqual(plan.scriptArguments(user: "me"),
                        ["--dataset", "me/loopl-app-conversations", "--base", "me/loopl-app-sim", "--out", "me/loopl-app-sim-r2",
-                        "--epochs", "auto", "--method", "lora", "--stitch", "day"])
+                        "--epochs", "auto", "--method", "lora", "--stitch", "day", "--expect-vision"])
         var noReplay = plan; noReplay.includeAllShards = false
         XCTAssertTrue(noReplay.scriptArguments(user: "me").contains("--new-shards-only"))
         var fresh = TrainingPlan(dataset: "me/d", conversations: 50, base: .b0_8, epochs: .fixed(9))
