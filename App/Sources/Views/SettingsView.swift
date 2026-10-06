@@ -80,6 +80,8 @@ struct SettingsView: View {
                     Link(destination: URL(string: "https://loopl.dev/privacy")!) { Label("Privacy — nothing leaves the device", systemImage: "hand.raised") }
                     Link(destination: URL(string: "https://loopl.dev")!) { Label("loopl.dev", systemImage: "book") }
                     Link(destination: URL(string: "https://github.com/cagataycali/loopl")!) { Label("Source on GitHub", systemImage: "chevron.left.forwardslash.chevron.right") }
+                    Button { NotificationCenter.default.post(name: Onboarding.replay, object: nil) } label: { Label("Show intro again", systemImage: "sparkles") }
+                        .accessibilityIdentifier("settings-show-intro")
                 } header: { Text("About") } footer: {
                     HStack { Spacer(); LooplMark().frame(width: 36, height: 36).opacity(0.9); Spacer() }.padding(.top, 12)
                 }

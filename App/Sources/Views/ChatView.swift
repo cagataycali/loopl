@@ -37,6 +37,7 @@ struct ChatView: View {
                     onRetry: { item in engine.retry(item.id) }))
                 .contentShape(Rectangle())
                 .onTapGesture { focused = false }
+                .onReceive(NotificationCenter.default.publisher(for: Onboarding.finished)) { _ in focused = true }   // first run just ended: the composer is the next thing
                 // One place per error: a load failure is the readiness banner's (with Try again); this line is for
                 // errors while a model IS loaded (a failed turn, a refused send). Dismissable; cleared on the next send.
                 if let err = engine.lastError, !engine.readiness.isFailed {

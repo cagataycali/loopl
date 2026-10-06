@@ -9,6 +9,7 @@ struct LooplApp: App {
     @State private var store = ModelStore()
     @State private var engine: Engine?
     @State private var onboarding = false
+    @State private var replaying = false
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
@@ -19,10 +20,15 @@ struct LooplApp: App {
                 } else if let engine {
                     RootView(engine: engine, settings: settings, store: store)
                         .looplHaptics(engine.haptics)
-                        // First launch: pick the first model (Onboarding.needed). Hung off the root, never a List Section (#66).
-                        .sheet(isPresented: $onboarding) {
-                            OnboardingView(engine: engine, store: store) { onboarding = false }
+                        // First launch: the intro + story + first model (Onboarding.needed). Full screen — it IS the app until the
+                        // first model is picked. Hung off the root, never a List Section (#66). Settings › About replays it.
+                        .fullScreenCover(isPresented: $onboarding) {
+                            OnboardingView(engine: engine, store: store, replay: replaying) {
+                                onboarding = false
+                                if case .ready = engine.readiness { NotificationCenter.default.post(name: Onboarding.finished, object: nil) }
+                            }
                         }
+                        .onReceive(NotificationCenter.default.publisher(for: Onboarding.replay)) { _ in replaying = true; onboarding = true }
                 } else {
                     LaunchView().task {
                         StorageFixture.apply(to: store)
