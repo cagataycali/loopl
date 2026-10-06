@@ -27,6 +27,7 @@ struct SettingsView: View {
                     } label: {
                         LabeledContent("Tools", value: settings.enabledTools.isEmpty ? "off" : "\(settings.enabledTools.count) of \(engine.allTools.count)")
                     }
+                    .accessibilityIdentifier("settings-tools")
                 } header: { Text("Agent") } footer: {
                     Text("The loop runs until the model stops calling tools or you tap stop. Context and output length follow the model's recommended maximum.")
                 }
@@ -76,6 +77,8 @@ struct SettingsView: View {
                     HStack { Spacer(); LooplMark().frame(width: 36, height: 36).opacity(0.9); Spacer() }.padding(.top, 12)
                 }
             }
+            .looplScrollClearance()
+            .accessibilityIdentifier("pane-settings")
             .navigationTitle("Settings")
         }
     }
@@ -108,6 +111,7 @@ struct SystemPromptEditor: View {
             } footer: { Text("Sent at the start of every conversation.") }
             Section { Button("Reset to default") { settings.systemPrompt = AppSettings.defaultSystemPrompt } }
         }
+        .looplScrollClearance()
         .navigationTitle("System prompt")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -134,6 +138,7 @@ struct ToolsEditor: View {
                 Text("http is refused while offline mode is on — the agent sees the refusal as a tool error and answers without it. Writes ask for your approval first (Settings › Ask before).")
             }
         }
+        .looplScrollClearance()
         .navigationTitle("Tools")
         .navigationBarTitleDisplayMode(.inline)
     }

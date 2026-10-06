@@ -136,6 +136,10 @@ struct HistoryList: View {
                 }
             }
         }
+        // Shown as a sheet (from Chat) or as the iPad sidebar — no tab bar behind it
+        // in either case, so only the home-indicator air applies.
+        .looplBottomBar(false)
+        .looplScrollClearance()
         .navigationTitle("loopl")
         .overlay {
             if engine.archive.conversations.isEmpty {

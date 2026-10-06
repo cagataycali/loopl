@@ -51,7 +51,7 @@ let package = Package(
         .target(name: "LooplAppleTools", dependencies: ["Loopl"], path: "Sources/LooplAppleTools", swiftSettings: [.swiftLanguageMode(.v6)]),
         .testTarget(name: "LooplAppleToolsTests", dependencies: ["Loopl", "LooplAppleTools"], path: "Tests/LooplAppleToolsTests",
                     swiftSettings: [.swiftLanguageMode(.v6)]),
-        .testTarget(name: "LooplTests", dependencies: ["Loopl"], path: "Tests/LooplTests",
+        .testTarget(name: "LooplTests", dependencies: ["Loopl", "LooplUI"], path: "Tests/LooplTests",
                     resources: [.copy("Fixtures")], swiftSettings: [.swiftLanguageMode(.v6)]),
         .testTarget(name: "LooplRuntimesTests", dependencies: ["Loopl", "LooplRuntimes"], path: "Tests/LooplRuntimesTests",
                     resources: [.copy("Fixtures")], swiftSettings: [.swiftLanguageMode(.v6)]),

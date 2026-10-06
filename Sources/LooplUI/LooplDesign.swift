@@ -33,6 +33,29 @@ public enum LooplDesign {
 
     /// Horizontal padding of the document column (brief: 20 pt).
     public static let gutter: CGFloat = 20
+    /// Air between the LAST row of a scrollable pane and whatever sits under it
+    /// (tab bar, home indicator, window edge) — one gutter, so a destructive row
+    /// is never flush against the glass. See `looplScrollClearance()`.
+    public static let bottomClearance: CGFloat = gutter
+    /// A standard iOS tab bar, from Apple's platform metrics.
+    public static let systemTabBarHeight: CGFloat = 49
+    /// The tallest home-indicator safe-area inset on a Face ID device.
+    public static let homeIndicatorInset: CGFloat = 34
+    /// What a bottom tab bar needs below a pane when the system has NOT reserved
+    /// it: the bar plus the home indicator it floats above. Measured: this is
+    /// *exactly* the inset iOS 26.4 reserves under a `TabView` pane on an
+    /// iPhone 16 Pro (83 pt), so a system that reserves the bar tops up by
+    /// nothing, and one that floats it over the content tops up by the bar.
+    public static let tabBarAllowance: CGFloat = systemTabBarHeight + homeIndicatorInset
+    /// Extra bottom scroll clearance for a pane: whatever the tab bar still needs
+    /// on top of the inset the system already reserved, plus `bottomClearance`.
+    /// `reservedBottom` is measured at run time (the safe area left below the
+    /// pane), so a system that reserves the bar in full adds nothing but air, and
+    /// one that floats the bar over the content adds the bar too.
+    public static func scrollClearance(reservedBottom: CGFloat, hasBottomBar: Bool) -> CGFloat {
+        (hasBottomBar ? max(0, tabBarAllowance - reservedBottom) : 0) + bottomClearance
+    }
+
     /// The one spring every entering row uses (= `Motion.spring`).
     public static let spring: Animation = Motion.spring
 
