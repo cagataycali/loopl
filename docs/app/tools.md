@@ -28,11 +28,12 @@ Fewer tools make a better agent — every tool is one more thing a small model c
 | `describe_image` | scene labels, faces, barcodes on an attached photo (Vision) |
 | `flashlight` · `vibrate` | torch on/off/dimmed; haptic patterns |
 | `open_app` | another app via deep link, with context in the query string |
+| `music` | play, pause, next, previous, volume and *what's playing* for the system music player (Apple Music or whatever holds it) — one tool, no approval card; the volume goes through iOS's own slider, so the system volume HUD appears |
 | `clipboard_read` · `clipboard_write` | what you copied — text, a link, or a picture the model can `describe_image` — and, after asking, text copied back. Two tools, not one with an `action`: measured on a 0.8B, "what did I copy?" turned into a write 4 times in 6 with the single tool |
 
 ## Off by default
 
-Tools you need now and then stay **off** until you switch them on in **Settings › On-device Apple tools** — every extra tool is one more thing a small model can pick wrongly, and the measured difference is real. Each one asks for its iOS permission the first time it runs, not at install.
+Tools you need now and then stay **off** until you switch them on in **Settings › Tools** — every extra tool is one more thing a small model can pick wrongly, and the measured difference is real. Each one asks for its iOS permission the first time it runs, not at install.
 
 | | |
 |---|---|
@@ -48,7 +49,7 @@ Reads and creates are separate tools on purpose: with one tool carrying both ver
 
 A call that writes — `http` with POST/PUT/DELETE, `open_app`, `clipboard_write` — stops at an **approval card**: the exact request, **Approve**, **Deny**, or **Edit** the arguments. Deny, and the model is told it was denied and carries on without it. **Settings › Network › Ask before** chooses: every request, writes only (the default), or never. An unanswered card is denied after two minutes.
 
-`open_app` asks every time unless you put the app's scheme on its allowlist (**Settings › On-device Apple tools › open_app › Open without asking**). `shortcuts://` is the useful one: the agent can run a Shortcut with text as input.
+`open_app` asks every time unless you put the app's scheme on its allowlist (**Settings › Tools › open_app › Open without asking**). `shortcuts://` is the useful one: the agent can run a Shortcut with text as input.
 
 ## When a call fails
 

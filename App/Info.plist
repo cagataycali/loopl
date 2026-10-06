@@ -43,6 +43,8 @@
 		<key>NSAllowsArbitraryLoads</key>
 		<false/>
 	</dict>
+	<key>NSAppleMusicUsageDescription</key>
+	<string>Tell the model which song is playing when you ask. Nothing leaves this device.</string>
 	<key>NSCalendarsFullAccessUsageDescription</key>
 	<string>Let the model read your calendar and add events you approve. Nothing leaves this device.</string>
 	<key>NSCameraUsageDescription</key>

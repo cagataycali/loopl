@@ -6,7 +6,7 @@ import LooplAppleTools
 
 /// `--design-fixture [scene]` (DEBUG only): fills the chat with a fixed
 /// transcript so screenshots and design work need no model. Scenes:
-/// `empty` · `streaming` (default) · `tool` · `offline` · `downloading` · `clipboard` (read row + COPY card) · `agenda` (calendar row + reminder ADD card) · `location` (coarse fix → http weather) · `contacts` (contacts_search → open_app sms card) · `approval` (a POST waiting
+/// `empty` · `streaming` (default) · `tool` · `offline` · `downloading` · `clipboard` (read row + COPY card) · `agenda` (calendar row + reminder ADD card) · `location` (coarse fix → http weather) · `music` (next + volume rows) · `approval` (a POST waiting
 /// for the human; tapping Approve/Deny scripts the follow-up) · `live` (a scripted
 /// replay streamed over ~8 s — text chunks, two tool calls, final answer — for motion
 /// captures; `--design-loop` repeats it). Never a runtime —
@@ -220,6 +220,19 @@ enum DesignFixture {
             let oa = ToolUse(toolUseId: "tooluse_ct2", name: "open_app", input: ["url": .string("sms:+12015550142&body=Running%2010%20minutes%20late"), "fallback_url": .string("sms:+12015550142")])
             t.apply(.modelMessage(.assistant(text: "Found Alice Park. Opening Messages with the text.", toolUses: [oa])))
             if let req = OpenAppTool().requiresApproval(for: oa.input) { t.apply(.approvalRequested(req.with(id: oa.toolUseId))) }
+        case "music":
+            // TOOLS-EXPAND: the music row — one tool, no card; the result names the song and the volume.
+            MusicStore.use(FixtureMusicSource())
+            t.user("Skip this one and turn it down a bit.")
+            t.apply(.startEventLoop(cycle: 1))
+            let m1 = ToolUse(toolUseId: "tooluse_mu1", name: "music", input: ["action": .string("next")])
+            let m2 = ToolUse(toolUseId: "tooluse_mu2", name: "music", input: ["action": .string("volume"), "level": .number(30)])
+            t.apply(.modelMessage(.assistant(text: "", toolUses: [m1, m2])))
+            t.apply(.toolStarted(m1)); t.apply(.toolResult(ToolResult(toolUseId: "tooluse_mu1", name: "music", content: "music: skipped to the next song\nnow playing: So What — Miles Davis (Kind of Blue)\nvolume: 40%", durationMs: 96)))
+            t.apply(.toolStarted(m2)); t.apply(.toolResult(ToolResult(toolUseId: "tooluse_mu2", name: "music", content: "music: volume set to 30%\nnow playing: So What — Miles Davis (Kind of Blue)", durationMs: 140)))
+            t.apply(.startEventLoop(cycle: 2))
+            t.apply(.text("Skipped to **So What** (Miles Davis) and set the volume to **30 %**."))
+            t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("Skipped to **So What** (Miles Davis) and set the volume to **30 %**."), metrics: EventLoopMetrics())))
         case "location":
             // TOOLS-EXPAND: the location row (coarse) chained into http for the weather — the reason the tool exists.
             LocationStore.use(FixtureLocationSource())

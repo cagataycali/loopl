@@ -103,7 +103,7 @@ final class AgendaToolsTests: XCTestCase {
             XCTAssertFalse(AppleTools.isDefaultOn(n), "\(n) must be off by default — fewer tools help small models")
             XCTAssertTrue(AppleTools.availability(of: n).available, "fixture store counts as available")
         }
-        XCTAssertEqual(Set(AppleTools.defaultOnNames), Set(["generate_image", "generate_voice", "describe_image", "translate", "transcribe", "flashlight", "vibrate", "open_app", "clipboard_read", "clipboard_write"]))
+        XCTAssertEqual(Set(AppleTools.defaultOnNames), Set(["generate_image", "generate_voice", "describe_image", "translate", "transcribe", "flashlight", "vibrate", "open_app", "clipboard_read", "clipboard_write", "music"]))
     }
 
     func testParseDateShapes() {
