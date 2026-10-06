@@ -6,7 +6,7 @@ import Foundation
 // `_handle_tool_execution`) — one actor, same control flow, no caps.
 
 /// `TypedEvent`s as one enum. Everything a UI needs to show each step.
-public enum AgentEvent: Sendable {
+public indirect enum AgentEvent: Sendable {
     case initEventLoop                                           // InitEventLoopEvent (first cycle of an invocation)
     case startEventLoop(cycle: Int)                              // StartEvent + StartEventLoopEvent
     case modelStreamChunk(StreamEvent)                           // ModelStreamChunkEvent (raw)
@@ -27,6 +27,10 @@ public enum AgentEvent: Sendable {
     case metrics(Metrics)                                        // loopl: runtime numbers (debug sheet)
     case forceStop(String)                                       // ForceStopEvent
     case result(AgentResult)                                     // AgentResultEvent — always the last event
+    // Sub-agents (`use_agent`, SubAgent.swift): a child's lifecycle and its own events, nested under the parent's call.
+    case childStarted(SubAgentInfo)                              // once per child, before any of its events
+    case child(id: String, AgentEvent)                           // the child's event, verbatim
+    case childStatus(id: String, SubAgentStatus)                 // queued · running · background · done · failed · stopped
 }
 
 /// `EventLoopMetrics` (the parts that mean something on-device).
@@ -115,6 +119,8 @@ public actor Agent {
     }
     /// `.stop` mode only: tool calls that raised an interrupt instead of producing a result.
     private var interrupted = InterruptedToolUses()
+    /// When set, every model call acquires this first (one loaded model shared with sub-agents — SubAgent.swift).
+    public private(set) var modelGate: ModelGate?
 
     /// The tools this model is actually offered: `tools` minus the ones that
     /// merely wrap the active runtime (`Tool.redundantWithRuntime`).
@@ -159,6 +165,7 @@ public actor Agent {
     // MARK: configuration
 
     public func setTools(_ tools: [any Tool]) { self.tools = tools }
+    public func setModelGate(_ gate: ModelGate?) { modelGate = gate }
     public func setSystemPrompt(_ prompt: String?) { systemPrompt = prompt }
     /// Replace the history (a host restoring a session). No hooks fire.
     public func setMessages(_ messages: [Message]) { self.messages = messages }
@@ -465,6 +472,10 @@ public actor Agent {
             do {
                 var assembler = StreamAssembler()
                 var cancelled = false
+                // One model, many agents: take the gate for this call only (released when the block exits, any path).
+                let gate = modelGate
+                if let gate { await gate.acquire() }
+                defer { gate?.release() }
                 do {
                     for try await chunk in model.stream(messages, toolSpecs: specs, systemPrompt: system) {
                         try Task.checkCancellation()
@@ -674,9 +685,14 @@ public actor Agent {
                 let context = InterruptContext(scope: scope, known: interruptState.interrupts)
                 do {
                     let toolContext = ToolContext(agent: self, toolUseId: toolUse.toolUseId)
-                    let out = try await InterruptScope.$context.withValue(context) {
-                        try await ToolContext.$current.withValue(toolContext) {
-                            try await tool.call(toolUse.input, images: Self.visibleImages(messages))
+                    // Three task-locals around the call: `use_agent` forwards its children's events through the sink into the
+                    // parent's stream; interrupts; manage_messages' ToolContext (B). Keep all three (Phase 6 A/B/C/E agreed).
+                    let sink = ChildEventSink(parentToolUseId: toolUse.toolUseId, yield: yield)
+                    let out = try await Agent.$childSink.withValue(sink) {
+                        try await InterruptScope.$context.withValue(context) {
+                            try await ToolContext.$current.withValue(toolContext) {
+                                try await tool.call(toolUse.input, images: Self.visibleImages(messages))
+                            }
                         }
                     }
                     flushHistoryEdits(yield)

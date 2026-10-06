@@ -770,7 +770,7 @@ public struct AgentTranscriptView<Empty: View, Banner: View>: View {
         switch last.kind {
         case .user, .note: return true
         case .approval(_, let d): return d != nil
-        case .assistant, .toolUse, .reasoning: return false
+        case .assistant, .toolUse, .reasoning, .agent: return false
         }
     }
 
@@ -803,7 +803,40 @@ public struct AgentTranscriptView<Empty: View, Banner: View>: View {
             // Folded to one quiet line ("Thinking…" while it streams, "Thought for a moment" after); tap to read.
             ReasoningRow(text: r, streaming: transcript.isRunning && item.id == transcript.items.last?.id)
         case .note(let s): Text(s).font(.caption).foregroundStyle(.tertiary).accessibilityIdentifier("transcript-note")
+        case .agent(let run):
+            // Placeholder until AgentCard (Phase 6 lane E) lands: the child's name, status and its rows, indented.
+            SubAgentPlaceholderRow(run: run, expandTools: expandTools, onApproval: onApproval)
         }
+    }
+}
+
+/// Minimal rendering of a sub-agent: one header line + the child's own rows. Lane E replaces this with `AgentCard`.
+struct SubAgentPlaceholderRow: View {
+    let run: SubAgentRun
+    let expandTools: Bool
+    var onApproval: ((ApprovalRequest, ApprovalDecision) -> Void)?
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "person.2.circle").foregroundStyle(.secondary)
+                Text(run.info.name).font(.subheadline.weight(.medium))
+                Text("· \(run.status.rawValue)").font(.caption).foregroundStyle(.secondary)
+                if run.status == .running || run.status == .background { ProgressView().controlSize(.mini) }
+            }
+            ForEach(run.transcript.items) { item in
+                switch item.kind {
+                case .assistant(let s): StreamingTextView(s, streaming: run.transcript.isRunning && item.id == run.transcript.items.last?.id)
+                case .toolUse(let c, let r): ToolRow(call: c, result: r, expanded: expandTools)
+                case .approval(let req, let d): ApprovalCard(request: req, decision: d) { onApproval?(req, $0) }
+                case .note(let s): Text(s).font(.caption).foregroundStyle(.tertiary)
+                case .reasoning, .user, .agent: EmptyView()
+                }
+            }
+        }
+        .padding(.leading, 12)
+        .overlay(alignment: .leading) { Rectangle().fill(.quaternary).frame(width: 2) }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("agent-card-\(run.info.id)")
     }
 }
 
