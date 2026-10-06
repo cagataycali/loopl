@@ -47,12 +47,16 @@
 	<string>Let the model read your calendar and add events you approve. Nothing leaves this device.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Take a photo to show the model. It never leaves this device.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>Let the model look up a name in your contacts when you ask. Nothing is changed or sent anywhere.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Tell the model where you are when it asks — your city by default, exact position only when you allow it. Nothing leaves this device.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Record a message for the model to transcribe. Audio never leaves this device.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Save pictures the model produced to your library.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Let the model see your newest photos when you ask — Selected Photos is enough. Nothing leaves this device.</string>
 	<key>NSRemindersFullAccessUsageDescription</key>
 	<string>Let the model read your reminders and add ones you approve. Nothing leaves this device.</string>
 	<key>UILaunchScreen</key>

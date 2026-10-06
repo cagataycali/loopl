@@ -7,7 +7,7 @@ hide:
 
 # Tools in the app
 
-Fewer tools make a better agent — every tool is one more thing a small model can pick wrongly — so the app ships only what earns its place. **Settings** turns any of them off; a tool this phone can't run (no Image Playground, no translation pack) is hidden from the model rather than offered and failing.
+Fewer tools make a better agent — every tool is one more thing a small model can pick wrongly — so the model sees a small everyday set, and the rest wait in **Settings**, off until you want them. Every tool's schema was measured on real 0.8B and 2B models before it shipped; a tool this phone can't run (no Image Playground, no translation pack) is hidden from the model rather than offered and failing.
 
 <div class="l-shots l-shots--v2">
 <figure class="l-shot"><div class="l-phone l-phone--mini" aria-hidden="true"><div class="l-phone__screen"><picture><source srcset="../../assets/app2/tool-dark.webp" type="image/webp" media="(prefers-color-scheme: dark)"><source srcset="../../assets/app2/tool-dark.png" media="(prefers-color-scheme: dark)"><source srcset="../../assets/app2/tool-light.webp" type="image/webp"><img src="../../assets/app2/tool-light.png" alt="Two tool rows, current_time and calculator, expanded to arguments and results" width="393" height="852" loading="lazy" decoding="async"></picture></div></div><figcaption>Every call is a row: arguments, result, time.</figcaption></figure>
@@ -39,6 +39,8 @@ Tools you need now and then stay **off** until you switch them on in **Settings 
 | `calendar_events` · `calendar_create` | what is on your calendar for the coming days; adding an event asks first (EventKit) |
 | `reminders_due` · `reminders_create` | open reminders due today or soon; adding one asks first |
 | `location` | your city and coordinates rounded to about 1 km, plus the time zone — **Exact position** is a switch in Settings, never something the model can ask for (measured: a 0.8B asked for it every single time); `purpose: weather` hands the model the forecast URL for `http` |
+| `contacts_search` | a name → phone numbers and emails, read-only; the model chains it into `open_app` with `tel:` / `sms:` / `mailto:` |
+| `photos_recent` | your newest photos, or one day's, handed to the model as pictures — *Selected Photos* access is enough, so you decide which pictures loopl may ever see |
 
 Reads and creates are separate tools on purpose: with one tool carrying both verbs a 0.8B model turned "what did I copy?" into a write 4 times in 6. The create tools' descriptions carry today's date, so "tomorrow at 12:30" becomes a real timestamp without a second tool call.
 

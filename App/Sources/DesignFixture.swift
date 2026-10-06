@@ -6,7 +6,7 @@ import LooplAppleTools
 
 /// `--design-fixture [scene]` (DEBUG only): fills the chat with a fixed
 /// transcript so screenshots and design work need no model. Scenes:
-/// `empty` · `streaming` (default) · `tool` · `offline` · `downloading` · `clipboard` (read row + COPY card) · `agenda` (calendar row + reminder ADD card) · `location` (coarse fix → http weather) · `approval` (a POST waiting
+/// `empty` · `streaming` (default) · `tool` · `offline` · `downloading` · `clipboard` (read row + COPY card) · `agenda` (calendar row + reminder ADD card) · `location` (coarse fix → http weather) · `contacts` (contacts_search → open_app sms card) · `approval` (a POST waiting
 /// for the human; tapping Approve/Deny scripts the follow-up) · `live` (a scripted
 /// replay streamed over ~8 s — text chunks, two tool calls, final answer — for motion
 /// captures; `--design-loop` repeats it). Never a runtime —
@@ -203,6 +203,19 @@ enum DesignFixture {
             t.apply(.startEventLoop(cycle: 2))
             t.apply(.text("It's **06:14** on Sunday morning in Istanbul, and 23 × 47 = **1081**."))
             t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("It's **06:14** on Sunday morning in Istanbul, and 23 × 47 = **1081**."), metrics: EventLoopMetrics())))
+        case "contacts":
+            // TOOLS-EXPAND: contacts_search chained into open_app (sms:) — the open_app card is the HITL step.
+            ContactsStore.use(FixtureContactsSource())
+            t.user("Text Alice that I'm running 10 minutes late.")
+            t.apply(.startEventLoop(cycle: 1))
+            let cs = ToolUse(toolUseId: "tooluse_ct1", name: "contacts_search", input: ["name": .string("Alice")])
+            t.apply(.modelMessage(.assistant(text: "", toolUses: [cs])))
+            t.apply(.toolStarted(cs)); t.apply(.toolResult(ToolResult(toolUseId: "tooluse_ct1", name: "contacts_search", content: "contacts: 1 match for \"Alice\"\n- Alice Park · phone +1 (201) 555-0142 · email alice.park@example.org", durationMs: 18)))
+            t.apply(.startEventLoop(cycle: 2))
+            t.apply(.text("Found Alice Park. Opening Messages with the text."))
+            let oa = ToolUse(toolUseId: "tooluse_ct2", name: "open_app", input: ["url": .string("sms:+12015550142&body=Running%2010%20minutes%20late"), "fallback_url": .string("sms:+12015550142")])
+            t.apply(.modelMessage(.assistant(text: "Found Alice Park. Opening Messages with the text.", toolUses: [oa])))
+            if let req = OpenAppTool().requiresApproval(for: oa.input) { t.apply(.approvalRequested(req.with(id: oa.toolUseId))) }
         case "location":
             // TOOLS-EXPAND: the location row (coarse) chained into http for the weather — the reason the tool exists.
             LocationStore.use(FixtureLocationSource())
