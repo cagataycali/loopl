@@ -25,7 +25,7 @@ Free, no sign-in, no analytics. On first launch you pick a model (three cards, s
 |---|---|
 | **Chat** | a document, not bubbles: streaming text, folded thinking, tool rows with timing, image attachments, a mic that records a take for `transcribe`, Stop. |
 | **Models** | the catalog plus **Browse Hugging Face** — search, see size, context and whether it fits, download; your private repos under **Mine**; Apple's model on iOS 26. → [Models](models.md) |
-| **Settings** | system prompt, which tools, what asks first, **offline mode**, [**Storage**](storage.md) — models on the phone or a USB-C drive. |
+| **Settings** | the system prompt (yours — nothing is added in front of it, for any model), which tools, what asks first, **offline mode**, [**Storage**](storage.md) — models on the phone or a USB-C drive. |
 | **History** | finished conversations. Select a few → [Share to Hugging Face](share-to-hugging-face.md): reviewed, redacted, into a private dataset of yours. |
 
 ## Tools

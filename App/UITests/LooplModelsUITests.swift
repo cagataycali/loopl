@@ -1,48 +1,47 @@
 import XCTest
 
-/// Owner's two reports after downloading loopl-4b from Models › Mine (2026-10-06 07:5xZ): the "vision" badge was wrong
-/// (the row said vision, the weights had no tower, the photo button vanished) and the model did not know who built it.
-/// Proofs on the simulator (fixtures; MLX is compiled out here):
-///   1. `--design-fixture persona` loads the loopl 0.8B row → Settings › System prompt carries "loopl identity (built in)",
-///      the editor shows the built-in text; the row says vision but the fixture's LOCAL config.json has no tower (the owner's
-///      old download) → NO attach button; `--design-local-vision` (files agree with the row) and the `vision` fixture show one.
+/// Owner's report after downloading loopl-4b from Models › Mine (2026-10-06 07:5xZ): the "vision" badge was wrong
+/// (the row said vision, the weights had no tower, the photo button vanished). Proofs on the simulator (fixtures; MLX is
+/// compiled out here):
+///   1. `--design-fixture loopl` loads the loopl 0.8B row: Settings › System prompt is the ONE user-editable field with no
+///      built-in identity in front of it (the identity lives in the loopl weights, 15:2xZ owner decision); the row says vision
+///      but the fixture's LOCAL config.json has no tower (the owner's old download) → NO attach button; `--design-local-vision`
+///      (files agree with the row) and the `vision` fixture show one.
 ///   2. Models › Mine with the owner's token (LOOPL_HF_TOKEN via `simctl spawn launchctl setenv`): the loopl-4b-4bit row
 ///      has no "vision" badge (qwen3_5 model_type, no processor files), Browse's Qwen3.5-0.8B-4bit keeps it.
-/// Screenshots → LOOPL_SHOT_DIR: persona-settings.png persona-editor.png persona-chat.png vision-chat.png mine-badges.png.
+/// Screenshots → LOOPL_SHOT_DIR: loopl-settings.png loopl-editor.png loopl-chat.png vision-chat.png mine-badges.png.
 final class LooplModelsUITests: XCTestCase {
-    func testPersonaInSettingsAndNoPhotoButtonForTextOnlyLoopl() throws {
+    func testSystemPromptIsPlainAndNoPhotoButtonForTextOnlyLoopl() throws {
         let app = XCUIApplication()
-        app.launchArguments = ["--design-fixture", "persona", "--design-tab", "settings"]
+        app.launchArguments = ["--design-fixture", "loopl", "--design-tab", "settings"]
         app.launch()
         let row = app.descendants(matching: .any).matching(identifier: "settings-system-prompt").firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 10), "Settings › System prompt row")
-        let badge = app.descendants(matching: .any).matching(identifier: "settings-persona-badge").firstMatch
-        XCTAssertTrue(badge.waitForExistence(timeout: 5), "loopl model loaded → 'loopl identity (built in)' badge")
-        XCTAssertTrue(badge.label.contains("loopl identity"), badge.label)
-        shoot(app, "persona-settings")
+        XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'loopl identity'")).firstMatch.exists,
+                       "no built-in identity badge — the system prompt is the user's, for every model")
+        shoot(app, "loopl-settings")
         row.tap()
-        let group = app.descendants(matching: .any).matching(identifier: "settings-persona").firstMatch
-        XCTAssertTrue(group.waitForExistence(timeout: 5), "identity disclosure in the editor")
-        group.tap()
-        let text = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'built by Cagatay Cali (@cagataycali)'")).firstMatch
-        XCTAssertTrue(text.waitForExistence(timeout: 5), "the built-in identity text is shown")
-        shoot(app, "persona-editor")
+        let editor = app.textViews.firstMatch
+        XCTAssertTrue(editor.waitForExistence(timeout: 5), "the system prompt editor is the only thing on the page")
+        XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'built by Cagatay Cali'")).firstMatch.exists,
+                       "no hard-coded identity text anywhere in the editor")
+        shoot(app, "loopl-editor")
 
         // Chat: the row says vision, the files on the phone do not → no attach button (the files win).
         app.terminate()
-        app.launchArguments = ["--design-fixture", "persona"]
+        app.launchArguments = ["--design-fixture", "loopl"]
         app.launch()
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Cagatay Cali'")).firstMatch.waitForExistence(timeout: 10))
         let attach = app.descendants(matching: .any).matching(identifier: "composer-attach").firstMatch
         XCTAssertFalse(attach.exists, "local config.json without vision_config must hide the photo button, whatever the row says")
-        shoot(app, "persona-chat")
+        shoot(app, "loopl-chat")
 
         // Same row, files agree (the re-downloaded mlx_vlm export) → the button is back.
         app.terminate()
-        app.launchArguments = ["--design-fixture", "persona", "--design-local-vision"]
+        app.launchArguments = ["--design-fixture", "loopl", "--design-local-vision"]
         app.launch()
         XCTAssertTrue(attach.waitForExistence(timeout: 10), "vision files on the phone → attach button")
-        shoot(app, "persona-chat-vision")
+        shoot(app, "loopl-chat-vision")
 
         // Control: the vision fixture (Qwen3.5-0.8B-4bit row, vision=true) shows it.
         app.terminate()

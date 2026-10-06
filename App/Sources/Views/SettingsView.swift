@@ -13,17 +13,10 @@ struct SettingsView: View {
             Form {
                 Section {
                     NavigationLink {
-                        SystemPromptEditor(settings: settings, persona: engine.usesLooplPersona ? engine.loadedModel?.name : nil)
+                        SystemPromptEditor(settings: settings)
                     } label: {
                         VStack(alignment: .leading, spacing: 3) {
-                            HStack(spacing: 6) {
-                                Text("System prompt")
-                                if engine.usesLooplPersona {
-                                    Text("loopl identity (built in)").font(.caption2.weight(.semibold)).foregroundStyle(LooplDesign.accent)
-                                        .padding(.horizontal, 6).padding(.vertical, 2).background(LooplDesign.accent.opacity(0.12), in: Capsule())
-                                        .accessibilityIdentifier("settings-persona-badge")
-                                }
-                            }
+                            Text("System prompt")
                             Text(settings.systemPrompt).font(.footnote).foregroundStyle(.secondary).lineLimit(2)
                         }
                     }
@@ -123,26 +116,11 @@ struct SettingsView: View {
 
 struct SystemPromptEditor: View {
     @Bindable var settings: AppSettings
-    /// Name of the loaded model when it carries the built-in loopl identity (`LooplPersona`); nil otherwise.
-    var persona: String? = nil
-    @State private var showPersona = false
     var body: some View {
         Form {
-            if let persona {
-                Section {
-                    DisclosureGroup(isExpanded: $showPersona) {
-                        Text(LooplPersona.systemPrompt).font(.footnote).foregroundStyle(.secondary).textSelection(.enabled)
-                    } label: {
-                        Label("loopl identity (built in)", systemImage: "person.text.rectangle")
-                    }
-                    .accessibilityIdentifier("settings-persona")
-                } footer: {
-                    Text("\(persona) was trained with this identity, so it is sent first — loopl-train data/system/loopl.md v\(LooplPersona.version). Your prompt below follows it; leave it at the default to send only the identity.")
-                }
-            }
             Section {
                 TextEditor(text: $settings.systemPrompt).frame(minHeight: 180).font(.body)
-            } footer: { Text(persona == nil ? "Sent at the start of every conversation." : "Sent after the built-in identity, at the start of every conversation.") }
+            } footer: { Text("Sent at the start of every conversation, to every model — nothing is added in front of it.") }
             Section { Button("Reset to default") { settings.systemPrompt = AppSettings.defaultSystemPrompt } }
         }
         .looplScrollClearance()

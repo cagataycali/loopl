@@ -51,7 +51,7 @@ Guides live at [loopl.dev](https://loopl.dev). Engines are in `LooplRuntimes`.
 - ``HFAccount``
 - ``HFHubClient``
 - ``TokenizerFiles``
-- ``LooplPersona``
+- ``LocalModelFiles``
 
 ### Storage, export, training
 

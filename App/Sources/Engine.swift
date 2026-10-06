@@ -351,18 +351,9 @@ public final class Engine {
     /// Can the loaded model look at pictures? (`ModelSpec.vision`, MLX runtime.) Gates the composer's attach button.
     public var canSeeImages: Bool { loadedModel?.supportsVision == true }
 
-    /// The system prompt the model gets. loopl's own models (`cagataydev/loopl-*`, `loopl`-tagged) were trained with
-    /// `LooplPersona.systemPrompt` as their system turn, so it goes first; the user's prompt follows unless it is still
-    /// the app default (nothing to add). Every other model gets Settings › System prompt as-is.
-    public var effectiveSystemPrompt: String { Self.systemPrompt(for: loadedModel, settings: settings) }
-    /// True when the loaded model carries the built-in loopl identity (Settings shows "loopl identity (built in)").
-    public var usesLooplPersona: Bool { loadedModel?.hasLooplPersona == true }
-
-    public static func systemPrompt(for spec: ModelSpec?, settings: AppSettings) -> String {
-        let user = settings.systemPrompt
-        guard let spec, spec.hasLooplPersona else { return user }
-        return LooplPersona.combined(with: user, appDefault: AppSettings.defaultSystemPrompt)
-    }
+    /// The system prompt the model gets: Settings › System prompt, as the user wrote it, for every model. loopl's own
+    /// models carry their identity in their weights (loopl-train bakes it in), so nothing is prepended here.
+    public var effectiveSystemPrompt: String { settings.systemPrompt }
 
     public func send(_ text: String, images: [ImageBlock] = []) {
         guard !isGenerating else { return }

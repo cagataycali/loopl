@@ -113,7 +113,7 @@ public struct HubCatalog: Sendable {
         public var paramsB: Double?           // from safetensors param count
         public var lastModified: String?
         public var isPrivate: Bool = false
-        /// The repo's Hub tags (`loopl`, `mlx`, `gguf`…) — `loopl`-tagged repos get the built-in persona.
+        /// The repo's Hub tags (`loopl`, `mlx`, `gguf`…).
         public var tags: [String]? = nil
         public init(id: String, sha: String?, gated: Bool, downloads: Int, likes: Int, pipeline: String?, files: [File],
                     modelType: String?, ggufContext: Int?, paramsB: Double?, lastModified: String?, isPrivate: Bool = false, tags: [String]? = nil) {
@@ -125,8 +125,6 @@ public struct HubCatalog: Sendable {
         public var kind: Kind { files.contains(where: \.isGGUF) && !files.contains(where: { $0.path.hasSuffix(".safetensors") }) ? .gguf : .mlx }
         /// A vision-language checkpoint (`HubCatalog.isVision`): the file list decides when the architecture alone cannot.
         public var isVision: Bool { HubCatalog.isVision(repo: id, pipeline: pipeline, modelType: modelType, files: files.map(\.path)) }
-        /// Tagged `loopl` on the Hub, or one of Cagatay's `cagataydev/loopl-*` exports → `ModelSpec.Persona.loopl`.
-        public var isLoopl: Bool { LooplPersona.applies(repo: id, tags: tags ?? []) }
         public var ggufFiles: [File] { files.filter(\.isGGUF).filter { !$0.path.contains("/") }.sorted { $0.size < $1.size } }
         public var mlxFiles: [File] { files.filter { HFDownloader.wanted(.init(path: $0.path, size: $0.size, type: "file")) } }
         public var mlxBytes: Int64 { mlxFiles.reduce(0) { $0 + $1.size } }
@@ -416,8 +414,7 @@ public struct HubCatalog: Sendable {
                          minRAMGB: (Double(fitBytes(weights: bytes, vision: vision)) * 1.3 / 1e9).rounded(.up), gated: repo.gated,
                          notes: notes, revision: nil, file: file?.path, temperature: nil,
                          chatTemplateKwargs: qwen3 ? ["enable_thinking": .bool(false)] : nil,
-                         toolsUnverified: guess.verified ? nil : true, vision: vision ? true : nil,
-                         persona: repo.isLoopl ? .loopl : nil)
+                         toolsUnverified: guess.verified ? nil : true, vision: vision ? true : nil)
     }
 
     // MARK: - Network

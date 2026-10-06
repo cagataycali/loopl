@@ -110,6 +110,8 @@ The SDK, shipped as a free iOS app. Everything below runs on the phone.
 
 Up to 4B at 4-bit fits an 8 GB iPhone. Any public MLX or GGUF repo loads the same way. [All models →](https://loopl.dev/models/)
 
+The **loopl** models — Qwen3.5 0.8B/2B/4B post-tuned for this loop, vision kept, with their dataset and cards — are one [Hugging Face collection](https://huggingface.co/collections/cagataydev/loopl-on-device-agents-swift-6ac51395b13a9c41d4932eaf).
+
 ## How it works
 
 Model → tools → model, until the model answers. No iteration cap. A failed call returns to the model as an error result, so it can fix the call; a tool that needs approval pauses the loop until you answer. [The agent loop →](https://loopl.dev/sdk/agent/)
