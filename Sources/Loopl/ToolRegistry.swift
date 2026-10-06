@@ -58,6 +58,12 @@ public actor ToolRegistry {
         public var asksFirst: String?
     }
 
+    /// When the model calls a KNOWN, available, unmounted tool by name, mount it and run it instead of answering
+    /// "exists but is not mounted" (the agent announces `toolsChanged` and the result says it was mounted). Off by
+    /// default: a mount stays an explicit `manage_tools` call the transcript shows. Measured both ways (ManageToolsMeasurement).
+    public var mountOnCall = false
+    public func setMountOnCall(_ on: Bool) { mountOnCall = on }
+
     /// Plug point for `manage_tools create / remove` (lane D: Swift on macOS, JavaScript on iPhone). `nil` → the actions
     /// answer honestly that creating tools is not available on this device yet.
     public private(set) var creator: (any ToolCreator)?

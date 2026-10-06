@@ -184,6 +184,40 @@ final class ToolRegistryTests: XCTestCase {
         do { _ = try await t.call(["action": "fly"]); XCTFail() } catch let e as ToolError { XCTAssertTrue(e.message.contains("unknown action")) }
     }
 
+    func testNamesAsSmallModelsSendThem() {
+        // Measured on loopl-0.8b: "calculator", "[remember]", "http, calculator" instead of a JSON array.
+        XCTAssertEqual(ManageToolsTool.names(from: .array(["http", "calculator"])), ["http", "calculator"])
+        XCTAssertEqual(ManageToolsTool.names(from: .string("calculator")), ["calculator"])
+        XCTAssertEqual(ManageToolsTool.names(from: .string("[remember]")), ["remember"])
+        XCTAssertEqual(ManageToolsTool.names(from: .string("http, calculator http")), ["http", "calculator"])
+        XCTAssertEqual(ManageToolsTool.names(from: .string("[\"http\", \"recall\"]")), ["http", "recall"])
+        XCTAssertEqual(ManageToolsTool.names(from: nil), [])
+    }
+
+    func testMountOnCallMountsAndRunsAKnownUnmountedTool() async throws {
+        let registry = ToolRegistry(catalog: [CalculatorTool(), CurrentTimeTool()], mounted: ["current_time"], selfManaging: true)
+        await registry.setMountOnCall(true)
+        let model = FakeModel(turns: [.toolUse([use("calculator", ["expression": "2*3"], id: "c")]), .text("6")])
+        let agent = Agent(model: model, retryStrategy: nil, registry: registry)
+        var results: [ToolResult] = []; var changes: [[String]] = []
+        for try await e in agent.stream("x") {
+            if case .toolResult(let r) = e { results.append(r) }
+            if case .toolsChanged(let m) = e { changes.append(m) }
+        }
+        XCTAssertFalse(results[0].isError)
+        XCTAssertEqual(results[0].content, "(calculator was not mounted — mounted it for this conversation.)\n2*3 = 6")
+        XCTAssertEqual(changes.last, ["calculator", "current_time", "manage_tools"])
+        let specs = await model.seenToolSpecs.map { $0.map(\.name) }
+        XCTAssertEqual(specs[1], ["calculator", "current_time", "manage_tools"], "the next request offers it too")
+        // Off (default): the same call is the repair hint, not a run.
+        let r2 = ToolRegistry(catalog: [CalculatorTool()], mounted: [], selfManaging: true)
+        let m2 = FakeModel(turns: [.toolUse([use("calculator", ["expression": "2*3"], id: "c")]), .text("ok")])
+        let a2 = Agent(model: m2, retryStrategy: nil, registry: r2)
+        var r2results: [ToolResult] = []
+        for try await e in a2.stream("x") { if case .toolResult(let r) = e { r2results.append(r) } }
+        XCTAssertTrue(r2results[0].isError); XCTAssertTrue(r2results[0].content.contains("exists but is not mounted"))
+    }
+
     func testCreateThroughAPluggedCreator() async throws {
         struct Creator: ToolCreator {
             var languages: [String] { ["javascript"] }

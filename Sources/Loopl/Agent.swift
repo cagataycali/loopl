@@ -637,7 +637,13 @@ public actor Agent {
     private func runTool(_ use: ToolUse, _ yield: @Sendable @escaping (AgentEvent) -> Void) async -> ToolResult {
         let t0 = Date()
         let scope = "tool:\(use.toolUseId)"
-        let selected = offeredTools.first { $0.name == use.name }
+        var selected = offeredTools.first { $0.name == use.name }
+        var mountedOnCall = false
+        if selected == nil, let registry, await registry.mountOnCall, let e = await registry.entry(use.name), e.available, !e.mounted {
+            // Phase 6 `mountOnCall`: calling an unmounted tool by name IS the model's decision to use it.
+            _ = await registry.mount([use.name]); await syncTools(yield)
+            selected = offeredTools.first { $0.name == use.name }; mountedOnCall = selected != nil
+        }
         var approval = selected?.requiresApproval(for: use.input)
         approval?.id = use.toolUseId; approval?.toolName = use.name
         if approval?.input.isEmpty == true { approval?.input = use.input }
@@ -703,7 +709,8 @@ public actor Agent {
                     let out = try await InterruptScope.$context.withValue(context) {
                         try await tool.call(toolUse.input, images: Self.visibleImages(messages))
                     }
-                    result = ToolResult(toolUseId: toolUse.toolUseId, name: toolUse.name, status: .success, content: out.text,
+                    result = ToolResult(toolUseId: toolUse.toolUseId, name: toolUse.name, status: .success,
+                                        content: (mountedOnCall ? "(\(toolUse.name) was not mounted — mounted it for this conversation.)\n" : "") + out.text,
                                         durationMs: Date().timeIntervalSince(t0) * 1000, images: out.images)
                     break
                 } catch let raised as InterruptException {

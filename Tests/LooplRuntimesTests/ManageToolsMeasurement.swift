@@ -51,11 +51,14 @@ final class ManageToolsMeasurement: XCTestCase {
         let runs = Int(e["LOOPL_AUDIT_RUNS"] ?? "") ?? 3
         let only = e["LOOPL_AUDIT_ONLY"].map { Set($0.split(separator: ",").map(String.init)) }
         let system = e["LOOPL_AUDIT_SYSTEM"] ?? MemoryToolsAuditTests.systemPrompt
+        // LOOPL_AUDIT_MOUNT_ON_CALL=1 → `ToolRegistry.mountOnCall` (a direct call to an unmounted tool mounts it).
+        let mountOnCall = e["LOOPL_AUDIT_MOUNT_ON_CALL"] == "1"
+        let tag = mountOnCall ? "-mountoncall" : ""
         let model = MLXModel()
         try await model.load(spec, from: url) { _ in }
         defer { Task { await model.unload() } }
         UserDefaults.standard.set(false, forKey: NetworkPolicy.offlineKey)
-        let file = out.appendingPathComponent("\(name)-managetools.jsonl"); try? FileManager.default.removeItem(at: file)
+        let file = out.appendingPathComponent("\(name)-managetools\(tag).jsonl"); try? FileManager.default.removeItem(at: file)
         var summary: [String] = []
 
         for sc in Self.scenarios where only?.contains(sc.name) ?? true {
@@ -63,6 +66,7 @@ final class ManageToolsMeasurement: XCTestCase {
             for i in 1...runs {
                 let catalog: [any Tool] = [CurrentTimeTool(), CalculatorTool(), MemoryToolsAuditTests.DeviceInfoStandIn(), RememberTool(), RecallTool(), HttpStandIn()]
                 let registry = ToolRegistry(catalog: catalog, mounted: sc.mounted)
+                if mountOnCall { await registry.setMountOnCall(true) }
                 let rec = ToolCallAuditTests.Recorder(); await model.setTrace { rec.trace($0) }
                 let agent = Agent(model: model, tools: [ManageToolsTool(registry: registry)], systemPrompt: system,
                                   hooks: [ApprovalPolicy(mode: .mutating), ToolCallAuditTests.CycleCap(maxCycles: 5)], retryStrategy: nil, registry: registry)
@@ -78,11 +82,16 @@ final class ManageToolsMeasurement: XCTestCase {
                 } catch { answer = "ERROR \(error)" }
                 let cycles = rec.cycles(); let calls = cycles.flatMap(\.calls)
                 // Did a manage_tools call mount the needed tool, and was that tool called in a LATER cycle of this turn?
+                // mountedThen: the needed tool entered the offered set during the turn (specs grew) — by manage_tools mount, or by
+                // mountOnCall. usedAfterMount: the LAST call of that tool came after the mount cycle and succeeded.
                 let mountCycle = cycles.firstIndex { $0.calls.contains { $0.hasPrefix("manage_tools") && $0.contains("mount") && $0.contains(sc.need) && !$0.contains("unmount") } }
-                let useCycle = cycles.firstIndex { $0.calls.contains { $0.hasPrefix(sc.need + " ") || $0 == sc.need } }
-                let mountedThen = mountCycle != nil
-                let usedAfterMount = mountedThen && useCycle != nil && useCycle! > mountCycle!
-                let used = useCycle != nil
+                let specsGrew = specsPerRequest.count > 1 && specsPerRequest.last!.contains(sc.need) && !(specsPerRequest.first!.contains(sc.need))
+                let isNeed: (String) -> Bool = { $0.hasPrefix(sc.need + " ") || $0 == sc.need }
+                let lastUseCycle = cycles.lastIndex { $0.calls.contains(where: isNeed) }
+                let lastUseOK = lastUseCycle.map { c in cycles[c].results.contains { $0.hasPrefix("[success] \(sc.need)") } } ?? false
+                let mountedThen = mountCycle != nil || specsGrew
+                let usedAfterMount = mountedThen && lastUseOK && (mountCycle == nil || lastUseCycle! >= mountCycle!)
+                let used = lastUseCycle != nil
                 let pass = usedAfterMount && sc.judge(answer)
                 if mountedThen { mounts += 1 }; if usedAfterMount { sameTurn += 1 }; if pass { passes += 1 }
                 try Self.append(Row(model: name, scenario: sc.name, run: i, calls: calls, specsPerRequest: specsPerRequest, mountedThen: mountedThen,
@@ -92,9 +101,9 @@ final class ManageToolsMeasurement: XCTestCase {
             }
             summary.append("\(sc.name): pass \(passes)/\(runs) · mounted \(mounts)/\(runs) · used-after-mount \(sameTurn)/\(runs)")
         }
-        let report = "MANAGETOOLS SUMMARY \(name): " + summary.joined(separator: " · ")
+        let report = "MANAGETOOLS SUMMARY \(name)\(tag): " + summary.joined(separator: " · ")
         print(report)
-        try (report + "\n").write(to: out.appendingPathComponent("\(name)-managetools-summary.txt"), atomically: true, encoding: .utf8)
+        try (report + "\n").write(to: out.appendingPathComponent("\(name)-managetools\(tag)-summary.txt"), atomically: true, encoding: .utf8)
     }
 
     static func append(_ row: Row, to file: URL) throws {

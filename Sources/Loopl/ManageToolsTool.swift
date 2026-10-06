@@ -35,9 +35,8 @@ public struct ManageToolsTool: Tool {
 
     public func call(_ args: [String: JSONValue]) async throws -> String {
         let action = args["action"]?.stringValue?.lowercased() ?? ""
-        var names = args["names"]?.arrayValue?.compactMap(\.stringValue) ?? []
-        if let one = args["name"]?.stringValue, !one.isEmpty, !names.contains(one) { names.append(one) }
-        names = names.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        var names = Self.names(from: args["names"])
+        for one in Self.names(from: args["name"]) where !names.contains(one) { names.append(one) }
 
         switch action {
         case "list":
@@ -82,6 +81,24 @@ public struct ManageToolsTool: Tool {
         default:
             throw ToolError("unknown action \"\(action)\". Use list, mount, unmount, describe, create or remove.")
         }
+    }
+
+    /// `names` as small models actually send it (measured on loopl-0.8b): a JSON array, one string, `"[remember]"`,
+    /// `"http, calculator"` — brackets, quotes and whitespace are stripped, commas and spaces split.
+    public static func names(from value: JSONValue?) -> [String] {
+        guard let value else { return [] }
+        let raw: [String]
+        switch value {
+        case .array(let a): raw = a.compactMap { $0.stringValue ?? $0.compact }
+        case .string(let s): raw = [s]
+        default: raw = [value.compact]
+        }
+        let junk = CharacterSet(charactersIn: "[]\"'` \n\t")
+        return raw.flatMap { $0.components(separatedBy: CharacterSet(charactersIn: ",")) }
+            .map { $0.trimmingCharacters(in: junk) }
+            .flatMap { $0.split(separator: " ").map(String.init) }
+            .filter { !$0.isEmpty }
+            .reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } }
     }
 
     static func creatorMissing(verb: String) -> String {
