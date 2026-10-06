@@ -5,6 +5,7 @@ import LooplRuntimes
 
 struct SettingsView: View {
     @State private var storagePushed = false
+    @AppStorage("loopl.settings.toolsExpanded") private var toolsExpanded = false
     @Bindable var engine: Engine
     @Bindable var settings: AppSettings
     @Bindable var store: ModelStore
@@ -22,18 +23,10 @@ struct SettingsView: View {
                         }
                     }
                     .accessibilityIdentifier("settings-system-prompt")
-                    NavigationLink {
-                        ToolsEditor(engine: engine, settings: settings)
-                    } label: {
-                        LabeledContent("Tools", value: engine.toolSummary)
-                            .accessibilityIdentifier("settings-tools-summary")
-                    }
-                    .accessibilityIdentifier("settings-tools")
+                    ToolsSection(engine: engine, settings: settings)
                 } header: { Text("Agent") } footer: {
-                    Text("The loop runs until the model stops calling tools or you tap stop. Context and output length follow the model's recommended maximum.")
+                    Text("The loop runs until the model stops calling tools or you tap stop. " + ToolsSection.footer(expanded: toolsExpanded))
                 }
-
-                AppleToolsSection(activeRuntime: engine.loadedModel?.runtime)
 
                 Section {
                     Toggle(isOn: $settings.offline) { Label("Offline mode", systemImage: LooplDesign.iconOffline) }
@@ -132,33 +125,6 @@ struct SystemPromptEditor: View {
         }
         .looplScrollClearance()
         .navigationTitle("System prompt")
-        .navigationBarTitleDisplayMode(.inline)
-    }
-}
-
-struct ToolsEditor: View {
-    @Bindable var engine: Engine
-    @Bindable var settings: AppSettings
-    var body: some View {
-        Form {
-            Section {
-                ForEach(engine.allTools, id: \.name) { tool in
-                    Toggle(isOn: Binding(
-                        get: { settings.enabledTools.contains(tool.name) },
-                        set: { on in if on { settings.enabledTools.insert(tool.name) } else { settings.enabledTools.remove(tool.name) } }
-                    )) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(tool.name).font(.body.monospaced())
-                            Text(tool.description).font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
-                }
-            } footer: {
-                Text("http is refused while offline mode is on — the agent sees the refusal as a tool error and answers without it. Writes ask for your approval first (Settings › Ask before).")
-            }
-        }
-        .looplScrollClearance()
-        .navigationTitle("Tools")
         .navigationBarTitleDisplayMode(.inline)
     }
 }
