@@ -150,6 +150,7 @@ nav:
       - Runtimes: sdk/models.md
       - Hooks & conversation: sdk/hooks.md
       - Human in the loop: sdk/hitl.md
+      - Sub-agents: sdk/sub-agents.md
       - Structured output: sdk/structured-output.md
       - Checkpoints: sdk/checkpoints.md
       - Tracing: sdk/tracing.md

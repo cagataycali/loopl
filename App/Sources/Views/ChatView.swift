@@ -38,6 +38,8 @@ struct ChatView: View {
                     onRetry: { item in engine.retry(item.id) }))
                 .contentShape(Rectangle())
                 .onTapGesture { focused = false }
+                .onChange(of: draft) { _, d in engine.userIsTyping = focused && !d.isEmpty }       // a sub-agent wake waits while a sentence is being typed
+                .onChange(of: focused) { _, f in engine.userIsTyping = f && !draft.isEmpty }
                 .onReceive(NotificationCenter.default.publisher(for: Onboarding.finished)) { _ in focused = true }   // first run just ended: the composer is the next thing
                 .onAppear { if DesignFixture.focusComposer { focused = true } }   // screenshot switch: keyboard up
                 // The iOS 26 keyboard is translucent: with the tab bar left in place under it, the Chat/Models/Settings

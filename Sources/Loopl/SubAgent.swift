@@ -545,6 +545,10 @@ public enum SubAgentWake {
         let t = s.split(whereSeparator: \.isWhitespace).joined(separator: " ")
         return t.count <= max ? t : String(t.prefix(max)) + "…"
     }
+    /// The one-line transcript note shown for a wake (the model gets `prompt(for:)`; the person sees this).
+    public static func line(for e: SubAgentEnvelope) -> String {
+        "[use_agent \(e.id) finished] \(e.info.name) · \(e.status.rawValue) · \(Int(e.elapsed)) s"
+    }
     /// Recognise a wake turn in a transcript (`.note` with this prefix).
     public static let prefix = "[use_agent "
 }
