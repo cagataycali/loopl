@@ -15,6 +15,14 @@ final class OnboardingUITests: XCTestCase {
     private func el(_ app: XCUIApplication, _ id: String) -> XCUIElement {
         app.descendants(matching: .any).matching(identifier: id).firstMatch
     }
+    /// A finger-speed drag across the headline band (XCUI's `swipeLeft` from the centre lands on the live scene's
+    /// buttons and reads as a tap there).
+    private func swipePage(_ app: XCUIApplication) {
+        let pager = el(app, "onboarding-pager")
+        let from = pager.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.12))
+        let to = pager.coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0.12))
+        from.press(forDuration: 0.05, thenDragTo: to, withVelocity: .fast, thenHoldForDuration: 0.0)
+    }
 
     /// The whole thing, the way a new user meets it: intro → tap → Continue ×2 → swipe → Pick a model → pick → ring → chat.
     func testFullFlowToReady() {
@@ -29,7 +37,7 @@ final class OnboardingUITests: XCTestCase {
         next.tap()
         XCTAssertTrue(el(app, "onboarding-page-1").waitForExistence(timeout: 5))
         // The pages follow the finger: a swipe is the other way to turn one.
-        el(app, "onboarding-pager").swipeLeft()
+        swipePage(app)
         XCTAssertTrue(el(app, "onboarding-page-2").waitForExistence(timeout: 5))
         XCTAssertEqual(next.label, "Pick a model")
         next.tap()
@@ -99,6 +107,30 @@ final class OnboardingUITests: XCTestCase {
         XCTAssertTrue(back.waitForExistence(timeout: 10))
         back.tap()
         XCTAssertTrue(el(app, "onboarding-page-0").waitForExistence(timeout: 5))
+    }
+
+    /// Not a check — a performance. `LOOPL_ONBOARDING_DEMO=1` walks the flow at human pace (each scene plays out,
+    /// one page is swiped, the ring fills) so `simctl io recordVideo` running alongside captures the real motion.
+    func testDemoWalkthrough() throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["LOOPL_ONBOARDING_DEMO"] == "1", "demo recording only")
+        let app = launch()
+        XCTAssertTrue(el(app, "onboarding-page-0").waitForExistence(timeout: 12))   // the intro plays out by itself
+        Thread.sleep(forTimeInterval: 6.5)
+        el(app, "onboarding-next").tap()
+        Thread.sleep(forTimeInterval: 2.0)
+        el(app, "onboarding-approval").buttons["Approve"].firstMatch.tap()           // the human approves
+        Thread.sleep(forTimeInterval: 3.5)
+        swipePage(app)                                                                   // turn the page by hand
+        Thread.sleep(forTimeInterval: 6.5)
+        el(app, "onboarding-next").tap()
+        Thread.sleep(forTimeInterval: 1.4)
+        el(app, "onboarding-card-qwen3.5-0.8b-4bit").tap()
+        Thread.sleep(forTimeInterval: 1.0)
+        el(app, "onboarding-continue").tap()
+        Thread.sleep(forTimeInterval: 2.2)
+        el(app, "onboarding-hf-later").tap()
+        XCTAssertTrue(el(app, "onboarding-progress").waitForNonExistence(timeout: 20))
+        Thread.sleep(forTimeInterval: 1.5)
     }
 
     /// Settings › About › "Show intro again" replays the flow on an installed app.

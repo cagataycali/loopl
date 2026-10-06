@@ -203,6 +203,7 @@ struct OnboardingView: View {
             }
             .padding(.horizontal, LooplDesign.gutter).padding(.top, 8).padding(.bottom, 10)
             .frame(maxWidth: 560).frame(maxWidth: .infinity)
+            .dynamicTypeSize(...DynamicTypeSize.xxxLarge)   // chrome, like the footer
 
             StoryPager(index: $pageIndex, count: pages.count) { i in
                 StoryPageView(page: pages[i], active: stage == .story && i == pageIndex)
@@ -256,7 +257,8 @@ struct OnboardingView: View {
                 .frame(maxWidth: 560)
                 .frame(maxWidth: .infinity)
                 // While downloading there is little to show — centre it instead of leaving the lower half blank.
-                .modifier(CentredWhen(on: started))
+                // Not at accessibility sizes: there the content is taller than the screen and must scroll from the top.
+                .modifier(CentredWhen(on: started && !type.isAccessibilitySize))
             }
             .scrollBounceBehavior(.basedOnSize)
             .safeAreaInset(edge: .bottom) { footer }
@@ -349,11 +351,13 @@ struct OnboardingView: View {
     /// Share-to-dataset and Train your own. No permission prompts live here — mic/photos/camera stay just-in-time.
     private var hfLine: some View {
         VStack(spacing: 10) {
-            Text("Have a Hugging Face account?").font(.subheadline.weight(.semibold))
+            Text("Have a Hugging Face account?").font(.subheadline.weight(.semibold)).multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
             Text("Sign in to download your private models and train on your own conversations.")
                 .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 12) {
+            let buttons = type.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: 8)) : AnyLayout(HStackLayout(spacing: 12))
+            buttons {
                 Button("Sign in") { hfSheet = true }.buttonStyle(.bordered).controlSize(.regular)
                     .accessibilityIdentifier("onboarding-hf-signin")
                 Button("Later") { withAnimation(stageMotion) { hfDismissed = true } }.buttonStyle(.borderless).controlSize(.regular)

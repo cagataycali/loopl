@@ -29,8 +29,12 @@ struct StoryPageView: View {
     @Environment(\.dynamicTypeSize) private var type
 
     var body: some View {
+        // The page is at least as tall as its container (so the card fills a phone and the block centres on an iPad)
+        // and scrolls only when the text itself is taller (accessibility sizes).
+        GeometryReader { g in
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
+                Spacer(minLength: 0)
                 VStack(alignment: .leading, spacing: 8) {
                     Text(page.headline)
                         .font(.system(.largeTitle, design: .rounded, weight: .semibold))
@@ -50,15 +54,17 @@ struct StoryPageView: View {
                     }
                 }
                 .frame(minHeight: type.isAccessibilitySize ? 260 : 340)
-                .frame(maxHeight: .infinity)
+                .frame(maxHeight: 560)
+                Spacer(minLength: 0)
             }
             .padding(.horizontal, LooplDesign.gutter)
             .padding(.top, 6)
             .padding(.bottom, 8)
             .frame(maxWidth: 560)
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, minHeight: g.size.height)
         }
         .scrollBounceBehavior(.basedOnSize)
+        }
         .accessibilityIdentifier("onboarding-page-\(page.id)")
     }
 }
@@ -139,6 +145,7 @@ private struct ApprovalScene: View {
     @State private var sent = false
     @State private var card = false
     @State private var decision: ApprovalDecision?
+    @State private var showRow = false
     @State private var result: ToolResult?
     @State private var reply = ""
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -163,7 +170,7 @@ private struct ApprovalScene: View {
                     .transition(reduceMotion ? .opacity : .scale(scale: 0.96, anchor: .top).combined(with: .opacity))
                     .accessibilityIdentifier("onboarding-approval")
             }
-            if decision != nil {
+            if showRow {
                 ToolRow(call: Self.use, result: result).transition(.opacity)
             }
             if !reply.isEmpty {
@@ -174,9 +181,10 @@ private struct ApprovalScene: View {
         .animation(LooplDesign.Motion.faded(LooplDesign.Motion.spring, reduceMotion), value: sent)
         .animation(LooplDesign.Motion.faded(LooplDesign.Motion.spring, reduceMotion), value: card)
         .animation(LooplDesign.Motion.faded(LooplDesign.Motion.spring, reduceMotion), value: decision)
+        .animation(LooplDesign.Motion.faded(LooplDesign.Motion.spring, reduceMotion), value: showRow)
         .animation(LooplDesign.Motion.faded(LooplDesign.Motion.spring, reduceMotion), value: reply)
         .task(id: active) {
-            sent = false; card = false; decision = nil; result = nil; reply = ""
+            sent = false; card = false; decision = nil; showRow = false; result = nil; reply = ""
             guard active else { return }
             try? await Task.sleep(for: .seconds(0.5))
             sent = true
@@ -193,11 +201,15 @@ private struct ApprovalScene: View {
         decision = d
         if d.isApproved { LooplDesign.success() } else { LooplDesign.haptic() }
         Task {
-            try? await Task.sleep(for: .seconds(0.9))
+            // The card collapses to its one quiet line first; the tool row lands once that motion is done.
+            try? await Task.sleep(for: .seconds(0.45))
+            guard !Task.isCancelled, active else { return }
+            showRow = true
+            try? await Task.sleep(for: .seconds(0.7))
             guard !Task.isCancelled, active else { return }
             if d.isApproved {
                 result = ToolResult(toolUseId: Self.use.toolUseId, name: "http", status: .success,
-                                    content: #"HTTP 201 Created\n{"id":"n_8f2"}"#, durationMs: 212)
+                                    content: "HTTP 201 Created\n{\"id\":\"n_8f2\"}", durationMs: 212)
                 try? await Task.sleep(for: .seconds(0.5))
                 guard !Task.isCancelled else { return }
                 reply = "Posted — note `n_8f2` is in your notebook."
