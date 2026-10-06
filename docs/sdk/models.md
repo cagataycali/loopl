@@ -18,6 +18,8 @@ description: One Model protocol, three on-device runtimes — MLX Swift, Apple F
 
 Call `availability()` first — it returns `RuntimeAvailability` with the reason when a runtime cannot run here (simulator, iOS < 26, Apple Intelligence off).
 
+**Apple Foundation Models behaviour.** Tools are prompted in prose, never as JSON schemas. Greetings get a plain answer; a tool is called only when needed. A JSON-wrapped reply (`{"status":…,"message":…}`) is unwrapped into its sentence, a signature written as text (`current_time("…")`) is re-asked once, and a call the model already has the result for is never run again. Snapshots stream live — a revised snapshot arrives as `textReplace`. A tool whose `redundantWithRuntime` is `.appleFM` (`apple_intelligence`) is not offered here.
+
 ## Load
 
 ```swift
