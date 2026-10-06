@@ -41,13 +41,10 @@ final class KeyboardShortcutsUITests: XCTestCase {
         // typeText goes through the software keyboard; switching back to the hardware keyboard drops its first
         // event again (same as after launch) — so the chord is pressed twice. The second press is a no-op if the
         // first landed (the field is empty → Send disabled), so this cannot double-send.
-        // XCUI types into a focused UITextView through the text-input path, where a ⌘-modified Return is dropped
-        // before any key command runs (no newline either) — so the chord is proven with the draft kept and the field
-        // unfocused (the Send button's .keyboardShortcut). In-field ⌘↩ = LooplAppDelegate's priority UIKeyCommand.
-        app.navigationBars.staticTexts.firstMatch.tap()
-        usleep(400_000)
+        // XCUIKeyboardKey.return + ⌘ never reaches the app (measured: not even a plain ⌘↩-bound button fires);
+        // the literal "\n" does. The field stays focused — this is the in-composer path (LooplAppDelegate).
         app.typeKey(XCUIKeyboardKey.rightArrow, modifierFlags: [])
-        app.typeKey(.return, modifierFlags: .command)
+        app.typeKey("\n", modifierFlags: .command)
         // send() empties the field the moment it fires (the fixture has no model, so nothing streams back).
         var cleared = false
         for _ in 0..<20 where !cleared { cleared = !((field.value as? String) ?? "").contains("hello from the keyboard"); if !cleared { usleep(150_000) } }
