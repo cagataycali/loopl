@@ -107,6 +107,7 @@ enum DesignFixture {
             // only when there is none; a previous fixture run may have stored one).
             if CommandLine.arguments.contains("--design-signed-out") { try? HFAccount.shared.clear() }
             seedHistory(engine, spec: spec)
+            if !engine.transcript.items.isEmpty { return }   // --design-history-images opened a thread: keep it
         case "approval":
             t.user("Post a note to my notes API saying the build is green.")
             t.apply(.startEventLoop(cycle: 1))
@@ -257,6 +258,35 @@ enum DesignFixture {
                               modelId: spec.repo, tools: tools + [HttpTool().toolSpec]),
         ]
         threads.reversed().forEach { engine.archive.upsert($0) }
+        // `--design-history-images`: a fourth, vision thread whose user turn carries the fixture picture; it is written
+        // to disk, re-read through the archive's decoder (the real round trip) and OPENED, so a capture proves that a
+        // reopened conversation still shows what was sent (IMPROVE #10). `--design-history-images-legacy` opens a thread
+        // saved in the 0.1 shape (no `images` key) to prove old files still decode.
+        if CommandLine.arguments.contains("--design-history-images") {
+            let png = Bundle.main.url(forResource: "vision-test", withExtension: "png").flatMap { try? Data(contentsOf: $0) } ?? Data()
+            let img = ImageBlock(data: png, mime: "image/png", width: 640, height: 400, alt: "test card")
+            var t = Transcript()
+            t.user("What do you see? Then multiply the number by 3.", images: [img])
+            t.apply(.startEventLoop(cycle: 1))
+            t.apply(.text("A red circle and a blue square, with **LOOPL 42** underneath. 42 × 3 = **126**."))
+            t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("…"), metrics: EventLoopMetrics())))
+            let id = UUID(uuidString: "8A6C0A1E-0004-4D8B-9B3C-5E0D2F7A1004")!
+            if let saved = SavedConversation.from(t, id: id, modelName: "Qwen3.5 0.8B", modelId: "mlx-community/Qwen3.5-0.8B-4bit", tools: tools) { engine.archive.upsert(saved) }
+            engine.archive.reload()                                  // decode from disk, not the in-memory copy
+            if let c = engine.archive.conversations.first(where: { $0.id == id }) { engine.open(c) }
+        }
+        if CommandLine.arguments.contains("--design-history-images-legacy") {
+            // The exact bytes a 0.1 build wrote: `user` has only `_0`, `tool` has no `images`.
+            let legacy = """
+            {"id":"8A6C0A1E-0005-4D8B-9B3C-5E0D2F7A1005","title":"Legacy file","updated":"2026-10-01T10:00:00Z","modelName":"Qwen3-0.6B (4-bit)",
+             "items":[{"user":{"_0":"Legacy file: saved before History kept pictures"}},
+                      {"tool":{"name":"calculator","args":{"expression":"2*21"},"result":"2*21 = 42","isError":false,"ms":0.3}},
+                      {"assistant":{"_0":"42."}}]}
+            """
+            try? legacy.data(using: .utf8)!.write(to: ConversationArchive.root.appendingPathComponent("8A6C0A1E-0005-4D8B-9B3C-5E0D2F7A1005.json"), options: .atomic)
+            engine.archive.reload()
+            if let c = engine.archive.conversations.first(where: { $0.title == "Legacy file" }) { engine.open(c) }
+        }
     }
 
     static let approvalUse = ToolUse(toolUseId: "tooluse_post", name: "http",
