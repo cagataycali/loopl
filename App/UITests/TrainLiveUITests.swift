@@ -36,7 +36,7 @@ final class TrainLiveUITests: XCTestCase {
         let cap = app.sliders.matching(identifier: "train-cap").firstMatch
         if cap.waitForExistence(timeout: 5) { cap.adjust(toNormalizedSliderPosition: 0) }
         let name = app.descendants(matching: .any).matching(identifier: "train-name").firstMatch
-        if name.waitForExistence(timeout: 5) { name.tap(); name.typeText("loopl-app-sim\n") }
+        if name.waitForExistence(timeout: 5) { name.tap(); name.typeText((ProcessInfo.processInfo.environment["LOOPL_TRAIN_NAME"] ?? "loopl-app-sim") + "\n") }
 
         let start = app.descendants(matching: .any).matching(identifier: "train-start").firstMatch
         if !start.waitForExistence(timeout: 5) { app.swipeUp() }
@@ -53,6 +53,8 @@ final class TrainLiveUITests: XCTestCase {
         let reading = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Reading' OR label BEGINSWITH 'Rendering' OR label BEGINSWITH 'Training'")).firstMatch
         let deadline = Date().addingTimeInterval(240)
         while Date() < deadline, !reading.exists, !failed.exists { sleep(5) }
+        let jobLink = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'huggingface.co/jobs' OR value CONTAINS 'huggingface.co/jobs'")).firstMatch
+        if jobLink.exists { let j = XCTAttachment(string: "JOB \(jobLink.label) \(jobLink.value ?? "")"); j.name = "job"; j.lifetime = .keepAlways; add(j) }
         let a3 = XCTAttachment(screenshot: app.screenshot()); a3.name = "live-running"; a3.lifetime = .keepAlways; add(a3)
         XCTAssertFalse(failed.exists, "job failed: \(app.descendants(matching: .any).matching(identifier: "train-error").firstMatch.label)")
         XCTAssertTrue(reading.exists, "no [loopl] stage within 4 min")
