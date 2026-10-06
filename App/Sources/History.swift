@@ -141,11 +141,20 @@ final class ConversationArchive {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }()
+    /// Where this archive lives — `Self.root` in the app; a temporary folder in tests.
+    let root: URL
 
-    init() { reload() }
+    init(root: URL = ConversationArchive.root) {
+        self.root = root
+        try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        reload()
+    }
+
+    /// `<root>/<id>.attachments/` — the thread's pictures and recordings (see `AudioAttachment.directory(for:)`).
+    func attachmentsDirectory(for id: UUID) -> URL { root.appendingPathComponent("\(id.uuidString).attachments", isDirectory: true) }
 
     func reload() {
-        let files = (try? FileManager.default.contentsOfDirectory(at: Self.root, includingPropertiesForKeys: nil)) ?? []
+        let files = (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []
         let dec = JSONDecoder(); dec.dateDecodingStrategy = .iso8601
         conversations = files.filter { $0.pathExtension == "json" }
             .compactMap { try? dec.decode(SavedConversation.self, from: Data(contentsOf: $0)) }.sorted { $0.updated > $1.updated }
@@ -153,34 +162,54 @@ final class ConversationArchive {
 
     func upsert(_ c: SavedConversation) {
         let enc = JSONEncoder(); enc.dateEncodingStrategy = .iso8601
-        if let data = try? enc.encode(c) { try? data.write(to: Self.root.appendingPathComponent("\(c.id.uuidString).json"), options: .atomic) }
+        if let data = try? enc.encode(c) { try? data.write(to: root.appendingPathComponent("\(c.id.uuidString).json"), options: .atomic) }
         conversations.removeAll { $0.id == c.id }
         conversations.insert(c, at: 0)
     }
 
     func delete(_ c: SavedConversation) { delete(id: c.id) }
 
-    func delete(id: UUID) {
-        try? FileManager.default.removeItem(at: Self.root.appendingPathComponent("\(id.uuidString).json"))
-        AudioAttachment.removeDirectory(for: id)   // recordings go with the thread
-        conversations.removeAll { $0.id == id }
+    func delete(id: UUID) { delete(ids: [id]) }
+
+    /// Remove threads for good: the JSON file and the `.attachments` folder (pictures, recordings) of each.
+    /// One list mutation for the whole batch, so a `withAnimation` around the call animates every row out together.
+    /// Returns how many were actually in the archive.
+    @discardableResult
+    func delete(ids: Set<UUID>) -> Int {
+        guard !ids.isEmpty else { return 0 }
+        let fm = FileManager.default
+        for id in ids {
+            try? fm.removeItem(at: root.appendingPathComponent("\(id.uuidString).json"))
+            try? fm.removeItem(at: attachmentsDirectory(for: id))   // pictures + recordings go with the thread
+        }
+        let before = conversations.count
+        conversations.removeAll { ids.contains($0.id) }
+        return before - conversations.count
     }
 
-    func deleteAll() { conversations.forEach(delete) }
+    func deleteAll() { delete(ids: Set(conversations.map(\.id))) }
 }
 
-/// The sidebar (iPad) / sheet (iPhone) list of saved conversations. Swipe left deletes.
+/// The sidebar (iPad) / sheet (iPhone) list of saved conversations. Swipe left deletes one; Select → the bottom
+/// bar offers **Delete N** (after a confirmation) and **Share to Hugging Face** for many.
 struct HistoryList: View {
     @Bindable var engine: Engine
     @Binding var selection: RootView.Pane
     var dismiss: (() -> Void)? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    // Edit mode: multi-select → "Share to Hugging Face" (Phase 5). `selecting` is the only state the
+    // Edit mode: multi-select → Delete / "Share to Hugging Face" (Phase 5). `selecting` is the only state the
     // normal list path reads, so nothing changes for the tap-to-open flow.
     @State private var selecting = false
     @State private var selected = Set<UUID>()
     @State private var sharing: ShareBatch? = nil
+    /// The "Delete N conversations?" dialog is up. Deleting is the one action here with no undo, so it always asks.
+    @State private var confirmingDelete = false
     struct ShareBatch: Identifiable { let id = UUID(); var conversations: [SavedConversation] }
+
+    private var allSelected: Bool { !engine.archive.conversations.isEmpty && selected.count == engine.archive.conversations.count }
+    private var deleteLabel: String { selected.isEmpty ? "Delete" : "Delete \(selected.count)" }
+    /// "iPhone" / "iPad" — the dialog names the device the files leave.
+    private var deviceName: String { UIDevice.current.localizedModel }
 
     var body: some View {
         List(selection: $selected) {
@@ -244,20 +273,36 @@ struct HistoryList: View {
                         withAnimation(LooplDesign.Motion.reduced(LooplDesign.Motion.snappy, reduceMotion)) { selecting.toggle(); if !selecting { selected.removeAll() } }
                     }
                     .accessibilityIdentifier("history.select")
-                    .accessibilityHint(selecting ? "leaves selection mode" : "select conversations to share to Hugging Face")
+                    .accessibilityHint(selecting ? "leaves selection mode" : "select conversations to delete or share to Hugging Face")
+                }
+                if selecting {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button(allSelected ? "Deselect all" : "Select all") {
+                            LooplDesign.haptic()
+                            if allSelected { selected.removeAll() } else { selected = Set(engine.archive.conversations.map(\.id)) }
+                        }
+                        .accessibilityIdentifier("history.selectAll")
+                    }
                 }
             }
         }
         .safeAreaInset(edge: .bottom) {
             if selecting {
+                // Two actions, destructive on the left, the constructive one on the right — the one place both live.
                 HStack(spacing: 12) {
-                    Button(selected.count == engine.archive.conversations.count ? "Deselect all" : "Select all") {
+                    Button(role: .destructive) {
                         LooplDesign.haptic()
-                        if selected.count == engine.archive.conversations.count { selected.removeAll() } else { selected = Set(engine.archive.conversations.map(\.id)) }
+                        confirmingDelete = true
+                    } label: {
+                        Label(deleteLabel, systemImage: "trash").font(.body.weight(.semibold))
                     }
-                    .font(.footnote)
-                    .accessibilityIdentifier("history.selectAll")
-                    Spacer()
+                    .buttonStyle(.bordered).tint(.red)
+                    .disabled(selected.isEmpty)
+                    // ⌫ on a hardware keyboard while selecting (iPad / Mac) asks the same question.
+                    .keyboardShortcut(.delete, modifiers: [])
+                    .accessibilityIdentifier("history.delete")
+                    .accessibilityHint("deletes the selected conversations from this \(deviceName), after asking")
+                    Spacer(minLength: 0)
                     Button {
                         LooplDesign.haptic(1)
                         sharing = ShareBatch(conversations: engine.archive.conversations.filter { selected.contains($0.id) })
@@ -269,10 +314,21 @@ struct HistoryList: View {
                     .accessibilityIdentifier("history.share")
                     .accessibilityHint("exports the selected conversations to a private dataset in your Hugging Face account")
                 }
+                .lineLimit(1).minimumScaleFactor(0.8)
                 .padding(.horizontal, LooplDesign.gutter).padding(.vertical, 10)
                 .background(.bar)
                 .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
             }
+        }
+        .confirmationDialog(
+            selected.count == 1 ? "Delete this conversation?" : "Delete \(selected.count) conversations?",
+            isPresented: $confirmingDelete, titleVisibility: .visible
+        ) {
+            Button(selected.count == 1 ? "Delete conversation" : "Delete \(selected.count) conversations", role: .destructive) { deleteSelected() }
+                .accessibilityIdentifier("history.delete.confirm")
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes \(selected.count == 1 ? "its" : "their") messages, pictures and recordings from this \(deviceName).")
         }
         .onAppear {
             #if DEBUG
@@ -280,6 +336,11 @@ struct HistoryList: View {
             if let mode = DesignFixture.share, !selecting, !engine.archive.conversations.isEmpty {
                 selecting = true; selected = Set(engine.archive.conversations.map(\.id))
                 if mode == "review" { sharing = ShareBatch(conversations: engine.archive.conversations) }
+            }
+            // `--design-history-delete select|confirm`: every thread ticked with the Delete bar up; `confirm` also raises the dialog.
+            if let mode = DesignFixture.historyDelete, !selecting, !engine.archive.conversations.isEmpty {
+                selecting = true; selected = Set(engine.archive.conversations.map(\.id))
+                if mode == "confirm" { Task { @MainActor in try? await Task.sleep(for: .milliseconds(600)); confirmingDelete = true } }
             }
             #endif
         }
@@ -302,6 +363,18 @@ struct HistoryList: View {
     private func toggle(_ id: UUID) {
         LooplDesign.haptic()
         if selected.contains(id) { selected.remove(id) } else { selected.insert(id) }
+    }
+
+    /// The dialog's destructive button: threads + attachments go, rows spring out together, selection mode ends.
+    /// If the open thread was among them the Engine has already reset the chat; the list's empty state appears by itself.
+    private func deleteSelected() {
+        let ids = selected
+        LooplDesign.haptic(2)
+        withAnimation(LooplDesign.Motion.reduced(LooplDesign.spring, reduceMotion)) {
+            engine.delete(ids: ids)
+            selected.removeAll()
+            selecting = false
+        }
     }
 
     private func beginSelecting(_ id: UUID) {
