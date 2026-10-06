@@ -43,6 +43,12 @@ jobs:
           xcodebuild -project App/LooplApp.xcodeproj -scheme loopl -configuration Debug \
             -destination "id=${{ steps.sim.outputs.udid }}" -derivedDataPath DerivedData \
             CODE_SIGNING_ALLOWED=NO -skipPackagePluginValidation -skipMacroValidation build 2>&1 | tail -n 80
+      - name: Build (Release, simulator) — what the TestFlight archive compiles
+        run: |
+          set -o pipefail
+          xcodebuild -project App/LooplApp.xcodeproj -scheme loopl -configuration Release \
+            -destination "id=${{ steps.sim.outputs.udid }}" -derivedDataPath DerivedData \
+            CODE_SIGNING_ALLOWED=NO -skipPackagePluginValidation -skipMacroValidation build 2>&1 | tail -n 80
       - name: Test (LooplTests on simulator)
         run: |
           set -o pipefail
