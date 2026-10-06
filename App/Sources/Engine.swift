@@ -41,7 +41,10 @@ public final class AppSettings {
     public static let defaultSystemPrompt = "You are loopl, a helpful assistant running fully on this device. Use tools when they help; answer concisely. Your only memory between conversations is the remember and recall tools: when the user asks you to remember something, call remember; before answering anything about the user, call recall."
     /// Build ≤ 9 default — an unedited stored prompt equal to it is upgraded to the current default on launch.
     public static let legacyDefaultSystemPrompts: Set<String> = ["You are loopl, a helpful assistant running fully on this device. Use tools when they help; answer concisely."]
-    public static let allToolNames = ["current_time", "calculator", "device_info", "remember", "recall", "http"]
+    public static let allToolNames = ["current_time", "calculator", "device_info", "remember", "recall", "http", "manage_messages", "use_agent"]
+    /// Portable tools added after build 12 — switched ON for installs whose saved set predates them (once; a user
+    /// who turns one off afterwards stays off because the name is then recorded in `loopl.toolsSeen`).
+    public static let laterCoreTools = ["manage_messages", "use_agent"]
 
     public init() {
         let d = UserDefaults.standard
@@ -50,6 +53,9 @@ public final class AppSettings {
         systemPrompt = stored.map { Self.legacyDefaultSystemPrompts.contains($0) ? Self.defaultSystemPrompt : $0 } ?? Self.defaultSystemPrompt
         var saved = Set((d.array(forKey: "loopl.tools") as? [String]) ?? Self.allToolNames)
         if saved.remove("http_get") != nil { saved.insert("http") }     // 0.1 → http (http_get is a deprecated SDK alias)
+        var seen = Set((d.array(forKey: "loopl.toolsSeen") as? [String]) ?? [])
+        for name in Self.laterCoreTools where !seen.contains(name) { saved.insert(name); seen.insert(name) }
+        d.set(Array(seen), forKey: "loopl.toolsSeen")
         enabledTools = saved
         askBefore = ApprovalPolicy.Mode(rawValue: d.string(forKey: Self.askBeforeKey) ?? "") ?? .mutating
         showPerformance = d.bool(forKey: "loopl.perf")
@@ -122,11 +128,31 @@ public final class Engine {
     public private(set) var mountedNow: [String] = []
     private var runTask: Task<Void, Never>?
     private var bootstrapTask: Task<Void, Never>?
+    /// Sub-agents (`use_agent`): every child of this engine, their envelopes and the detached event stream (SDK SubAgentHub).
+    public let hub: SubAgentHub
+    /// One loaded model, many agents: the parent and every child take this gate for each model call (FIFO).
+    private let gate = ModelGate()
+    /// Background children that finished while the parent was busy or the user was typing — woken in order when idle.
+    private(set) var pendingWakes: [SubAgentEnvelope] = []
+    /// The composer has focus and text in it: a wake waits (wake.ts: never run an autonomous turn over a human mid-sentence).
+    public var userIsTyping = false { didSet { if !userIsTyping { drainWakes() } } }
+    private var detachedTask: Task<Void, Never>?
 
     public init(settings: AppSettings, store: ModelStore) {
         self.settings = settings
         self.store = store
-        let core: [any Tool] = [CurrentTimeTool(), CalculatorTool(), DeviceInfoTool(), RememberTool(), RecallTool(), HttpTool()]
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        self.hub = SubAgentHub(directory: base.appendingPathComponent("agents", isDirectory: true))
+        // A background child's events after the parent's turn ended: fold them into the card on screen.
+        detachedTask = Task { [weak self] in
+            guard let hub = self?.hub else { return }
+            for await event in hub.detachedEvents() {
+                guard let self else { return }
+                if self.transcript.agentIndex(Self.childId(of: event)) != nil { self.transcript.apply(event); self.archiveCurrent() }
+                    let hub = self.hub
+        Task { [weak self] in
+            await hub.setOnFinished { env in Task { @MainActor in self?.childFinished(env) } }
+            let core: [any Tool] = [CurrentTimeTool(), CalculatorTool(), DeviceInfoTool(), RememberTool(), RecallTool(), HttpTool()]
         registry = ToolRegistry(catalog: core, mounted: Array(settings.enabledTools), selfManaging: true)
         mountedNow = core.map(\.name).filter { settings.enabledTools.contains($0) } + [ManageToolsTool.toolName]
         let ref = WeakEngine(self)
@@ -175,6 +201,15 @@ public final class Engine {
         Task { await registerAppleTools(); await registry.setMounted(names) }
     }
 
+    /// The child id an event is about (nil for the parent's own events).
+    nonisolated static func childId(of e: AgentEvent) -> String {
+        switch e {
+        case .childStarted(let i): i.id
+        case .child(let id, _), .childStatus(let id, _): id
+        default: ""
+        }
+    }
+
     public var loadedModel: ModelSpec? { if case .ready(let s) = readiness { return s }; return nil }
     /// #21: the name to show under the chat title — set only when the turns on screen were answered by a
     /// DIFFERENT model than the one loaded now (reopen a thread, or switch model with it open). A reopened
@@ -185,18 +220,33 @@ public final class Engine {
     }
     public var loadProgress: Double? { if case .loading(_, let p) = readiness { return p }; return nil }
     public var isGenerating: Bool { transcript.isRunning }
-    public var allTools: [any Tool] { [CurrentTimeTool(), CalculatorTool(), DeviceInfoTool(), RememberTool(), RecallTool(), HttpTool()] }
+    public var allTools: [any Tool] { [CurrentTimeTool(), CalculatorTool(), DeviceInfoTool(), RememberTool(), RecallTool(), HttpTool(), ManageMessagesTool(), useAgentTool] }
+    /// `use_agent`: children are built from the parent's model, gate, tools (minus use_agent — depth 1) and approval hook,
+    /// read at spawn time so a model switch is honoured.
+    private var useAgentTool: UseAgentTool {
+        UseAgentTool(hub: hub) { [weak self] in
+            await MainActor.run {
+                guard let self, let model = self.model else { return nil }
+                return SubAgentContext(model: model, gate: self.gate, availableTools: self.activeTools, hooks: [self.approvalPolicy])
+            }
+        }
+    }
     /// Human-in-the-loop policy: reads Settings › Ask before on every call, so no agent rebuild is needed.
     private let approvalPolicy = ApprovalPolicy(modeProvider: {
         ApprovalPolicy.Mode(rawValue: UserDefaults.standard.string(forKey: AppSettings.askBeforeKey) ?? "") ?? .mutating
     })
-    /// Answer an `ApprovalCard` (the transcript shows it until the agent emits `.approvalResolved`).
+    /// Answer an `ApprovalCard` (the transcript shows it until the agent emits `.approvalResolved`). A card inside a
+    /// sub-agent's card is answered on that child (the parent knows nothing about it).
     public func resolve(_ request: ApprovalRequest, _ decision: ApprovalDecision) {
         guard let agent else {
             if DesignFixture.requested { Task { await DesignFixture.resolve(self, request, decision) } }   // DEBUG fixture, no model
             return
         }
-        Task { await agent.resolve(approval: request.id, decision) }
+        let children = transcript.agents.filter { !$0.status.isFinished }.map(\.info.id)
+        Task {
+            if await agent.resolve(approval: request.id, decision) { return }
+            for id in children where await hub.resolve(child: id, approval: request.id, decision) { return }
+        }
     }
     /// The tools offered in THIS conversation right now (the registry's mounted set, as last reported) — what Share to
     /// Hugging Face records as the thread's tool specs. Before Phase 6 this was Settings' switches alone.
@@ -362,7 +412,14 @@ public final class Engine {
         if settings.lastModelId == spec.id { settings.lastModelId = nil }
     }
 
-    public func clear() { transcript.clear(); agent = nil; openedUnder = nil; continuedHere = false; resetMounted(nil) }
+    public func clear() { transcript.clear(); agent = nil; openedUnder = nil; continuedHere = false; resetMounted(nil); stopChildren() }
+
+    /// A child belongs to the thread that spawned it: leaving the thread (new / open / delete / clear) cancels every live
+    /// child and drops wakes that have not run — a finished envelope stays answerable by id for this session.
+    private func stopChildren() {
+        pendingWakes.removeAll()
+        Task { await hub.stopAll() }
+    }
 
     /// Save what is on screen (if anything was said) and start fresh.
     public func newConversation() {
@@ -371,6 +428,7 @@ public final class Engine {
         transcript.clear(); agent = nil; currentId = UUID(); currentEditedAt = nil
         openedUnder = nil; continuedHere = false
         resetMounted(nil)
+        stopChildren()
     }
 
     /// Reopen a saved conversation. The model starts a fresh context — the
@@ -385,6 +443,7 @@ public final class Engine {
         openedUnder = c.modelName
         continuedHere = false
         resetMounted(c.mounted)          // the thread's own tool set (Phase 6), else Settings' defaults
+        stopChildren()
     }
 
     func delete(_ c: SavedConversation) { delete(ids: [c.id]) }
@@ -395,7 +454,7 @@ public final class Engine {
     @discardableResult
     func delete(ids: Set<UUID>) -> Int {
         let n = archive.delete(ids: ids)
-        if ids.contains(currentId) { transcript.clear(); agent = nil; currentId = UUID(); currentEditedAt = nil; openedUnder = nil; continuedHere = false; resetMounted(nil) }
+        if ids.contains(currentId) { transcript.clear(); agent = nil; currentId = UUID(); currentEditedAt = nil; openedUnder = nil; continuedHere = false; resetMounted(nil); stopChildren() }
         return n
     }
 
@@ -490,17 +549,22 @@ public final class Engine {
         }
         transcript.user(text, images: images)
         let prompt = text.isEmpty ? "What's in this image?" : text
-        let message = Loopl.Message.user(prompt, images: sent)
-        let system = effectiveSystemPrompt
+        start(agent, Loopl.Message.user(prompt, images: sent))
+    }
+
+    /// Run one turn of `agent` on `message`, folding every event into the transcript. Shared by `send` and the wake.
+    private func start(_ agent: Agent, _ message: Loopl.Message) {
+        let system = effectiveSystemPrompt, gate = self.gate
+        transcript.isRunning = true
         runTask = Task { [weak self] in
-            await agent.setSystemPrompt(system)
+            await agent.setSystemPrompt(system); await agent.setModelGate(gate)      // tools come from `registry` (Phase 6)
             do {
                 for try await event in agent.stream([message]) {
                     guard let self else { return }
                     if self.transcript.apply(event) { self.archiveCurrent() }
                     switch event {
                     case .toolStarted: self.haptics.emit(.toolStart)
-                    case .approvalRequested: self.haptics.emit(.approvalNeeded)
+                    case .approvalRequested, .child(_, .approvalRequested): self.haptics.emit(.approvalNeeded)
                     case .toolResult(let r): self.haptics.emit(r.isError ? .error : .toolFinish)
                     default: break
                     }
@@ -511,7 +575,29 @@ public final class Engine {
                 self?.transcript.note("error: \(error.localizedDescription)")
                 self?.transcript.isRunning = false
             }
+            self?.drainWakes()      // a child that finished while this turn ran
         }
+    }
+
+    // MARK: - Sub-agent wake (SDK `SubAgentHub.onFinished` → a synthetic turn on the parent)
+
+    /// A DETACHED child finished (any outcome). Runs the parent on "[use_agent <id> finished] <result>" now, or queues
+    /// it while the parent is generating / the user is typing / no model is loaded (FIFO, one in flight — wake.ts).
+    private func childFinished(_ env: SubAgentEnvelope) {
+        guard transcript.agentIndex(env.id) != nil else { return }   // belongs to a thread that is no longer on screen
+        pendingWakes.append(env)
+        drainWakes()
+    }
+
+    private func drainWakes() {
+        guard !isGenerating, !userIsTyping, let model, loadedModel != nil, !pendingWakes.isEmpty else { return }
+        let env = pendingWakes.removeFirst()
+        let prompt = SubAgentWake.prompt(for: env)
+        let agent = self.agent ?? Agent(model: model, tools: activeTools, systemPrompt: effectiveSystemPrompt, hooks: [approvalPolicy])
+        self.agent = agent
+        transcript.note(SubAgentWake.line(for: env))   // one system-styled line (`SubAgentWake.prefix`), not the user speaking
+        haptics.emit(.toolFinish)
+        start(agent, Loopl.Message.user(prompt))
     }
 
     public func stop() {

@@ -45,6 +45,7 @@ struct SavedConversation: Codable, Identifiable, Hashable {
             case .assistant(let s): .assistant(s)
             case .toolUse(let c, let r): .tool(name: c.name, args: c.input, result: r?.content, isError: r?.isError ?? false, ms: r?.durationMs ?? 0, images: HistoryImage.thumbnails($0.images))
             case .note(let s): .note(s)
+            case .agent(let run): .note("agent \(run.info.name) (\(run.status.rawValue))" + (run.resultText.map { ": \($0)" } ?? ""))   // summary only; the child's rows are not replayed
             case .approval(let req, let d):
                 switch d {
                 case nil: nil                                   // still waiting — the agent will not be there on reopen

@@ -12,6 +12,8 @@ public struct TranscriptItem: Identifiable, Sendable, Hashable {
         /// A tool call waiting for the human (`decision == nil`) or already answered.
         case approval(ApprovalRequest, decision: ApprovalDecision?)
         case note(String)
+        /// A sub-agent (`use_agent`): header + its own nested transcript — the card the UI draws under the parent's tool row.
+        case agent(SubAgentRun)
     }
     public var id = UUID()
     public var kind: Kind
@@ -115,7 +117,39 @@ public struct Transcript: Sendable, Hashable {
             isRunning = false; lastResult = r
             if r.stopReason == .cancelled { items.append(.init(kind: .note("cancelled"))) }
             return true
+        case .childStarted(let info):
+            // Right after the parent's `use_agent` row when it is here (several children of one turn stack in order);
+            // at the end otherwise (a background child's late events after the turn).
+            guard agentIndex(info.id) == nil else { break }
+            let item = TranscriptItem(kind: .agent(SubAgentRun(info: info)))
+            if let parent = items.lastIndex(where: { if case .toolUse(let u, _) = $0.kind { return u.toolUseId == info.parentToolUseId }; return false }) {
+                var at = parent + 1
+                while at < items.count, case .agent = items[at].kind { at += 1 }    // after its siblings
+                items.insert(item, at: at)
+            } else {
+                items.append(item)
+            }
+        case .child(let id, let event):
+            if let idx = agentIndex(id), case .agent(var run) = items[idx].kind {
+                run.transcript.apply(event)
+                if case .result = event, run.endedAt == nil { run.endedAt = Date() }
+                items[idx].kind = .agent(run)
+            }
+        case .childStatus(let id, let status):
+            if let idx = agentIndex(id), case .agent(var run) = items[idx].kind {
+                run.status = status
+                if status.isFinished, run.endedAt == nil { run.endedAt = Date() }
+                if status == .background { run.info.background = true }
+                items[idx].kind = .agent(run)
+            }
         }
         return false
     }
+
+    /// The `.agent` row of a child id.
+    public func agentIndex(_ id: String) -> Int? {
+        items.firstIndex { if case .agent(let r) = $0.kind { return r.info.id == id }; return false }
+    }
+    /// Every child shown in this transcript (nested ones excluded).
+    public var agents: [SubAgentRun] { items.compactMap { if case .agent(let r) = $0.kind { return r }; return nil } }
 }

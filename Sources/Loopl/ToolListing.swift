@@ -87,5 +87,6 @@ public struct ToolListing: Sendable, Hashable {
         "recall": "Reads those notes back.",
         "http": "Fetches a URL for the model. Refused while offline mode is on.",
         "manage_tools": "Lets the model add or remove its own tools mid-conversation — a mount works on its very next step.",
+        "manage_messages": "Lets the model tidy its own context in a long chat — old tool results go, your messages stay. The chat on screen never changes.",
     ]
 }
