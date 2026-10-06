@@ -105,6 +105,11 @@ public final class Engine {
     private(set) var currentId = UUID()
     /// When the current thread was last rewritten by Edit / Retry / Delete from here (persisted with it).
     private(set) var currentEditedAt: Date?
+    /// #21: the model that wrote the answers of a REOPENED thread, as it was saved with it (`SavedConversation.modelName`).
+    /// Set by `open`, cleared by `newConversation` / `clear` — nil for a thread started in this session.
+    private(set) var openedUnder: String?
+    /// True once this session has generated into that reopened thread, so the subtitle can say *earlier* answers.
+    private(set) var continuedHere = false
     private var model: (any Model)?
     private var agent: Agent?
     private var runTask: Task<Void, Never>?
@@ -116,6 +121,13 @@ public final class Engine {
     }
 
     public var loadedModel: ModelSpec? { if case .ready(let s) = readiness { return s }; return nil }
+    /// #21: the name to show under the chat title — set only when the turns on screen were answered by a
+    /// DIFFERENT model than the one loaded now (reopen a thread, or switch model with it open). A reopened
+    /// thread gets a fresh context, so without this the old answers look like the current model's work.
+    public var answeredBy: String? {
+        guard let openedUnder, !openedUnder.isEmpty, openedUnder != loadedModel?.name else { return nil }
+        return openedUnder
+    }
     public var loadProgress: Double? { if case .loading(_, let p) = readiness { return p }; return nil }
     public var isGenerating: Bool { transcript.isRunning }
     public var allTools: [any Tool] { [CurrentTimeTool(), CalculatorTool(), DeviceInfoTool(), RememberTool(), RecallTool(), HttpTool()] }
@@ -281,13 +293,14 @@ public final class Engine {
         if settings.lastModelId == spec.id { settings.lastModelId = nil }
     }
 
-    public func clear() { transcript.clear(); agent = nil }
+    public func clear() { transcript.clear(); agent = nil; openedUnder = nil; continuedHere = false }
 
     /// Save what is on screen (if anything was said) and start fresh.
     public func newConversation() {
         guard !isGenerating else { return }
         archiveCurrent()
         transcript.clear(); agent = nil; currentId = UUID(); currentEditedAt = nil
+        openedUnder = nil; continuedHere = false
     }
 
     /// Reopen a saved conversation. The model starts a fresh context — the
@@ -299,11 +312,13 @@ public final class Engine {
         currentEditedAt = c.editedAt
         transcript = c.transcript()
         agent = nil
+        openedUnder = c.modelName
+        continuedHere = false
     }
 
     func delete(_ c: SavedConversation) {
         archive.delete(c)
-        if c.id == currentId { transcript.clear(); agent = nil; currentId = UUID(); currentEditedAt = nil }
+        if c.id == currentId { transcript.clear(); agent = nil; currentId = UUID(); currentEditedAt = nil; openedUnder = nil; continuedHere = false }
     }
 
     private func archiveCurrent() {
@@ -368,11 +383,21 @@ public final class Engine {
 
     public func send(_ text: String, images: [ImageBlock] = []) {
         guard !isGenerating else { return }
+        #if DEBUG
+        // A design fixture is "ready" with nothing behind it. Replay the scripted answer instead of refusing —
+        // the same path Edit / Retry already take (`regenerate`), so a fixture can be continued for a capture.
+        if model == nil, DesignFixture.requested, case .ready = readiness, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            continuedHere = true
+            Task { await DesignFixture.regenerate(self, text: text, images: images) }
+            return
+        }
+        #endif
         guard let model, let spec = loadedModel else { lastError = "the model is still loading"; haptics.emit(.error); return }
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !images.isEmpty else { return }
         lastError = nil
         haptics.emit(.send)
+        continuedHere = true   // #21: from here on the thread also holds this model's answers
         // Generation params are the model's own maxed defaults (spec.defaultParams, set at load): no caps here.
         let agent = self.agent ?? Agent(model: model, tools: activeTools, systemPrompt: effectiveSystemPrompt, hooks: [approvalPolicy])
         self.agent = agent

@@ -23,6 +23,7 @@ struct ChatView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                provenanceRow
                 AgentTranscriptView(engine.transcript, showPerformance: settings.showPerformance, expandTools: DesignFixture.expandTools) {
                     readinessBanner
                 } empty: {
@@ -175,6 +176,34 @@ struct ChatView: View {
     }
 
     /// Inline, never modal: download → load → (nothing) at the top of the document.
+    /// #21: a reopened thread is replayed into a FRESH context under the model that is loaded now — so the answers
+    /// on screen were written by a different one. Two placements were tried and measured:
+    /// · as a title subtitle — the inline title bar is squeezed between two button groups and truncated it on an SE;
+    /// · inside the transcript's scroll header — at AX-XXXL the taller header moved the content under the
+    ///   scroll-to-bottom target and the transcript came up blank.
+    /// So it is a static strip between the title bar and the scroll view: full reading width, outside the scroll math.
+    @ViewBuilder private var provenanceRow: some View {
+        if let by = engine.answeredBy {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Image(systemName: "clock.arrow.circlepath").font(.caption2)
+                Text(engine.continuedHere ? "Earlier answers by \(by)" : "Answered by \(by)")
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+            }
+            .font(.caption).foregroundStyle(.secondary)
+            .lineLimit(2)
+            // Capped like the onboarding footer (#19): unbounded, this secondary line wrapped to four lines at
+            // AX-XXXL and took half an SE from the conversation it describes. VoiceOver still reads it in full.
+            .dynamicTypeSize(...DynamicTypeSize.accessibility1)
+            .padding(.horizontal, LooplDesign.gutter)
+            .padding(.top, 2).padding(.bottom, 6)
+            .frame(maxWidth: LooplDesign.readingWidth + 2 * LooplDesign.gutter, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .center)
+            .accessibilityElement(children: .combine)
+            .transition(.opacity)
+        }
+    }
+
     @ViewBuilder private var readinessBanner: some View {
         switch engine.readiness {
         case .downloading(let spec, let done, let total):
