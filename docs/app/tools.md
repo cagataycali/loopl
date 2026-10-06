@@ -7,7 +7,7 @@ hide:
 
 # Tools in the app
 
-Fewer tools make a better agent — every tool is one more thing a small model can pick wrongly — so the app ships only what earns its place. **Settings** turns any of them off; a tool this phone can't run (no Image Playground, no translation pack) is hidden from the model rather than offered and failing.
+Fewer tools make a better agent — every tool is one more thing a small model can pick wrongly — so the model sees a small everyday set, and the rest wait in **Settings**, off until you want them. Every tool's schema was measured on real 0.8B and 2B models before it shipped; a tool this phone can't run (no Image Playground, no translation pack) is hidden from the model rather than offered and failing.
 
 <div class="l-shots l-shots--v2">
 <figure class="l-shot"><div class="l-phone l-phone--mini" aria-hidden="true"><div class="l-phone__screen"><picture><source srcset="../../assets/app2/tool-dark.webp" type="image/webp" media="(prefers-color-scheme: dark)"><source srcset="../../assets/app2/tool-dark.png" media="(prefers-color-scheme: dark)"><source srcset="../../assets/app2/tool-light.webp" type="image/webp"><img src="../../assets/app2/tool-light.png" alt="Two tool rows, current_time and calculator, expanded to arguments and results" width="393" height="852" loading="lazy" decoding="async"></picture></div></div><figcaption>Every call is a row: arguments, result, time.</figcaption></figure>
