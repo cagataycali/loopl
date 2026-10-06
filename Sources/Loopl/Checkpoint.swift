@@ -102,6 +102,7 @@ public struct InterruptSnapshot: Codable, Sendable, Hashable {
     }
 }
 
+/// Why a checkpoint could not be restored.
 public enum CheckpointError: LocalizedError, Sendable, Equatable {
     case unsupportedVersion(found: Int, supported: Int)
     case notFound(String)

@@ -15,6 +15,7 @@ extension HFHubClient.DatasetSummary {
 /// transport → testable with a replay transport). One session = one job.
 @MainActor @Observable
 public final class TrainingSession {
+    /// Where a training run is, from preparing to done or failed.
     public enum Phase: Equatable, Sendable {
         case idle
         case preparing(String)        // "Uploading script…", "Creating job…"

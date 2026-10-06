@@ -31,6 +31,7 @@ public enum TrainingBase: String, CaseIterable, Sendable, Codable, Identifiable 
     public static func recommended(forConversations n: Int) -> TrainingBase { n < 300 ? .b0_8 : (n <= 2000 ? .b2 : .b4) }
 }
 
+/// LoRA adapters or a full fine-tune.
 public enum TrainingMethod: String, CaseIterable, Sendable, Codable {
     case lora, full
     public var label: String { self == .lora ? "LoRA" : "Full fine-tune" }
@@ -179,6 +180,7 @@ public struct TrainingEstimate: Hashable, Sendable {
 
 // MARK: - Launch contract → HFHubClient.JobSpec
 
+/// How a `TrainingPlan` becomes a Hugging Face Jobs request that runs `train/loopl_sft.py` with `uv`.
 public enum TrainingLaunch {
     public static let scriptPath = "train/loopl_sft.py"
     public static let trampoline = "set -euo pipefail; curl -fsSL -H \"Authorization: Bearer $HF_TOKEN\" \"$LOOPL_SCRIPT_URL\" -o /tmp/loopl_sft.py && exec uv run /tmp/loopl_sft.py \"$@\""

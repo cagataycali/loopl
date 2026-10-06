@@ -1,5 +1,6 @@
 import Foundation
 
+/// `current_time`: the time now in any IANA zone (or a city the zone database knows).
 public struct CurrentTimeTool: Tool {
     public init() {}
     public let name = "current_time"
@@ -25,6 +26,7 @@ public struct CurrentTimeTool: Tool {
     }
 }
 
+/// `calculator`: exact arithmetic through `Calculator` — no `eval`.
 public struct CalculatorTool: Tool {
     public init() {}
     public let name = "calculator"
@@ -52,6 +54,7 @@ public struct RememberTool: Tool {
     }
 }
 
+/// `recall`: read back a note `remember` stored, by key, or list them all.
 public struct RecallTool: Tool {
     public init() {}
     public let name = "recall"
@@ -65,6 +68,7 @@ public struct RecallTool: Tool {
     }
 }
 
+/// The device-local key → value notes behind `remember` and `recall` (UserDefaults).
 public enum NotesStore {
     static let key = "loopl.notes"
     public static func all() -> [String: String] { (UserDefaults.standard.dictionary(forKey: key) as? [String: String]) ?? [:] }

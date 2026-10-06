@@ -283,6 +283,7 @@ public actor Agent {
     /// e.g. after `MaxTokensReachedError`).
     public func callAsFunction() async throws -> AgentResult { try await invoke(.continue) }
 
+    /// What a call to the agent carries: a prompt, a full message list, or `continue` to resume.
     public enum Input: Sendable {
         case text(String), messages([Message]), `continue`
         /// Resume-from-interrupt: `agent([{"interruptResponse": …}])`.

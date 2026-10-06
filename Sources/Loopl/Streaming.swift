@@ -81,6 +81,7 @@ public enum StreamEvent: Sendable, Hashable {
 /// `event_loop.streaming.process_stream`: fold `StreamEvent`s into
 /// the assistant `Message`, yielding typed events for the UI as it goes.
 public struct StreamAssembler: Sendable {
+    /// What the assembler emits while it folds stream events into a message.
     public enum Event: Sendable {
         case chunk(StreamEvent)                 // ModelStreamChunkEvent
         case text(String)                       // TextStreamEvent
@@ -88,6 +89,7 @@ public struct StreamAssembler: Sendable {
         case reasoning(String)                  // ReasoningTextStreamEvent
         case toolUse(name: String, toolUseId: String, partialInput: String)   // ToolUseStreamEvent
     }
+    /// The assembled message and why the model stopped.
     public struct Stop: Sendable {
         public var stopReason: StopReason
         public var message: Message

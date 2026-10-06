@@ -63,6 +63,7 @@ Style
         public static let none = Redaction()
     }
 
+    /// Redaction and provenance for an export.
     public struct Options: Sendable, Hashable {
         public var redaction = Redaction.none
         public var appVersion = "0.2"
@@ -74,6 +75,7 @@ Style
         }
     }
 
+    /// Why a conversation is not learnable (no user turn, no finished answer).
     public enum ExportError: LocalizedError, Equatable {
         case noUserTurn(String), noAssistantAnswer(String)
         public var errorDescription: String? {
@@ -86,11 +88,13 @@ Style
 
     // MARK: Output
 
+    /// A picture kept with a row: its path in the dataset repo and its PNG bytes.
     public struct ImageFile: Sendable, Hashable {
         public var path: String      // "images/<12 hex>.png" — relative to the dataset repo root
         public var data: Data
     }
 
+    /// One exported conversation: the JSON row plus the pictures it references.
     public struct Record: Sendable, Hashable {
         public var id: String
         public var json: JSONValue

@@ -21,6 +21,7 @@ extension HFAccount {
         }
     }
 
+    /// Why a pasted token was rejected before any network call.
     public enum SignInError: LocalizedError, Equatable {
         case notAToken
         public var errorDescription: String? { "that does not look like a Hugging Face token (they start with hf_)" }

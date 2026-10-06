@@ -18,6 +18,7 @@ public struct ToolCallParser: Sendable {
     public var family: ToolFamily
     public init(family: ToolFamily) { self.family = family }
 
+    /// The visible text with calls removed, and the calls found in it.
     public struct Result: Sendable, Equatable {
         public var text: String
         public var calls: [ToolUse]

@@ -10,6 +10,7 @@ import Foundation
 /// so a UI can pin the card to the tool row and the agent can resume the
 /// right call. Headers arrive already redacted (see `ApprovalRequest.redact`).
 public struct ApprovalRequest: Sendable, Hashable, Codable, Identifiable {
+    /// How much a call could change outside the device; the approval card shows it.
     public enum Risk: String, Sendable, Codable, Hashable, Comparable {
         case low, medium, high
         public static func < (a: Risk, b: Risk) -> Bool { a.rank < b.rank }
@@ -81,6 +82,7 @@ public extension Tool {
 /// trusted host are auto-approved whatever the mode. `modeProvider` is read on
 /// every call, so a settings toggle takes effect without rebuilding the agent.
 public struct ApprovalPolicy: HookProvider, Sendable {
+    /// When the policy stops a flagged call for a human decision.
     public enum Mode: String, Sendable, Codable, CaseIterable {
         /// Ask before every call the tool flags.
         case always

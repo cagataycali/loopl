@@ -32,6 +32,7 @@ public struct ModelSpec: Sendable, Codable, Hashable, Identifiable {
     /// `loopl`-tagged Hub repos are `.loopl`; nil for everything else.
     public var persona: Persona? = nil
 
+    /// The identity a model was trained with; the app sends its system prompt first.
     public enum Persona: String, Sendable, Codable, Hashable {
         /// loopl v1+: post-tuned on cagataydev/loopl-train with `LooplPersona.systemPrompt` as the system turn of every sample.
         case loopl
@@ -104,6 +105,7 @@ public struct ModelSpec: Sendable, Codable, Hashable, Identifiable {
     }
 }
 
+/// The bundled model list (`models.json`): version, date and rows.
 public struct Catalog: Sendable, Codable {
     public var version: Int
     public var updated: String

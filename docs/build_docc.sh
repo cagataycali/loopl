@@ -18,7 +18,8 @@ for t in Loopl LooplRuntimes; do
   cp "$SG/$t.all/$t"*.symbols.json "$SG/$t/"           # only this module's graphs (deps emit theirs too)
   lower="$(echo "$t" | tr '[:upper:]' '[:lower:]')"
   rm -rf "$OUT/api/$lower"; mkdir -p "$OUT/api"
-  xcrun docc convert --fallback-display-name "$t" --fallback-bundle-identifier "dev.loopl.$t" --fallback-bundle-version "$VERSION" \
+  catalog=(); [[ -d "Sources/$t/$t.docc" ]] && catalog=("Sources/$t/$t.docc")   # landing page + topics (Sources/<T>/<T>.docc/<T>.md)
+  xcrun docc convert ${catalog[@]+"${catalog[@]}"} --fallback-display-name "$t" --fallback-bundle-identifier "dev.loopl.$t" --fallback-bundle-version "$VERSION" \
     --additional-symbol-graph-dir "$SG/$t" --output-path "$OUT/api/$lower" \
     --transform-for-static-hosting --hosting-base-path "api/$lower" >/dev/null
   echo "  → $OUT/api/$lower/documentation/$lower/ ($(ls "$OUT/api/$lower/documentation/$lower" | wc -l | tr -d ' ') symbols)"

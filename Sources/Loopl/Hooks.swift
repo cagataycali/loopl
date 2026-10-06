@@ -19,6 +19,7 @@ public protocol HookProvider: Sendable {
 /// may mutate the event (`inout`) — that is how a hook cancels a tool, asks
 /// for a model retry, or rewrites the messages before a model call.
 public final class HookRegistry: @unchecked Sendable {
+    /// A hook callback: it may mutate the event it is given.
     public typealias Callback<E: HookEvent> = @Sendable (inout E) async throws -> Void
     private struct Entry { let call: @Sendable (inout any HookEvent) async throws -> Void }
     private var callbacks: [ObjectIdentifier: [Entry]] = [:]
@@ -98,6 +99,7 @@ public struct BeforeModelCallEvent: HookEvent {
 /// strategy does this with backoff).
 public struct AfterModelCallEvent: HookEvent {
     public static var shouldReverseCallbacks: Bool { true }
+    /// What the model returned when its call ended normally.
     public struct ModelStopResponse: Sendable { public var stopReason: StopReason; public var message: Message }
     public var stopResponse: ModelStopResponse?
     public var error: (any Error)?
