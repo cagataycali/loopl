@@ -174,18 +174,20 @@ public enum ExternalStorage {
     /// gone for good; returns `reachable == false` (no throw) when the drive is
     /// merely unplugged — the catalog keeps the model, the row dims.
     public static func resolve(_ b: StorageBookmark) throws -> (url: URL, stale: Bool) {
+        do { return try resolveRaw(b) } catch { throw StorageError.bookmarkInvalid(name: b.name) }
+    }
+
+    /// `resolve` with the system's own error (domain / code — e.g. NSFileNoSuchFile 4 while the
+    /// drive is unplugged vs a permission error) so diagnostics can tell "unplugged" from "revoked".
+    public static func resolveRaw(_ b: StorageBookmark) throws -> (url: URL, stale: Bool) {
         var stale = false
         #if os(macOS)
         let opts: URL.BookmarkResolutionOptions = [.withSecurityScope, .withoutUI]
         #else
         let opts: URL.BookmarkResolutionOptions = [.withoutUI]
         #endif
-        do {
-            let url = try URL(resolvingBookmarkData: b.bookmark, options: opts, relativeTo: nil, bookmarkDataIsStale: &stale)
-            return (url, stale)
-        } catch {
-            throw StorageError.bookmarkInvalid(name: b.name)
-        }
+        let url = try URL(resolvingBookmarkData: b.bookmark, options: opts, relativeTo: nil, bookmarkDataIsStale: &stale)
+        return (url, stale)
     }
 
     // MARK: Moving a model between volumes

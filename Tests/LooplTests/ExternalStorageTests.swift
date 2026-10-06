@@ -144,6 +144,10 @@ final class ExternalStorageTests: XCTestCase {
         XCTAssertThrowsError(try ExternalStorage.resolve(StorageBookmark(name: "Gone", folderName: "x", volumeUUID: nil, bookmark: Data([0, 1, 2])))) { e in
             XCTAssertEqual(e as? StorageError, .bookmarkInvalid(name: "Gone"))
         }
+        // The raw variant keeps the system's error so diagnostics can name domain + code.
+        XCTAssertThrowsError(try ExternalStorage.resolveRaw(StorageBookmark(name: "Gone", folderName: "x", volumeUUID: nil, bookmark: Data([0, 1, 2])))) { e in
+            XCTAssertNil(e as? StorageError); XCTAssertFalse((e as NSError).domain.isEmpty)
+        }
     }
 
     // MARK: storage-fix (owner: "config.json.part doesn't exist" after relaunch with models on the drive)

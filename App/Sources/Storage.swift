@@ -44,6 +44,8 @@ public final class StorageLocations {
     /// Facts about every resolve/access/listing step, for the Storage screen's Diagnostics row and bug reports.
     public let diagnostics: StorageDiagnostics
     private var lateMountRetry: Task<Void, Never>?
+    /// Last diagnostics line per volume — a state that has not changed is not logged again (retries every 2 s).
+    private var lastLogged: [String: String] = [:]
 
     public init(root: URL = ModelStore.root) {
         file = root.appendingPathComponent("storage.json")
@@ -75,12 +77,12 @@ public final class StorageLocations {
     /// that resolve. Cheap; called at launch, on foreground, and after any change.
     public func resolveAll() {
         internalFree = ExternalStorage.freeSpace(at: ModelStore.root)
-        let before = volumes
         volumes = manifest.volumes.map { b in
             let r: (url: URL, stale: Bool)
-            do { r = try ExternalStorage.resolve(b) } catch {
+            do { r = try ExternalStorage.resolveRaw(b) } catch {
                 if let held = accessing.removeValue(forKey: b.id) { held.stopAccessingSecurityScopedResource() }
-                diagnostics.log("\(b.name): resolve FAILED — \(error.localizedDescription)")
+                let ns = error as NSError
+                logOnce(b.id, "\(b.name) [\(b.folderName)]: resolve FAILED — \(ns.domain) \(ns.code) \(ns.localizedDescription) (unplugged → not connected; a revoked grant also lands here)")
                 return Volume(bookmark: b, url: nil, connected: false, free: 0, used: 0)
             }
             // Scope is per-URL: a bookmark that now resolves elsewhere gets the old scope closed first.
@@ -107,11 +109,17 @@ public final class StorageLocations {
             } : 0
             let v = Volume(bookmark: b, url: r.url, connected: connected, accessGranted: granted, unreadableReason: unreadable,
                            free: readiness.isReadable ? ExternalStorage.freeSpace(at: r.url) : 0, used: used)
-            if before.first(where: { $0.id == b.id }).map({ $0.connected != v.connected || $0.accessGranted != v.accessGranted || $0.unreadableReason != v.unreadableReason }) ?? true {
-                diagnostics.log("\(b.name) [\(b.folderName)]: stale=\(r.stale) access=\(granted) reachable=\(connected) listing=\(readiness.isReadable ? "ok" : (unreadable ?? "n/a")) used=\(used) free=\(v.free)")
-            }
+            logOnce(b.id, "\(b.name) [\(b.folderName)]: stale=\(r.stale) access=\(granted) reachable=\(connected) listing=\(readiness.isReadable ? "ok" : (unreadable ?? "n/a"))",
+                    detail: " used=\(used) free=\(v.free) url=\(r.url.path)")
             return v
         }
+    }
+
+    /// Logs `line` (+ `detail`) only when `line` differs from the last one logged for this volume.
+    private func logOnce(_ id: String, _ line: String, detail: String = "") {
+        guard lastLogged[id] != line else { return }
+        lastLogged[id] = line
+        diagnostics.log(line + detail)
     }
 
     /// Replaces the bookmark of volume `id` with a fresh grant of `url` and
