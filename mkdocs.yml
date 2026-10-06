@@ -156,6 +156,8 @@ nav:
   - Models: models.md
   - App:
       - Overview: app/index.md
+      - Models: app/models.md
+      - Tools: app/tools.md
       - Share to Hugging Face: app/share-to-hugging-face.md
       - Storage: app/storage.md
       - Train your own: app/train.md

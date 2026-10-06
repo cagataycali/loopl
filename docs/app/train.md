@@ -41,7 +41,9 @@ Your conversations → your private dataset → one GPU job → a model that is 
 | 2B full | A100 $2.50/h | ≈ $0.80 · 20 min | ≈ $2.30 · 55 min | ≈ $10 · 4 h |
 | 4B LoRA | A100 $2.50/h | ≈ $1.00 · 25 min | ≈ $2.80 · 1.1 h | ≈ $12 · 5 h |
 
-Measured: 191 conversations, 0.8B LoRA, 2 epochs on an A10G — 8 min, $0.13, held-out loss 2.38 → 2.15.
+Measured: 191 conversations, 0.8B LoRA, 2 epochs on an A10G — 8 min, $0.13, held-out loss 2.38 → 2.15. With pictures: 74 conversations (14 with images), 0.8B LoRA on an A10G — 6 min, ≈ $0.10, held-out loss 0.75 → 0.29; the result shows up in Mine with its **vision** badge and describes photos on the phone.
+
+**Vision is kept, not tuned.** The export keeps the base model's vision tower, so a model trained from conversations with pictures still sees; the training itself learns from the text of those turns.
 
 ## For SDK users
 
