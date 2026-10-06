@@ -12,7 +12,31 @@ public struct MarkdownBody: View {
     public var streaming: Bool
     public init(_ text: String, streaming: Bool = false) { self.text = text; self.streaming = streaming }
 
-    public enum Block: Hashable, Sendable { case paragraph(String), heading(Int, String), bullet([String]), numbered([String]), code(String, lang: String) }
+    public enum Block: Hashable, Sendable {
+        case paragraph(String), heading(Int, String), bullet([String]), numbered([String]), code(String, lang: String)
+        /// A pipe table: header cells, then rows (ragged rows are padded / cut to the header's width).
+        case table(header: [String], rows: [[String]])
+        /// `> quoted` lines, joined.
+        case quote(String)
+        /// `---` / `***` / `___` on a line of its own.
+        case rule
+    }
+
+    /// `| a | b |` → ["a", "b"]; the alignment row `|---|:-:|` is recognised by `isTableRule`.
+    nonisolated static func tableCells(_ line: String) -> [String]? {
+        var t = line.trimmingCharacters(in: .whitespaces)
+        guard t.hasPrefix("|") else { return nil }
+        t.removeFirst(); if t.hasSuffix("|") { t.removeLast() }
+        return t.split(separator: "|", omittingEmptySubsequences: false).map { $0.trimmingCharacters(in: .whitespaces) }
+    }
+    nonisolated static func isTableRule(_ cells: [String]) -> Bool {
+        !cells.isEmpty && cells.allSatisfy { c in c.count >= 1 && c.allSatisfy { $0 == "-" || $0 == ":" } && c.contains("-") }
+    }
+    nonisolated static func isHorizontalRule(_ t: String) -> Bool {
+        guard t.count >= 3 else { return false }
+        let c = t.first!
+        return (c == "-" || c == "*" || c == "_") && t.allSatisfy { $0 == c }
+    }
 
     /// The block structure of `s` — public so streaming stability (a prefix must not re-flow when the next
     /// token arrives) is unit-tested.
@@ -29,6 +53,8 @@ public struct MarkdownBody: View {
         var para: [String] = []
         var bullets: [String] = []
         var numbers: [String] = []
+        var quote: [String] = []
+        var table: (header: [String], rows: [[String]])? = nil
         var code: [String]? = nil
         var lang = ""
         func flushPara() { if !para.isEmpty { out.append(.paragraph(para.joined(separator: " "))); para.removeAll() } }
@@ -36,6 +62,14 @@ public struct MarkdownBody: View {
             if !bullets.isEmpty { out.append(.bullet(bullets)); bullets.removeAll() }
             if !numbers.isEmpty { out.append(.numbered(numbers)); numbers.removeAll() }
         }
+        func flushQuote() { if !quote.isEmpty { out.append(.quote(quote.joined(separator: " "))); quote.removeAll() } }
+        func flushTable() {
+            guard let t = table else { return }
+            let w = t.header.count
+            out.append(.table(header: t.header, rows: t.rows.map { r in Array((r + Array(repeating: "", count: max(0, w - r.count))).prefix(w)) }))
+            table = nil
+        }
+        func flushAll() { flushPara(); flushLists(); flushQuote(); flushTable() }
         for raw in s.split(separator: "\n", omittingEmptySubsequences: false) {
             let line = String(raw)
             if var c = code {
@@ -44,8 +78,24 @@ public struct MarkdownBody: View {
                 continue
             }
             let t = line.trimmingCharacters(in: .whitespaces)
-            if t.hasPrefix("```") { flushPara(); flushLists(); code = []; lang = String(t.dropFirst(3)).trimmingCharacters(in: .whitespaces); continue }
-            if t.isEmpty { flushPara(); flushLists(); continue }
+            if t.hasPrefix("```") { flushAll(); code = []; lang = String(t.dropFirst(3)).trimmingCharacters(in: .whitespaces); continue }
+            if t.isEmpty { flushAll(); continue }
+            // Pipe table: the first `| … |` line is the header; a following `|---|` line is swallowed; more `|` lines are rows.
+            // A header alone (no rule yet, while streaming) still renders as a table so the layout does not flip later.
+            if let cells = Self.tableCells(t) {
+                flushPara(); flushLists(); flushQuote()
+                if var tb = table {
+                    if !(tb.rows.isEmpty && Self.isTableRule(cells)) { tb.rows.append(cells) }
+                    table = tb
+                } else {
+                    table = (header: cells, rows: [])
+                }
+                continue
+            }
+            flushTable()
+            if t.hasPrefix(">") { flushPara(); flushLists(); quote.append(String(t.dropFirst()).trimmingCharacters(in: .whitespaces)); continue }
+            flushQuote()
+            if Self.isHorizontalRule(t) { flushPara(); flushLists(); out.append(.rule); continue }
             if let m = t.firstMatch(of: /^(#{1,4})\s+(.*)$/) { flushPara(); flushLists(); out.append(.heading(m.1.count, String(m.2))); continue }
             // A marker may arrive before its first word while streaming ("- ", "1. "): it is already a list item,
             // not a one-character paragraph — otherwise the block re-flows (and the document moves) a token later.
@@ -53,7 +103,7 @@ public struct MarkdownBody: View {
             if let m = t.firstMatch(of: /^\d+[.)](?:\s+(.*))?$/) { flushPara(); if !bullets.isEmpty { flushLists() }; numbers.append(String(m.1 ?? "")); continue }
             flushLists(); para.append(t)
         }
-        flushPara(); flushLists()
+        flushAll()
         if var c = code {   // unterminated fence while streaming
             // The newline that will precede the closing ``` is not a code line yet: drop it so the card does not
             // grow a blank line and shrink again when the fence closes.
@@ -66,6 +116,7 @@ public struct MarkdownBody: View {
     /// "1", "12", "3." or one/two backticks: the start of a numbered item or a fence, not yet a block.
     nonisolated static func isMarkerPrefix(_ t: String) -> Bool {
         if t.isEmpty || t.count > 4 { return false }
+        if t == "|" || t == ">" || t == "-" || t == "--" { return true }   // a table row, a quote or a rule about to start
         if t.allSatisfy({ $0 == "`" }) { return t.count <= 2 }
         let digits = t.hasSuffix(".") ? t.dropLast() : Substring(t)
         return !digits.isEmpty && digits.count <= 3 && digits.allSatisfy(\.isNumber)
@@ -109,6 +160,17 @@ public struct MarkdownBody: View {
                     }.font(.body)
                 case .code(let s, let lang):
                     CodeCard(code: s, language: lang)
+                case .table(let header, let rows):
+                    MarkdownTable(header: header, rows: rows)
+                case .quote(let s):
+                    HStack(alignment: .top, spacing: 10) {
+                        RoundedRectangle(cornerRadius: 1.5).fill(LooplDesign.accent.opacity(0.6)).frame(width: 3)
+                        Text(Self.inline(s)).font(.body).foregroundStyle(.secondary).lineSpacing(4)
+                    }
+                    .padding(.vertical, 2)
+                case .rule:
+                    Rectangle().fill(LooplDesign.tertiaryFill).frame(height: 1).padding(.vertical, 4)
+                        .accessibilityHidden(true)
                 }
             }
             if blocks.isEmpty, streaming { StreamingCaret() }
@@ -119,6 +181,45 @@ public struct MarkdownBody: View {
 
     private func caret(_ show: Bool) -> Text {
         show && streaming ? Text(" ▍").foregroundStyle(LooplDesign.accent) : Text("")
+    }
+}
+
+/// A pipe table on the same quiet card as code: header row in semibold, hairlines between rows, horizontally
+/// scrollable when the columns need more than the column width (edge fade as a cue). Cells take inline Markdown.
+public struct MarkdownTable: View {
+    public var header: [String]
+    public var rows: [[String]]
+    @State private var overflows = false
+    public init(header: [String], rows: [[String]]) { self.header = header; self.rows = rows }
+    public var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 0) {
+                GridRow {
+                    ForEach(Array(header.enumerated()), id: \.offset) { _, h in
+                        Text(MarkdownBody.inline(h)).font(.footnote.weight(.semibold)).foregroundStyle(.secondary)
+                            .padding(.vertical, 8).gridColumnAlignment(.leading)
+                    }
+                }
+                Divider()
+                ForEach(Array(rows.enumerated()), id: \.offset) { i, r in
+                    GridRow {
+                        ForEach(Array(r.enumerated()), id: \.offset) { _, c in
+                            Text(MarkdownBody.inline(c)).font(.callout).padding(.vertical, 8).textSelection(.enabled)
+                        }
+                    }
+                    if i < rows.count - 1 { Divider() }
+                }
+            }
+            .padding(.horizontal, 12)
+        }
+        .onScrollGeometryChange(for: Bool.self) { g in g.contentOffset.x + g.containerSize.width < g.contentSize.width - 2 } action: { _, o in overflows = o }
+        .overlay(alignment: .trailing) {
+            LinearGradient(colors: [LooplDesign.secondaryBackground.opacity(0), LooplDesign.secondaryBackground], startPoint: .leading, endPoint: .trailing)
+                .frame(width: 28).allowsHitTesting(false).opacity(overflows ? 1 : 0)
+        }
+        .background(LooplDesign.secondaryBackground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("table, \(header.count) columns, \(rows.count) rows")
     }
 }
 

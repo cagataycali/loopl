@@ -73,7 +73,7 @@ import CoreGraphics
         let answer = "Intro.\n\n1. **Ask** — read.\n2. **Act** — run.\n\n```swift\nlet x = 1\n```\n\n- one\n- two\n\nDone."
         func kinds(_ s: String) -> [String] {
             MarkdownBody.blocks(s, streaming: true).map {
-                switch $0 { case .paragraph: "p"; case .heading: "h"; case .bullet: "ul"; case .numbered: "ol"; case .code: "code" }
+                switch $0 { case .paragraph: "p"; case .heading: "h"; case .bullet: "ul"; case .numbered: "ol"; case .code: "code"; case .table: "table"; case .quote: "q"; case .rule: "hr" }
             }
         }
         var prev: [String] = []
