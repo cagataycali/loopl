@@ -30,7 +30,8 @@ final class HubCollectionTests: XCTestCase {
         XCTAssertEqual(c.title, "loopl — on-device agents, Swift")
         XCTAssertTrue(c.isPrivate)
         XCTAssertEqual(c.items.count, 17)
-        XCTAssertEqual(c.modelItems.count, 15)
+        XCTAssertEqual(c.modelItems.count, 13)   // 15 model items, 2 are app-trained examples (hidden)
+        XCTAssertTrue(c.items.first { $0.id == "cagataydev/loopl-app-sim-4bit" }!.isExample)
         XCTAssertEqual(c.datasetItems.map(\.id), ["cagataydev/loopl-train", "cagataydev/loopl-app-conversations-test"])
         // Curator's order, not alphabetical: 4B first.
         XCTAssertEqual(c.items.first?.id, "cagataydev/loopl-4b-4bit")
@@ -43,12 +44,11 @@ final class HubCollectionTests: XCTestCase {
         let c = try HubCatalog.parseCollection(fixture("hf-collection-loopl"))
         let listing = try HubCatalog.parseMine(fixture("hf-collection-loopl-models"))
         let rows = HubCatalog.rows(for: c, listing: listing)
-        // 4 MLX (4b, 2b, 0.8b-v1.1, 0.8b) + 4 GGUF + the 2 app-trained MLX examples; bf16 merges + the LoRA adapter are not runnable.
+        // 4 MLX (4b, 2b, 0.8b-v1.1, 0.8b) + 4 GGUF; bf16 merges + the LoRA adapter are not runnable, the 2 app-trained examples are hidden.
         XCTAssertEqual(rows.map(\.id), ["cagataydev/loopl-4b-4bit", "cagataydev/loopl-2b-4bit", "cagataydev/loopl-0.8b-v1.1-4bit", "cagataydev/loopl-0.8b-4bit",
-                                        "cagataydev/loopl-4b-GGUF", "cagataydev/loopl-2b-GGUF", "cagataydev/loopl-0.8b-v1.1-GGUF", "cagataydev/loopl-0.8b-GGUF",
-                                        "cagataydev/loopl-app-sim-4bit", "cagataydev/loopl-app-e2e-vision-4bit"])
+                                        "cagataydev/loopl-4b-GGUF", "cagataydev/loopl-2b-GGUF", "cagataydev/loopl-0.8b-v1.1-GGUF", "cagataydev/loopl-0.8b-GGUF"])
         let l = HubCollectionListing(collection: c, rows: rows, source: .network, updated: nil)
-        XCTAssertEqual(l.mlx.count, 6)
+        XCTAssertEqual(l.mlx.count, 4)
         XCTAssertEqual(l.gguf.count, 4)
         XCTAssertEqual(l.hiddenModelCount, 5)
         // Vision badge from the FILES (preprocessor_config.json present), as #74 does — not from the architecture.
@@ -66,8 +66,8 @@ final class HubCollectionTests: XCTestCase {
         // Anonymous user, private repos: the author listing is empty — the collection alone still yields runnable rows.
         let c = try HubCatalog.parseCollection(fixture("hf-collection-loopl"))
         let rows = HubCatalog.rows(for: c, listing: [])
-        XCTAssertEqual(rows.count, 10)
-        XCTAssertEqual(rows.filter { $0.kind == .mlx }.count, 6)
+        XCTAssertEqual(rows.count, 8)
+        XCTAssertEqual(rows.filter { $0.kind == .mlx }.count, 4)
         XCTAssertEqual(rows.filter { $0.kind == .gguf }.count, 4)
         let two = try XCTUnwrap(rows.first { $0.id == "cagataydev/loopl-2b-4bit" })
         XCTAssertEqual(two.hit.bits, 4)
@@ -92,7 +92,7 @@ final class HubCollectionTests: XCTestCase {
         let l = try HubCatalog.parseCollectionSnapshot(JSONSerialization.data(withJSONObject: root))
         XCTAssertEqual(l.source, .bundled)
         XCTAssertEqual(l.updated, ISO8601DateFormatter().date(from: "2026-10-06T16:00:00Z"))
-        XCTAssertEqual(l.rows.count, 10)
+        XCTAssertEqual(l.rows.count, 8)
         XCTAssertEqual(l.collection.title, "loopl — on-device agents, Swift")
     }
 

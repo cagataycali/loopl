@@ -1,0 +1,252 @@
+import SwiftUI
+import Loopl
+import LooplUI
+
+/// Models › "loopl models" — the Hugging Face collection `LooplCollection.slug`, in the curator's order:
+/// MLX 4-bit rows (vision badge from the files, as Browse/Mine do) and the GGUF builds under a disclosure.
+/// Datasets, bf16 merges and LoRA adapters in the collection are not runnable on the phone and stay hidden.
+/// Tap a row → the same details sheet Browse uses → download → select.
+///
+/// Three sources, best available wins: the Hub (once per launch + pull), the disk cache (offline / Hub down),
+/// the bundled snapshot `App/Resources/collection.json` (first launch offline, or an anonymous user while the
+/// collection is private — `scripts/sync-collection.sh` refreshes it). The footer says which, and when.
+@MainActor @Observable
+final class CollectionModel {
+    var listing: HubCollectionListing?
+    var loading = false
+    /// Why the Hub could not be asked this time — shown quietly in the footer, the rows stay.
+    var error: String?
+    private(set) var loadedFor: String?
+    private let hub = HubCatalog(token: HFAccount.shared.provider)
+    /// DEBUG `--design-collection bundled`: never touch the network (fixtures, UI tests, screenshots).
+    static var bundledOnly: Bool {
+        #if DEBUG
+        if let i = CommandLine.arguments.firstIndex(of: "--design-collection"), i + 1 < CommandLine.arguments.count { return CommandLine.arguments[i + 1] == "bundled" }
+        #endif
+        return false
+    }
+
+    init() { listing = Self.bundled() }
+
+    static func bundled() -> HubCollectionListing? {
+        guard let url = Bundle.main.url(forResource: "collection", withExtension: "json"), let data = try? Data(contentsOf: url) else { return nil }
+        return try? HubCatalog.parseCollectionSnapshot(data)
+    }
+
+    /// `author` = the signed-in account (nil anonymous); a sign-in/out re-asks because private items appear/disappear.
+    func load(author: String?, force: Bool = false) async {
+        if Self.bundledOnly { return }
+        let key = author ?? ""
+        if !force, loadedFor == key, error == nil { return }
+        loading = true; error = nil
+        defer { loading = false }
+        do {
+            let l = try await hub.collectionListing()
+            listing = l; loadedFor = key
+        } catch {
+            self.error = Self.quiet(error)
+            loadedFor = key
+        }
+    }
+
+    /// Footer wording for a failed refresh: the rows are still there, so no red.
+    static func quiet(_ error: any Error) -> String {
+        if let e = error as? HubCatalog.HubError {
+            switch e {
+            case .offline: return "offline — showing the saved list"
+            case .signInRequired: return "the collection is private right now — sign in to Hugging Face in Settings to download"
+            case .noAccess: return "this account can't read the collection"
+            default: break
+            }
+        }
+        return "couldn't reach Hugging Face — showing the saved list"
+    }
+
+    /// Repo ids the section already shows — ModelsView hides the same curated models.json rows (dedupe by repo id).
+    var repoIds: Set<String> { Set(listing?.rows.map(\.id) ?? []) }
+}
+
+struct CollectionSection: View {
+    @Bindable var engine: Engine
+    @Bindable var store: ModelStore
+    @Bindable var settings: AppSettings
+    @Bindable var hf: HFSession
+    @Bindable var model: CollectionModel
+    /// The tapped row. OWNED BY ModelsView, which presents the sheet from the List (a `.sheet` on a Section never presents on iOS 26 — see MineSection).
+    @Binding var selected: HubCatalog.Hit?
+    var zoom: Namespace.ID
+    @State private var showGGUF = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        if let listing = model.listing, !listing.rows.isEmpty {
+            Section {
+                ForEach(listing.mlx) { row(row: $0) }
+                if !listing.gguf.isEmpty {
+                    DisclosureGroup(isExpanded: $showGGUF) {
+                        ForEach(listing.gguf) { row(row: $0) }
+                    } label: {
+                        HStack {
+                            Text("GGUF · llama.cpp").font(.body)
+                            Text("text only").font(.caption).foregroundStyle(.secondary)
+                            Spacer()
+                            Text("\(listing.gguf.count)").font(.footnote.monospacedDigit()).foregroundStyle(.secondary)
+                        }
+                    }
+                    .accessibilityIdentifier("collection-gguf")
+                }
+                if hf.author == nil, listing.rows.contains(where: \.hit.isPrivate) {
+                    Label {
+                        Text("Sign in to Hugging Face in Settings to download the private loopl models").font(.footnote).foregroundStyle(.secondary)
+                    } icon: { Image(systemName: "key.horizontal").foregroundStyle(.secondary) }
+                    .accessibilityIdentifier("collection-signed-out")
+                }
+            } header: {
+                HStack {
+                    Text("loopl models")
+                    if model.loading { PulsingMark().frame(width: 10, height: 10).transition(.opacity) }
+                    Spacer()
+                    Link(destination: LooplCollection.url) { Image(systemName: "arrow.up.right.square").font(.footnote) }
+                        .accessibilityLabel("Open the collection on Hugging Face")
+                }
+            } footer: {
+                Text(footer(listing))
+                    .accessibilityIdentifier("collection-footer")
+            }
+            .animation(LooplDesign.Motion.faded(LooplDesign.Motion.spring, reduceMotion), value: listing.rows.map(\.id))
+            .animation(LooplDesign.Motion.crossfade, value: model.loading)
+            .task(id: hf.author) { await model.load(author: hf.author) }
+        } else {
+            // Nothing bundled, nothing cached, Hub unreachable: one honest row instead of a missing section.
+            Section("loopl models") {
+                if model.loading { SkeletonRow(); SkeletonRow() }
+                else {
+                    Label(model.error ?? "couldn't load the loopl collection", systemImage: LooplDesign.iconWarning).font(.footnote).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("collection-error")
+                    Button("Try again") { Task { await model.load(author: hf.author, force: true) } }.font(.footnote.weight(.semibold))
+                }
+            }
+            .task(id: hf.author) { await model.load(author: hf.author) }
+        }
+    }
+
+    private func footer(_ l: HubCollectionListing) -> String {
+        var parts: [String] = []
+        let desc = l.collection.description?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        parts.append(desc.isEmpty ? "Qwen3.5 post-tuned for loopl — tools, the agent loop, identity. Tap a model to download it once; it runs offline." : desc)
+        var status: [String] = []
+        if let d = l.updated { status.append("updated \(d.formatted(.relative(presentation: .named)))") }
+        switch l.source {
+        case .network: break
+        case .cache: status.append("saved list")
+        case .bundled: status.append("bundled list")
+        }
+        if let e = model.error { status.append(e) }
+        if !status.isEmpty { parts.append(status.joined(separator: " · ")) }
+        return parts.joined(separator: " ")
+    }
+
+    @ViewBuilder private func row(row: HubCollectionRow) -> some View {
+        let spec = rowSpec(row.hit)
+        let state = spec.flatMap { store.states[$0.id] }
+        VStack(alignment: .leading, spacing: 6) {
+            Button { LooplDesign.haptic(); selected = row.hit } label: {
+                CollectionRowLabel(row: row, added: isAdded(row.hit), loaded: spec.map { engine.loadedModel?.id == $0.id } ?? false, state: state)
+            }
+            .buttonStyle(.plain)
+            .matchedTransitionSource(id: "collection-\(row.id)", in: zoom)
+            .accessibilityIdentifier("collection-row-\(row.id)")
+            if let spec, let state {
+                switch state {
+                case .downloading(let done, let total, let fd, let files):
+                    DownloadProgressRow(done: done, total: total, fileIndex: fd, fileCount: files) { store.pause(spec) }
+                        .accessibilityIdentifier("collection-downloading-\(row.id)")
+                case .paused(let done, let total):
+                    HStack {
+                        Text("Paused · \(ByteSize.label(done)) of \(ByteSize.label(total))").font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Resume") { Task { await engine.select(spec) } }.font(.caption.weight(.semibold)).disabled(settings.offline)
+                    }
+                case .failed(let msg):
+                    HStack(alignment: .top) {
+                        Text(msg).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("collection-failed-\(row.id)")
+                        Spacer(minLength: 8)
+                        Button("Retry") { LooplDesign.haptic(1); Task { await engine.select(spec) } }
+                            .font(.caption.weight(.semibold)).disabled(settings.offline)
+                            .accessibilityIdentifier("collection-retry-\(row.id)")
+                    }
+                case .moving(let done, let total, let to):
+                    Text("Moving to \(to) · \(ByteSize.label(done)) of \(ByteSize.label(total))").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                case .needsDrive(let drive):
+                    Label("Needs \(drive) — plug it in to use", systemImage: "externaldrive.badge.xmark").font(.caption).foregroundStyle(.orange)
+                case .driveUnreadable(let drive, _):
+                    Label("\(drive) is connected but loopl can't read it — re-grant its folder in Settings › Storage", systemImage: "externaldrive.badge.exclamationmark")
+                        .font(.caption).foregroundStyle(.orange)
+                case .downloaded, .notDownloaded: EmptyView()
+                }
+            }
+        }
+        .contextMenu {
+            Button("Copy repo id", systemImage: "doc.on.doc") { UIPasteboard.general.string = row.id }
+            Link(destination: URL(string: "https://huggingface.co/\(row.id)")!) { Label("Open on Hugging Face", systemImage: "safari") }
+        }
+    }
+
+    private func isAdded(_ hit: HubCatalog.Hit) -> Bool {
+        store.catalog.models.contains { $0.repo == hit.id && (store.states[$0.id]?.isDownloaded ?? false) }
+    }
+    /// The catalog row for this repo once the user added it (Download tapped at least once) — or the bundled models.json twin.
+    private func rowSpec(_ hit: HubCatalog.Hit) -> ModelSpec? {
+        store.catalog.models.first { $0.repo == hit.id && store.states[$0.id] != nil } ?? store.catalog.models.first { $0.repo == hit.id }
+    }
+}
+
+/// name · curator's note · size + vision/private marks. The note is the subtitle — the collection speaks, not the file name.
+struct CollectionRowLabel: View {
+    var row: HubCollectionRow
+    var added: Bool
+    var loaded: Bool
+    var state: ModelStore.State?
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(title).font(.body.weight(loaded ? .semibold : .regular)).lineLimit(1)
+                    if row.hit.isVision { (Text(Image(systemName: "eye")) + Text(" vision")).font(.caption.weight(.medium)).foregroundStyle(LooplDesign.accent).accessibilityLabel("vision") }
+                    if row.hit.isPrivate { Image(systemName: "lock.fill").font(.caption2).foregroundStyle(.secondary).accessibilityLabel("private") }
+                }
+                if let note = row.note {
+                    Text(note).font(.caption).foregroundStyle(.secondary).lineLimit(3).fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Text(row.hit.name).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
+            }
+            Spacer(minLength: 8)
+            VStack(alignment: .trailing, spacing: 4) {
+                if let s = row.hit.sizeBytes, s > 0 { Text(ByteSize.label(s)).font(.footnote.monospacedDigit()).foregroundStyle(.secondary) }
+                if loaded { Image(systemName: LooplDesign.iconLoaded).font(.footnote.weight(.semibold)).foregroundStyle(LooplDesign.accent).accessibilityLabel("in use") }
+                else if added { Image(systemName: "checkmark").font(.footnote.weight(.semibold)).foregroundStyle(.secondary).accessibilityLabel("on this device") }
+                else if case .downloading(let done, let total, _, _)? = state {
+                    ProgressView(value: Double(done), total: Double(max(total, 1))).progressViewStyle(.circular).controlSize(.small).tint(LooplDesign.accent)
+                        .accessibilityLabel("downloading")
+                } else if case .failed? = state {
+                    Image(systemName: LooplDesign.iconWarning).font(.footnote.weight(.semibold)).foregroundStyle(.red).accessibilityLabel("download failed")
+                } else if let s = row.hit.sizeBytes, s > 0 { FitBadge(fit: .verdict(bytes: HubCatalog.fitBytes(weights: s, vision: row.hit.isVision), available: MemoryBudget.budget)) }
+            }
+        }
+        .contentShape(Rectangle())
+        .padding(.vertical, 2)
+    }
+    /// "loopl 2B" from "loopl-2b-4bit" / "loopl-0.8b-v1.1-GGUF" → "loopl 0.8B v1.1".
+    private var title: String {
+        var n = row.hit.name
+        for suffix in ["-4bit", "-8bit", "-GGUF", "-gguf", "-mlx"] where n.hasSuffix(suffix) { n.removeLast(suffix.count) }
+        let parts = n.split(separator: "-").map(String.init)
+        return parts.enumerated().map { i, p in
+            if i == 0 { return p }
+            if p.range(of: #"^\d+(\.\d+)?b$"#, options: .regularExpression) != nil { return p.uppercased() }
+            return p
+        }.joined(separator: " ")
+    }
+}

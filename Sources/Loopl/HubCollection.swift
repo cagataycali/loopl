@@ -41,6 +41,9 @@ public struct HubCollection: Sendable, Hashable, Codable {
             self.numParameters = numParameters; self.lastModified = lastModified; self.downloads = downloads; self.likes = likes
         }
         public var isModel: Bool { type == "model" }
+        /// Worked examples the curator keeps in the collection (models trained FROM the app: `loopl-app-*`, note "Example: …") —
+        /// documentation, not something to download: the Models tab hides them.
+        public var isExample: Bool { name.lowercased().hasPrefix("loopl-app-") || (note ?? "").lowercased().hasPrefix("example") }
         public var name: String { id.split(separator: "/").last.map(String.init) ?? id }
         public var author: String { id.split(separator: "/").first.map(String.init) ?? "" }
         /// Format guessed from the NAME alone (used when the author listing could not be fetched): `*-GGUF` →
@@ -57,8 +60,8 @@ public struct HubCollection: Sendable, Hashable, Codable {
         self.slug = slug; self.title = title; self.description = description; self.lastUpdated = lastUpdated; self.isPrivate = isPrivate; self.items = items
     }
 
-    /// Model items only, in collection order.
-    public var modelItems: [Item] { items.filter(\.isModel) }
+    /// Model items only (examples excluded), in collection order.
+    public var modelItems: [Item] { items.filter { $0.isModel && !$0.isExample } }
     public var datasetItems: [Item] { items.filter { $0.type == "dataset" } }
 }
 
