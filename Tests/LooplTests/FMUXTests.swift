@@ -162,7 +162,7 @@ final class FMUXTests: XCTestCase {
         XCTAssertEqual(results.count, 3)
         XCTAssertEqual(results[0].status, .success)
         XCTAssertEqual(results[1].status, .error)
-        XCTAssertTrue(results[1].content.contains("already called"), results[1].content)
+        XCTAssertTrue(results[1].content.contains("Already called"), results[1].content)
         XCTAssertEqual(results[2].status, .error)
         let final = events.compactMap { if case .result(let r) = $0 { return r }; return nil }.first
         XCTAssertEqual(final?.stopReason, .endTurn)
@@ -199,6 +199,25 @@ final class FMUXTests: XCTestCase {
         let agent = Agent(model: FakeModel(turns: [.toolUse([a("1")]), .toolUse([b]), .toolUse([a("2")]), .text("ok")]), tools: [tool], retryStrategy: nil)
         _ = try await agent("x")
         XCTAssertEqual(tool.calls, 3, "only *consecutive* identical calls are refused")
+    }
+
+    func testIdenticalCallAfterAnErrorIsRetriedNotRefused() async throws {
+        final class Flaky: Tool, @unchecked Sendable {
+            let name = "http"; let description = "h"; let parameters: JSONValue = ToolSchema.object([:])
+            private let n = Mutex(0)
+            var calls: Int { n.withLock { $0 } }
+            func call(_ args: [String: JSONValue]) async throws -> String {
+                let c = n.withLock { $0 += 1; return $0 }
+                if c == 1 { throw ToolError("timeout") }
+                return "ok"
+            }
+        }
+        let tool = Flaky()
+        let a = { (id: String) in ToolUse(toolUseId: id, name: "http", input: ["url": "https://x"]) }
+        let agent = Agent(model: FakeModel(turns: [.toolUse([a("1")]), .toolUse([a("2")]), .text("done")]), tools: [tool], retryStrategy: nil)
+        let r = try await agent("fetch")
+        XCTAssertEqual(tool.calls, 2, "a call that errored may be retried verbatim")
+        XCTAssertEqual(r.text, "done")
     }
 
     func testBreakerResetsPerInvocation() async throws {

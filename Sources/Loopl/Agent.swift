@@ -538,7 +538,8 @@ public actor Agent {
             results += validation.results
             // A call identical to one in the previous cycle is not executed again: it has its
             // answer already. The model is told so; a different call always goes through.
-            let repeated = repeatBreaker.observe(validation.valid)
+            let repeated = repeatBreaker.observe(validation.valid, history: messages,
+                                                 exempt: Set(offeredTools.filter(\.validatesOwnInput).map(\.name)))
             let executed = await toolExecutor.execute(validation.valid,
                                                       run: { [self] use in
                                                           if repeated.contains(use.toolUseId) { return RepeatBreaker.result(for: use) }
