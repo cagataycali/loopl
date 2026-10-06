@@ -63,6 +63,21 @@ out.append("The app's built-in catalog. Every entry is a public Hugging Face rep
            "which are Cagatay's private post-tuned models and download with your own token (Settings › Hugging Face); any other "
            "public MLX or GGUF repo loads the same way. *Usable on 8 GB* is the context that fits beside the weights on an "
            "iPhone 16 Pro; it is the app's default.\n")
+COLLECTION = "https://huggingface.co/collections/cagataydev/loopl-on-device-agents-swift-6ac51395b13a9c41d4932eaf"
+out.append("## The loopl models\n")
+out.append("Qwen3.5 0.8B, 2B and 4B post-tuned on [cagataydev/loopl-train](https://huggingface.co/datasets/cagataydev/loopl-train): "
+           "the agent loop and how this runtime behaves, tool calls in both dialects loopl speaks, recovering from a tool error instead "
+           "of repeating it, who they are. The vision tower is the base's, kept — the MLX exports read photos; the GGUF exports are text-only. "
+           f"Every repo lives in one place, **[the loopl collection on Hugging Face]({COLLECTION})** — MLX 4-bit, GGUF, bf16, the LoRA adapter, "
+           "the dataset and two models trained *from the app*. Each card has the scores against the base, the recipe and how to run it "
+           "in the app, with `mlx_vlm`, with `llama.cpp` or from Swift.\n")
+out.append("| | MLX 4-bit · vision | GGUF Q4_K_M · text | bf16 |\n|---|---|---|---|")
+for size in ("0.8b", "2b", "4b"):
+    out.append(f"| loopl {size.upper()} | [loopl-{size}-4bit](https://huggingface.co/cagataydev/loopl-{size}-4bit) "
+               f"| [loopl-{size}-GGUF](https://huggingface.co/cagataydev/loopl-{size}-GGUF) | [loopl-{size}](https://huggingface.co/cagataydev/loopl-{size}) |")
+out.append("\nIn the app: Settings › Hugging Face › sign in, then Models › **Mine** (private) or **Browse** (public) → download. "
+           "On a Mac: `pip install mlx-vlm` then `python -m mlx_vlm.generate --model cagataydev/loopl-2b-4bit --image photo.jpg --prompt \"What is this?\"`.\n")
+out.append("## The catalog\n")
 out.append("<div class=\"loopl-models-table\" markdown>\n")
 out.append("| Model | Runtime | Params | 4-bit size | ctx max | usable on 8 GB | min RAM | gated | tool calls |")
 out.append("|---|---|---|---|---:|---:|---|---|:-:|")
