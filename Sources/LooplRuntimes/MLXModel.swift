@@ -35,6 +35,18 @@ struct TransformersTokenizerLoader: MLXLMCommon.TokenizerLoader {
     }
 }
 
+/// One generation as the model experienced it (see `MLXModel.setTrace`).
+public struct GenerationTrace: Sendable {
+    /// The prompt after the chat template, decoded WITH special tokens — what the weights actually read.
+    public var prompt: String
+    public var promptTokens: Int
+    /// Raw decoded output before `ToolCallStreamGate` / `ToolCallParser` touch it.
+    public var raw: String
+    /// Tool calls mlx-swift-lm's own detector fired on (merged with the parser's).
+    public var nativeToolCalls: [String]
+    public var stopReason: String?
+}
+
 /// MLX on Metal. Loads ONLY from a local directory — the model manager owns
 /// downloads, so this runtime can never reach the network (the offline proof
 /// is structural: there is no URLSession in this file).
@@ -46,9 +58,14 @@ public actor MLXModel: Model {
     private var spec: ModelSpec?
     /// Loaded through `VLMModelFactory` (vision tower present) — prompts go through the model's own processor.
     private var isVLM = false
+    private var trace: (@Sendable (GenerationTrace) -> Void)?
 
     public init() {}
     public func updateConfig(_ params: GenerationParams) { self.params = params }
+
+    /// Observe every generation: the prompt exactly as the model saw it (template applied, special tokens
+    /// kept) and the raw decoded text before any tool-call parsing. For audits and self-tests; `nil` = off.
+    public func setTrace(_ observer: (@Sendable (GenerationTrace) -> Void)?) { trace = observer }
 
     public nonisolated static func availability() -> RuntimeAvailability { .ok }
 
@@ -82,9 +99,9 @@ public actor MLXModel: Model {
         MLX.GPU.clearCache()
     }
 
-    private func snapshot() -> (ModelContainer, ModelSpec, GenerationParams, Bool)? {
+    private func snapshot() -> (ModelContainer, ModelSpec, GenerationParams, Bool, (@Sendable (GenerationTrace) -> Void)?)? {
         guard let container, let spec else { return nil }
-        return (container, spec, params, isVLM)
+        return (container, spec, params, isVLM, trace)
     }
 
     /// `Model.stream`: prompt → MLX decode → `StreamEvent`s. Tool-call
@@ -94,7 +111,7 @@ public actor MLXModel: Model {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
-                    guard let (container, spec, params, isVLM) = await self.snapshot() else { throw ModelError("no model loaded") }
+                    guard let (container, spec, params, isVLM, trace) = await self.snapshot() else { throw ModelError("no model loaded") }
                     let started = Date()
                     var stats = Metrics()
                     stats.contextMax = params.contextLength
@@ -105,12 +122,14 @@ public actor MLXModel: Model {
                     // Text path: loopl renders the template (fallback chain). Vision path: the checkpoint's own
                     // processor renders it and places the image tokens — images never reach a text model.
                     let promptCount: Int
+                    var promptTokens: [Int] = []
                     let gen: AsyncStream<Generation>
                     if isVLM && hasImages {
                         let chat = VisionPrompt.chat(systemPrompt: systemPrompt, messages: messages)
                         let input = UserInput(chat: chat, processing: VisionPrompt.processing, tools: specDicts.isEmpty ? nil : specDicts, additionalContext: kwargs)
                         let lmInput = try await container.prepare(input: input)
                         promptCount = lmInput.text.tokens.size
+                        if trace != nil { promptTokens = lmInput.text.tokens.asArray(Int.self) }
                         if promptCount >= params.contextLength - 16 {
                             throw ContextWindowOverflowError("prompt is \(promptCount) tokens (images included); context window is \(params.contextLength)")
                         }
@@ -130,6 +149,7 @@ public actor MLXModel: Model {
                             throw ContextWindowOverflowError("prompt is \(prompt.count) tokens; context window is \(params.contextLength)")
                         }
                         promptCount = prompt.count
+                        promptTokens = prompt
                         stats.promptTokens = prompt.count
                         stats.contextUsed = prompt.count
                         continuation.yield(.metadata(stats))
@@ -149,10 +169,12 @@ public actor MLXModel: Model {
                     var firstToken: Date?
                     var chunks = 0
                     var hitBudget = false
+                    var raw = ""
                     for await g in gen {
                         try Task.checkCancellation()
                         switch g {
                         case .chunk(let s):
+                            if trace != nil { raw += s }
                             if firstToken == nil { firstToken = Date(); stats.ttftMs = firstToken!.timeIntervalSince(started) * 1000 }
                             chunks += 1
                             stats.generatedTokens = chunks               // live: 1 chunk ≈ 1 token; exact count arrives in .info
@@ -182,6 +204,11 @@ public actor MLXModel: Model {
                     }
                     stats.finished = true
                     continuation.yield(.metadata(stats))
+                    if let trace {
+                        let ids = promptTokens
+                        let text = try await container.perform { context in context.tokenizer.decode(tokenIds: ids, skipSpecialTokens: false) }
+                        trace(GenerationTrace(prompt: text, promptTokens: promptCount, raw: raw, nativeToolCalls: native.map(\.name), stopReason: stats.stopReason))
+                    }
                     for ev in gate.finish(stopReason: hitBudget ? .maxTokens : .endTurn, native: native) { continuation.yield(ev) }
                     continuation.finish()
                 } catch {
