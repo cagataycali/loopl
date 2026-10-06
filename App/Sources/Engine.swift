@@ -129,16 +129,23 @@ public final class Engine {
         let core: [any Tool] = [CurrentTimeTool(), CalculatorTool(), DeviceInfoTool(), RememberTool(), RecallTool(), HttpTool()]
         registry = ToolRegistry(catalog: core, mounted: Array(settings.enabledTools), selfManaging: true)
         mountedNow = core.map(\.name).filter { settings.enabledTools.contains($0) } + [ManageToolsTool.toolName]
-        Task { [registry, weak self] in
+        let ref = WeakEngine(self)
+        Task { [registry] in
             // On-device tools join the catalog with their availability (unavailable ones are listed, never offered).
-            await self?.registerAppleTools()
+            await ref.engine?.registerAppleTools()
             // Measured (ManageToolsMeasurement, 2026-10-06): loopl-0.8b reads "http exists but is not mounted…" and then TELLS
             // THE USER instead of mounting (0/9 on http/calculator/remember) — its direct call IS its decision, so honour it:
             // the call mounts the tool for this conversation, the result says so, Settings shows the tag. 2B: 9/12 either way.
             await registry.setMountOnCall(true)
-            await registry.observe { names in Task { @MainActor [weak self] in self?.mountedNow = names } }
-            self?.mountedNow = await registry.mountedNames
+            await registry.observe { names in Task { @MainActor in ref.engine?.mountedNow = names } }
+            ref.engine?.mountedNow = await registry.mountedNames
         }
+    }
+
+    /// A weak, Sendable handle to the Engine for the registry observer (the Engine itself is main-actor only).
+    private final class WeakEngine: @unchecked Sendable {
+        weak var engine: Engine?
+        init(_ e: Engine) { engine = e }
     }
 
     /// Put every on-device tool into the catalog with its current availability and Settings state. Re-run when a

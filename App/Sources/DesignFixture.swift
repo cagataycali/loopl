@@ -54,6 +54,9 @@ enum DesignFixture {
     /// `--design-models shelf|empty`: Models › "On this iPhone" with weights that are not on the simulator — `shelf` = loopl 2B in use,
     /// Qwen3 0.6B downloaded, loopl 0.8B 40 % downloaded (one glyph per row); `empty` = nothing here, no model loaded (the calm empty state).
     static var models: String? { value("--design-models") }
+    /// `--design-mounted "http,-calculator"`: the agent mounted `http` and unmounted `calculator` for this conversation (Phase 6) —
+    /// Settings › Tools shows the *mounted / unmounted for this conversation* tags and the one-line note. `-name` = unmount.
+    static var mounted: String? { value("--design-mounted") }
 
     /// `--design-mine`: the Hub rows of cagataydev/loopl-* as `/api/models?author=` returned them on 2026-10-06 (no network).
     static var mineHits: [HubCatalog.Hit] {
@@ -132,6 +135,15 @@ enum DesignFixture {
         let spec = engine.store.catalog.models.first { $0.id == specId } ?? engine.store.catalog.models.first!
         engine.readiness = models == "empty" ? .idle : .ready(spec)
         #if DEBUG
+        if let mounted {
+            let names = mounted.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+            let registry = engine.registry
+            Task {
+                try? await Task.sleep(nanoseconds: 300_000_000)      // after the Engine registered the on-device tools
+                _ = await registry.mount(names.filter { !$0.hasPrefix("-") })
+                _ = await registry.unmount(names.filter { $0.hasPrefix("-") }.map { String($0.dropFirst()) })
+            }
+        }
         if mine { engine.hf.designIdentity(name: "cagataydev", fullname: "Cagatay Cali") }
         if models == "shelf" {
             engine.store.overrideState("loopl-2b-4bit", .downloaded(bytes: 1_722_271_227))

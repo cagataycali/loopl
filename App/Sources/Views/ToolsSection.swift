@@ -39,6 +39,7 @@ struct ToolsSection: View {
         DisclosureGroup(isExpanded: $expanded) {
             if let note = listing.conversationNote {
                 Label(note, systemImage: "wrench.adjustable").font(.footnote).foregroundStyle(.secondary)
+                    .accessibilityElement(children: .ignore).accessibilityLabel(note)
                     .accessibilityIdentifier("settings-tools-conversation-note")
             }
             group("On", listing.on, empty: "Nothing — the model answers from what it knows.")
