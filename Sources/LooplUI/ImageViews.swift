@@ -20,14 +20,11 @@ final class ImageBlockDecoder {
     }
 }
 
+// `PlatformImage` + `Image(platformImage:)` live in ToolImages.swift (shared with ToolCallCard).
 #if canImport(UIKit)
 import UIKit
-public typealias PlatformImage = UIImage
-extension Image { init(platform: PlatformImage) { self.init(uiImage: platform) } }
 #elseif canImport(AppKit)
 import AppKit
-public typealias PlatformImage = NSImage
-extension Image { init(platform: PlatformImage) { self.init(nsImage: platform) } }
 #endif
 
 /// One picture, fitted into a rounded tile. Tapping opens `ImageViewer` (zoom).
@@ -55,7 +52,7 @@ public struct ImageTile: View {
         } label: {
             Group {
                 if let img = ImageBlockDecoder.shared.image(for: block) {
-                    Image(platform: img).resizable().aspectRatio(contentMode: .fill)
+                    Image(platformImage: img).resizable().aspectRatio(contentMode: .fill)
                 } else {
                     ZStack {
                         Rectangle().fill(Color(.secondarySystemFill))
@@ -121,7 +118,7 @@ public struct ImageViewer: View {
         ZStack {
             Color.black.opacity(Double(1 - dismissProgress * 0.6)).ignoresSafeArea()
             if let img = ImageBlockDecoder.shared.image(for: block) {
-                Image(platform: img).resizable().aspectRatio(contentMode: .fit)
+                Image(platformImage: img).resizable().aspectRatio(contentMode: .fit)
                     .scaleEffect(scale * (1 - dismissProgress * 0.15))
                     .offset(reduceMotion ? .zero : drag)
                     .gesture(magnify)
@@ -237,7 +234,7 @@ public struct AttachmentChips: View {
                         ZStack(alignment: .topTrailing) {
                             Group {
                                 if let img = ImageBlockDecoder.shared.image(for: b) {
-                                    Image(platform: img).resizable().aspectRatio(contentMode: .fill)
+                                    Image(platformImage: img).resizable().aspectRatio(contentMode: .fill)
                                 } else { Color(.secondarySystemFill) }
                             }
                             .frame(width: 64, height: 64)
