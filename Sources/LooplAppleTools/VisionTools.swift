@@ -64,6 +64,9 @@ public struct DescribeImageTool: AppleTool {
     public static let minConfidence: Float = 0.25
     public static func availability() -> ToolAvailability {
         #if canImport(Vision) && canImport(ImageIO)
+        // Measured 2026-10-05 on the iOS 26.4 Simulator: ClassifyImageRequest fails with
+        // "Failed to create espresso context" (no CoreML/ANE backing). OCR works there; classification does not.
+        if Unavailable.isSimulator { return .no(Unavailable.simulator) }
         return .ok
         #else
         return .no(Unavailable.sdk)
@@ -74,6 +77,8 @@ public struct DescribeImageTool: AppleTool {
     }
     public func call(_ args: [String: JSONValue], images: [ImageBlock]) async throws -> ToolOutput {
         let block = try pickImage(images, args: args)
+        let a = Self.availability()
+        guard a.available else { throw ToolError("describe_image is not available here: \(a.reason)") }
         #if canImport(Vision) && canImport(ImageIO)
         let cg = try ImageCodec.cgImage(block)
         let maxLabels = max(1, min(25, args.int("max_labels") ?? 8))

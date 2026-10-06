@@ -4,6 +4,7 @@ import SwiftUI
 import Loopl
 import LooplRuntimes
 import LooplUI
+import LooplAppleTools
 
 /// App-wide settings, persisted in UserDefaults. Generation limits are not
 /// settings any more: the loop runs until the model stops, the context is the
@@ -98,7 +99,7 @@ public final class Engine {
         }
         Task { await agent.resolve(approval: request.id, decision) }
     }
-    public var activeTools: [any Tool] { allTools.filter { settings.enabledTools.contains($0.name) } }
+    public var activeTools: [any Tool] { allTools.filter { settings.enabledTools.contains($0.name) } + AppleToolPrefs.shared.active }
 
     /// The model to bring up at launch: the last used one, else the catalog default
     /// (mlx-community/Qwen3-0.6B-4bit), else the smallest downloadable model.

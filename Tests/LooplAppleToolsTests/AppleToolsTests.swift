@@ -46,7 +46,9 @@ final class AppleToolsTests: XCTestCase {
         XCTAssertFalse(AppleTools.availability(of: "nope").available)
         // These never need a permission or Apple Intelligence: available wherever the frameworks exist (this Mac included).
         XCTAssertTrue(ReadTextTool.availability().available)
+        #if !targetEnvironment(simulator)
         XCTAssertTrue(DescribeImageTool.availability().available)
+        #endif
         XCTAssertTrue(DetectLanguageTool.availability().available)
         XCTAssertTrue(GenerateVoiceTool.availability().available)
     }
@@ -101,6 +103,7 @@ final class AppleToolsTests: XCTestCase {
     }
 
     func testDescribeImageOnFixtureReturnsLabelsAndFaceCount() async throws {
+        try XCTSkipUnless(DescribeImageTool.availability().available, "ClassifyImageRequest has no CoreML backing on the Simulator")
         let cg = try XCTUnwrap(ImageCodec.testImage())
         let block = try ImageCodec.jpeg(cg)
         let out = try await DescribeImageTool().call([:], images: [block])
@@ -118,5 +121,19 @@ final class AppleToolsTests: XCTestCase {
     private func assertThrows(_ tool: any Tool, _ args: [String: JSONValue], contains: String, file: StaticString = #filePath, line: UInt = #line) async {
         do { _ = try await tool.call(args); XCTFail("\(tool.name) should throw", file: file, line: line) }
         catch { XCTAssertTrue("\(error)".localizedCaseInsensitiveContains(contains), "\(tool.name): \(error)", file: file, line: line) }
+    }
+}
+
+/// Not an assertion — a report. Prints every tool's availability on whatever runs the
+/// tests (Mac, Simulator, iPhone) so the proof log says what the device can do.
+final class AppleToolsAvailabilityReport: XCTestCase {
+    func testPrintAvailability() {
+        var lines = ["APPLE-TOOLS availability on \(ProcessInfo.processInfo.operatingSystemVersionString):"]
+        for tool in AppleTools.all {
+            let a = type(of: tool).availability()
+            lines.append("  \(tool.name): \(a.available ? "available" : "unavailable — \(a.reason)")")
+        }
+        print(lines.joined(separator: "\n"))
+        XCTAssertFalse(AppleTools.all.isEmpty)
     }
 }
