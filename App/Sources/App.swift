@@ -78,7 +78,9 @@ struct RootView: View {
             }
             // ⌘Y shows / hides the History sidebar (on iPhone the same chord opens the History sheet — ChatView).
             .background {
-                Button("History") { withAnimation { columns = columns == .detailOnly ? .all : .detailOnly } }
+                // Toggle on the SHOWN state, not on `.detailOnly`: the initial value is `.automatic` (sidebar hidden in
+                // portrait), so "== .detailOnly ? .all : .detailOnly" wasted the first press re-hiding a hidden sidebar.
+                Button("History") { withAnimation { columns = columns == .all ? .detailOnly : .all } }
                     .keyboardShortcut("y", modifiers: .command)
                     .opacity(0).frame(width: 0, height: 0).accessibilityHidden(true)
             }

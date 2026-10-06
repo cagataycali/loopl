@@ -63,14 +63,21 @@ final class KeyboardShortcutsUITests: XCTestCase {
     func testCommandYHistory() {
         let app = launch("history")
         if UIDevice.current.userInterfaceIdiom == .pad {
-            // iPad: History is the sidebar — the chord hides it and brings it back.
-            let row = app.buttons["New conversation"].firstMatch
-            XCTAssertTrue(row.waitForExistence(timeout: 10))
-            let sidebarRow = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'New conversation' AND elementType == %d", XCUIElement.ElementType.cell.rawValue)).firstMatch
-            let visibleBefore = sidebarRow.exists && sidebarRow.isHittable
+            // iPad: History is the NavigationSplitView sidebar. Portrait starts with it hidden, so ⌘Y shows it and
+            // ⌘Y again hides it. The probe is the sidebar's own "History" section header — the chat detail has no
+            // History control in split layout (`if !inSplit` in ChatView), so this text means "the sidebar is on screen".
+            XCTAssertTrue(app.buttons["New conversation"].firstMatch.waitForExistence(timeout: 10))
+            let header = app.staticTexts["History"]
+            let visibleBefore = header.exists
+            app.typeKey("y", modifierFlags: .command)
+            if visibleBefore {
+                XCTAssertTrue(header.waitForNonExistence(timeout: 3), "⌘Y hid the sidebar")
+            } else {
+                XCTAssertTrue(header.waitForExistence(timeout: 3), "⌘Y showed the sidebar")
+            }
             app.typeKey("y", modifierFlags: .command)
             sleep(1)
-            XCTAssertNotEqual(visibleBefore, sidebarRow.exists && sidebarRow.isHittable, "⌘Y toggled the sidebar")
+            XCTAssertEqual(visibleBefore, header.exists, "⌘Y toggled it back")
         } else {
             XCTAssertTrue(app.buttons["History"].waitForExistence(timeout: 10))
             app.typeKey("y", modifierFlags: .command)
