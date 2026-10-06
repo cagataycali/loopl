@@ -120,7 +120,9 @@ enum DesignFixture {
         if scene == "loopl", !CommandLine.arguments.contains("--design-local-vision") { engine.store.overrideLocalVision(specId, false) }
         let spec = engine.store.catalog.models.first { $0.id == specId } ?? engine.store.catalog.models.first!
         engine.readiness = .ready(spec)
+        #if DEBUG
         if mine { engine.hf.designIdentity(name: "cagataydev", fullname: "Cagatay Cali") }
+        #endif
         settings.showPerformance = CommandLine.arguments.contains("--design-perf")
         settings.offline = scene == "offline"
         var t = Transcript()
