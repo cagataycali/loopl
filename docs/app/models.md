@@ -16,7 +16,7 @@ One tab, read top to bottom in the order a first-time user needs it: **On this i
 
 ## On this iPhone
 
-The first section is what is on the phone: downloaded models (Apple Intelligence too, when the device has it), the model in use marked with the bolt, a download in flight with its ring and progress, a model on a [drive](storage.md) with its drive's name under it. Swipe left to delete. One glyph per row says its state — in use, on this device, downloading, tap to download. The line under the section is the storage you are using (phone, drives, memory a model can take). Nothing downloaded yet is a calm shelf, not an error: one line says where models come from.
+The first section is what is on the phone: downloaded models (Apple Intelligence too, when the device has it), the model in use marked with the bolt, a download in flight with its ring and progress, a model on a [drive](storage.md) with its drive's name under it. Swipe left to delete. One glyph per row says its state — in use, on this device, downloading, tap to download. Nothing downloaded yet is a calm shelf, not an error: one line says where models come from.
 
 ## Browse Hugging Face · Train your own
 
@@ -35,6 +35,8 @@ Then the loopl models — **loopl 0.8B** (smallest: quick answers and tools, see
 ## More models
 
 The rest of the catalog — the models loopl is tested with: Qwen3, Qwen3.5, Qwen3‑VL, Llama 3.2, Gemma 3, Phi‑4 mini, SmolLM, DeepSeek, listed with sizes on [Models](../models.md) — sits behind one **More models** row at the end of the loopl models section, so the catalog's depth never outranks them. GGUF (llama.cpp, text only) builds are off the list until **Settings › Look & feel › Show GGUF builds**; anything already downloaded always stays under *On this iPhone*. The app checks memory and free space (on the phone or the [drive](storage.md) you download to) and says why when a model won't fit.
+
+The last block is **Storage** — how much space there is, not only what loopl uses: *On this iPhone* with bytes used and bytes free, one row per [drive](storage.md) you have added (used · free, or *Not connected*), the memory a model can take right now, and a row into **Settings › Storage** to move models or add a USB‑C drive. The footer carries the catalog version.
 
 ## Browsing, in detail
 
