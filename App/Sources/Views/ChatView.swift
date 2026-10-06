@@ -319,7 +319,8 @@ struct Composer: View {
         .animation(LooplDesign.Motion.faded(LooplDesign.Motion.snappy, reduceMotion), value: recorder.isRecording)
         .animation(LooplDesign.Motion.faded(LooplDesign.Motion.snappy, reduceMotion), value: recorder.state)
         .onDisappear { if recorder.isRecording { recorder.cancel() } }
-        .background(.bar)
+        // No material of its own: ChatView paints one `.bar` across the whole window behind the composer. A second
+        // `.bar` here was stacked inside the reading measure, so on iPad the composer read as a lighter slab on the bar.
         .offset(y: drag)
         .photosPicker(isPresented: $showPhotos, selection: $pickerItems, maxSelectionCount: Self.maxAttachments - attachments.count,
                       matching: .images, photoLibrary: .shared())
