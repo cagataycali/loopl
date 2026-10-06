@@ -21,8 +21,19 @@ public struct ToolCallStreamGate: Sendable {
     private var reasoningOpen = false
     private var inThink = false
     private let parser: ToolCallParser
+    private let suppress: (@Sendable (ToolUse) -> Bool)?
+    /// Calls `suppress` rejected at `finish()` — a provider may react (see `AppleFoundationModel`).
+    public private(set) var suppressedCalls: [ToolUse] = []
 
-    public init(family: ToolFamily) { self.family = family; parser = ToolCallParser(family: family) }
+    /// - Parameter suppress: optional veto on a parsed tool call, applied at
+    ///   `finish()`. Providers that prompt tools manually use it to drop a call
+    ///   the model merely echoed back (see `ToolCallRepeatGuard`); `nil` (the
+    ///   default) keeps every call, which is what the MLX and GGUF runtimes do.
+    public init(family: ToolFamily, suppress: (@Sendable (ToolUse) -> Bool)? = nil) {
+        self.family = family
+        self.suppress = suppress
+        parser = ToolCallParser(family: family)
+    }
 
     /// Openers we must not stream through. Order matters only for the prefix check.
     static let openers = ["<tool_call>", "<|tool_call|>", "<function_call>", "<|python_tag|>", "```", "{\""]
@@ -105,6 +116,13 @@ public struct ToolCallStreamGate: Sendable {
         }
         var uses = native
         for c in parsed.calls where !uses.contains(where: { $0.name == c.name && $0.input == c.input }) { uses.append(c) }
+        if let suppress {
+            let vetoed = uses.filter(suppress)
+            if !vetoed.isEmpty {
+                suppressedCalls += vetoed
+                uses.removeAll(where: suppress)
+            }
+        }
         for u in uses {
             out.append(.contentBlockStart(.toolUse(toolUseId: u.toolUseId, name: u.name)))
             out.append(.contentBlockDelta(.toolUse(input: JSONValue.object(u.input).compact)))
