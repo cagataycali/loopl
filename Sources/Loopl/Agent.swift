@@ -116,6 +116,8 @@ public actor Agent {
     public func setSystemPrompt(_ prompt: String?) { systemPrompt = prompt }
     /// Replace the history (a host restoring a session). No hooks fire.
     public func setMessages(_ messages: [Message]) { self.messages = messages }
+    /// Put accumulated metrics back (restoring an `AgentCheckpoint` — see Checkpoint.swift).
+    public func setEventLoopMetrics(_ metrics: EventLoopMetrics) { eventLoopMetrics = metrics }
     public func reset() { messages.removeAll(); eventLoopMetrics = EventLoopMetrics() }
 
     // MARK: human-in-the-loop

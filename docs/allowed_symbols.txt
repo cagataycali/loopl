@@ -68,3 +68,21 @@ LLAMA_SHA256
 DEVICE_ID
 DEVELOPMENT_TEAM
 LooplAppleTools
+# Swift stdlib / Foundation value types named in the structured-output schema table
+Bool
+Int
+Double
+String
+Date
+Data
+URL
+UUID
+Decodable
+# Apple framework quoted on the structured-output page
+FoundationModels
+# Strands session managers quoted on the checkpoints page
+SessionManager
+FileSessionManager
+SnapshotSessionManager
+# example types that only exist inside a docs snippet
+Weather

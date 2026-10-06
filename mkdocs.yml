@@ -151,6 +151,9 @@ nav:
       - Models & runtimes: sdk/models.md
       - Hooks & conversation: sdk/hooks.md
       - Human in the loop: sdk/hitl.md
+      - Structured output: sdk/structured-output.md
+      - Checkpoints: sdk/checkpoints.md
+      - Tracing: sdk/tracing.md
   - Models: models.md
   - App: app/index.md
   - Privacy: privacy.md
