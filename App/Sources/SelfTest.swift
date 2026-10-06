@@ -10,7 +10,9 @@ import FoundationModels
 /// Options: --selftest-vision (bundled vision-test.png → "what's in the image" + a tool call; default model
 /// qwen3.5-0.8b-4bit unless --selftest-model/--selftest-hub says otherwise), --selftest-model <catalog id> (default qwen3-1.7b-4bit), --selftest-hub <owner/repo> (resolve ANY public
 /// Hugging Face repo through HubCatalog instead of the catalog — the "any model" proof), --selftest-offline (flip the
-/// offline guard before loading: proves inference needs no network), --selftest-prompt "<text>".
+/// offline guard before loading: proves inference needs no network), --selftest-prompt "<text>",
+/// --selftest-turns <n> (n user turns on ONE agent — the per-runtime context-budget proof: each turn
+/// reports estimated prompt tokens, kept messages and metrics.contextReductionCount).
 /// Prints ONE line `LOOPL_SELFTEST {json}` to stdout, writes Documents/selftest.json, exits 0 (1 on failure).
 /// DEBUG builds only — a Release build ignores the argument.
 enum SelfTest {
@@ -153,9 +155,14 @@ enum SelfTest {
             var metrics = Metrics()
             var warnings: [String] = []
             var text = ""
+            let turns = max(1, Int(arg("--selftest-turns") ?? "1") ?? 1)
+            var contextTrace: [[String: Any]] = []
             let tRun = Date()
             let deadline = Task { try await Task.sleep(nanoseconds: 600_000_000_000); emit("⚠︎ 10 min wall clock — cancelling the proof") }
-            let input: Agent.Input = images.isEmpty ? .text(prompt) : .messages([Loopl.Message.user(prompt, images: images)])
+            for turn in 0..<turns {
+            let turnPrompt = turns == 1 ? prompt : "\(prompt) (turn \(turn + 1) of \(turns))"
+            if turns > 1 { emit("── turn \(turn + 1)/\(turns)") }
+            let input: Agent.Input = images.isEmpty ? .text(turnPrompt) : .messages([Loopl.Message.user(turnPrompt, images: images)])
             for try await e in agent.stream(input) {
                 if deadline.isCancelled == false, Date().timeIntervalSince(tRun) > 600 { break }
                 switch e {
@@ -178,6 +185,19 @@ enum SelfTest {
                 default: break
                 }
             }
+            if turns > 1 {
+                // The context budget, measured per turn: what the next prompt would cost (chars/4 ESTIMATE),
+                // how many messages the manager kept, and how often the loop had to recover from an overflow.
+                let msgs = await agent.messages
+                let est = TokenEstimator.estimate(messages: msgs, systemPrompt: AppSettings.defaultSystemPrompt, toolSpecs: tools.map(\.toolSpec))
+                let window = await model.contextWindow
+                let reductions = await agent.eventLoopMetrics.contextReductionCount
+                contextTrace.append(["turn": turn + 1, "messages": msgs.count, "est_prompt_tokens": est,
+                                     "context_window": window, "context_reductions": reductions,
+                                     "ctx_used_reported": metrics.contextUsed, "answer": String(answer.prefix(120))])
+                emit("turn \(turn + 1): \(msgs.count) messages · ≈\(est) est. tokens of \(window) · reductions \(reductions)")
+            }
+            }
             deadline.cancel()
             _ = text
             report["run_s"] = Date().timeIntervalSince(tRun)
@@ -191,6 +211,17 @@ enum SelfTest {
             report["generated_tokens"] = metrics.generatedTokens
             report["ctx_used"] = metrics.contextUsed; report["ctx_max"] = metrics.contextMax
             report["offline_ok"] = offline
+            if turns > 1 {
+                report["turns"] = turns
+                report["context_trace"] = contextTrace
+                let window = await model.contextWindow
+                let worst = contextTrace.compactMap { $0["est_prompt_tokens"] as? Int }.max() ?? 0
+                report["context_window"] = window
+                report["worst_est_prompt_tokens"] = worst
+                report["context_reductions"] = await agent.eventLoopMetrics.contextReductionCount
+                report["context_budget_held"] = worst < window
+                emit("context: worst ≈\(worst) est. tokens of \(window) over \(turns) turns (estimate = chars/4)")
+            }
             let usedCalc = toolsUsed.contains { ($0["name"] as? String) == "calculator" }
             emit("answer: \(answer)")
             await model.unload()
