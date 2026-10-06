@@ -152,13 +152,14 @@ struct HubHitRow: View {
                     if let p = hit.paramsB { meta("·"); meta("\(p.formatted(.number.precision(.fractionLength(0...1))))B") }
                     if let b = hit.bits { meta("·"); meta("\(b)-bit") }
                     if let c = hit.ctx { meta("·"); meta("ctx \(c.formatted(.number.notation(.compactName)))") }
+                    if hit.isVision { meta("·"); meta(Image(systemName: "eye"), "vision").foregroundStyle(LooplDesign.accent) }
                 }
             }
             Spacer(minLength: 8)
             VStack(alignment: .trailing, spacing: 4) {
                 if let s = hit.sizeBytes, s > 0 { Text(ByteSize.label(s)).font(.footnote.monospacedDigit()).foregroundStyle(.secondary) }
                 if added { Image(systemName: "checkmark").font(.footnote.weight(.semibold)).foregroundStyle(.secondary).accessibilityLabel("on this device") }
-                else if let s = hit.sizeBytes, s > 0 { FitBadge(fit: .verdict(bytes: s, available: MemoryBudget.budget)) }
+                else if let s = hit.sizeBytes, s > 0 { FitBadge(fit: .verdict(bytes: HubCatalog.fitBytes(weights: s, vision: hit.isVision), available: MemoryBudget.budget)) }
             }
         }
         .contentShape(Rectangle())
@@ -243,8 +244,9 @@ struct HubRepoSheet: View {
                             HStack(spacing: 8) {
                                 tag(spec.runtime.label)
                                 tag(HubCatalog.detectFamily(repo: repo.id, modelType: config?.modelType ?? repo.modelType).label)
+                                if spec.supportsVision { tag("vision", color: LooplDesign.accent) }
                                 if spec.toolsUnverified == true { tag("tool calls unverified", color: LooplDesign.amber) }
-                                FitBadge(fit: .verdict(bytes: spec.sizeBytes, available: MemoryBudget.budget))
+                                FitBadge(fit: .verdict(bytes: HubCatalog.fitBytes(weights: spec.sizeBytes, vision: spec.supportsVision), available: MemoryBudget.budget))
                             }
                         }
                         .padding(.vertical, 4)
@@ -361,8 +363,8 @@ struct HubRepoSheet: View {
     }
 
     private func fitFootnote(_ spec: ModelSpec) -> String {
-        switch HubCatalog.Fit.verdict(bytes: spec.sizeBytes, available: MemoryBudget.budget) {
-        case .green: "Fits comfortably (≈1.3× the weights in memory)."
+        switch HubCatalog.Fit.verdict(bytes: HubCatalog.fitBytes(weights: spec.sizeBytes, vision: spec.supportsVision), available: MemoryBudget.budget) {
+        case .green: spec.supportsVision ? "Fits comfortably (≈1.3× the weights plus the vision tower and up to 1280 image tokens per picture)." : "Fits comfortably (≈1.3× the weights in memory)."
         case .amber: "Tight: it should load, but close other apps and expect a smaller context."
         case .red: "Likely too big for the memory iOS gives loopl right now. You can still try — it may load with a short context, or fail to."
         }

@@ -213,22 +213,34 @@ public final class Engine {
         if let saved = SavedConversation.from(transcript, id: currentId, modelName: loadedModel?.name) { archive.upsert(saved) }
     }
 
-    public func send(_ text: String) {
+    /// Can the loaded model look at pictures? (`ModelSpec.vision`, MLX runtime.) Gates the composer's attach button.
+    public var canSeeImages: Bool { loadedModel?.supportsVision == true }
+
+    public func send(_ text: String, images: [ImageBlock] = []) {
         guard !isGenerating else { return }
-        guard let model, loadedModel != nil else { lastError = "the model is still loading"; haptics.emit(.error); return }
+        guard let model, let spec = loadedModel else { lastError = "the model is still loading"; haptics.emit(.error); return }
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
+        guard !text.isEmpty || !images.isEmpty else { return }
         lastError = nil
         haptics.emit(.send)
         // Generation params are the model's own maxed defaults (spec.defaultParams, set at load): no caps here.
         let agent = self.agent ?? Agent(model: model, tools: activeTools, systemPrompt: settings.systemPrompt, hooks: [approvalPolicy])
         self.agent = agent
-        transcript.user(text)
-        let tools = activeTools, prompt = settings.systemPrompt
+        // A text model cannot see: keep the picture in the transcript (so the user knows what was sent)
+        // but tell them, and send the words only — never silently drop or pretend.
+        var sent = images
+        if !images.isEmpty, !spec.supportsVision {
+            sent = []
+            transcript.note("\(spec.name) can't see pictures — pick a vision model (Qwen3-VL, Qwen3.5…) in Models. Sent the text only.")
+        }
+        transcript.user(text, images: images)
+        let prompt = text.isEmpty ? "What's in this image?" : text
+        let message = Loopl.Message.user(prompt, images: sent)
+        let tools = activeTools, system = settings.systemPrompt
         runTask = Task { [weak self] in
-            await agent.setTools(tools); await agent.setSystemPrompt(prompt)
+            await agent.setTools(tools); await agent.setSystemPrompt(system)
             do {
-                for try await event in agent.stream(text) {
+                for try await event in agent.stream([message]) {
                     guard let self else { return }
                     if self.transcript.apply(event) { self.archiveCurrent() }
                     switch event {

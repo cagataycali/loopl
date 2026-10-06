@@ -7,7 +7,8 @@ import FoundationModels
 
 /// Headless device proof. Launch with
 ///   xcrun devicectl device process launch --console --terminate-existing --device <udid> technology.tiny.loopl -- --selftest
-/// Options: --selftest-model <catalog id> (default qwen3-1.7b-4bit), --selftest-hub <owner/repo> (resolve ANY public
+/// Options: --selftest-vision (bundled vision-test.png → "what's in the image" + a tool call; default model
+/// qwen3.5-0.8b-4bit unless --selftest-model/--selftest-hub says otherwise), --selftest-model <catalog id> (default qwen3-1.7b-4bit), --selftest-hub <owner/repo> (resolve ANY public
 /// Hugging Face repo through HubCatalog instead of the catalog — the "any model" proof), --selftest-offline (flip the
 /// offline guard before loading: proves inference needs no network), --selftest-prompt "<text>".
 /// Prints ONE line `LOOPL_SELFTEST {json}` to stdout, writes Documents/selftest.json, exits 0 (1 on failure).
@@ -52,8 +53,20 @@ enum SelfTest {
         }
         do {
             let offline = CommandLine.arguments.contains("--selftest-offline")
-            let prompt = arg("--selftest-prompt") ?? "what time is it in Istanbul and what is 23*47? then remember the answer under the key 'proof' and recall it"
-            report["offline"] = offline; report["prompt"] = prompt
+            let vision = CommandLine.arguments.contains("--selftest-vision")
+            let prompt = arg("--selftest-prompt") ?? (vision
+                ? "Describe what you see in the image in one sentence (shapes, colours, any text). Then read the number written in it and use the calculator tool to multiply it by 3."
+                : "what time is it in Istanbul and what is 23*47? then remember the answer under the key 'proof' and recall it")
+            report["offline"] = offline; report["prompt"] = prompt; report["vision"] = vision
+            // The picture the vision proof sends: App/Resources/vision-test.png (red circle, blue square, "LOOPL 42").
+            var images: [ImageBlock] = []
+            if vision {
+                guard let url = Bundle.main.url(forResource: "vision-test", withExtension: "png"), let data = try? Data(contentsOf: url) else {
+                    throw ModelError("vision-test.png is not in the app bundle")
+                }
+                images = [ImageBlock(data: data, mime: "image/png", width: 640, height: 400, alt: "test card")]
+                report["image_bytes"] = data.count
+            }
             let spec: ModelSpec
             if let hubRepo = arg("--selftest-hub") {
                 // The "any model from Hugging Face" path: search-free resolve (repo ?blobs=true + config.json) → ModelSpec → store.add.
@@ -67,11 +80,13 @@ enum SelfTest {
                 report["hub_fit"] = HubCatalog.Fit.verdict(bytes: spec.sizeBytes, available: MemoryBudget.budget).rawValue
                 emit("hub: \(hubRepo) → \(spec.id) · \(spec.runtime.label) · \(spec.sizeLabel) · ctx \(spec.ctxUsable8GB)/\(spec.ctxNominal) · family \(spec.family.rawValue)\(spec.toolsUnverified == true ? " (tools unverified)" : "") · fit \(report["hub_fit"]!) · \(String(format: "%.1f", Date().timeIntervalSince(t0))) s")
             } else {
-                let modelId = arg("--selftest-model") ?? "qwen3-1.7b-4bit"
+                let modelId = arg("--selftest-model") ?? (vision ? "qwen3.5-0.8b-4bit" : "qwen3-1.7b-4bit")
                 report["model"] = modelId
                 guard let s = store.catalog.models.first(where: { $0.id == modelId }) else { throw ModelError("no catalog entry \(modelId)") }
                 spec = s
             }
+            if vision, !spec.supportsVision { throw ModelError("\(spec.id) has no vision tower — --selftest-vision needs a vision model (qwen3.5-*, qwen3-vl-*)") }
+            report["model_vision"] = spec.supportsVision
 
             // 4) Foundation Models availability (iOS 26+), honest reason.
             let fm = AppleFoundationModel.availability()
@@ -140,7 +155,8 @@ enum SelfTest {
             var text = ""
             let tRun = Date()
             let deadline = Task { try await Task.sleep(nanoseconds: 600_000_000_000); emit("⚠︎ 10 min wall clock — cancelling the proof") }
-            for try await e in agent.stream(prompt) {
+            let input: Agent.Input = images.isEmpty ? .text(prompt) : .messages([Loopl.Message.user(prompt, images: images)])
+            for try await e in agent.stream(input) {
                 if deadline.isCancelled == false, Date().timeIntervalSince(tRun) > 600 { break }
                 switch e {
                 case .startEventLoop(let c): emit("cycle \(c)"); text = ""
@@ -175,13 +191,23 @@ enum SelfTest {
             report["generated_tokens"] = metrics.generatedTokens
             report["ctx_used"] = metrics.contextUsed; report["ctx_max"] = metrics.contextMax
             report["offline_ok"] = offline
-            let has1081 = answer.contains("1081")
             let usedCalc = toolsUsed.contains { ($0["name"] as? String) == "calculator" }
-            let usedTime = toolsUsed.contains { ($0["name"] as? String) == "current_time" }
-            report["checks"] = ["answer_has_1081": has1081, "used_calculator": usedCalc, "used_current_time": usedTime, "tool_rounds_ge_1": toolRounds >= 1]
             emit("answer: \(answer)")
             await model.unload()
-            finish(toolRounds >= 1 && (has1081 || usedCalc))
+            if vision {
+                // The card shows a red circle, a blue square and "LOOPL 42": the model must see shapes and read the number.
+                let all = (answer + " " + toolsUsed.map { "\($0["result"] ?? "")" }.joined(separator: " ")).lowercased()
+                let sawShape = all.contains("circle") || all.contains("round") || all.contains("square") || all.contains("rectangle")
+                let read42 = all.contains("42") || all.contains("126")
+                report["checks"] = ["saw_shape": sawShape, "read_42": read42, "used_calculator": usedCalc, "tool_rounds_ge_1": toolRounds >= 1,
+                                    "image_tokens_in_prompt": metrics.promptTokens > 64]
+                finish(sawShape && read42 && toolRounds >= 1)
+            } else {
+                let has1081 = answer.contains("1081")
+                let usedTime = toolsUsed.contains { ($0["name"] as? String) == "current_time" }
+                report["checks"] = ["answer_has_1081": has1081, "used_calculator": usedCalc, "used_current_time": usedTime, "tool_rounds_ge_1": toolRounds >= 1]
+                finish(toolRounds >= 1 && (has1081 || usedCalc))
+            }
         } catch {
             report["error"] = error.localizedDescription
             emit("FAILED: \(error.localizedDescription)")

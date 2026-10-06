@@ -64,6 +64,9 @@ targets:
         - UIInterfaceOrientationLandscapeRight
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: false
+        # Vision models: attach a photo or take one. Both stay on the device (the model runs here).
+        NSCameraUsageDescription: Take a photo to show the model. It never leaves this device.
+        NSPhotoLibraryAddUsageDescription: Save pictures the model produced to your library.
     entitlements:
       path: loopl.entitlements
       properties:

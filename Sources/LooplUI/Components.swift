@@ -206,16 +206,21 @@ public struct ChunkFadeText: View {
 /// The user's turn: a small secondary "You" label and the text, left-aligned.
 public struct UserTurn: View {
     public var text: String
-    public init(_ text: String) { self.text = text }
+    /// Pictures the user attached — rendered as tiles above the text (tap to zoom).
+    public var images: [ImageBlock]
+    public init(_ text: String, images: [ImageBlock] = []) { self.text = text; self.images = images }
     public var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 6) {
             Text("You").font(.caption.weight(.semibold)).foregroundStyle(.secondary).textCase(.uppercase).kerning(0.6)
-            Text(text).font(.body).lineSpacing(4).foregroundStyle(.primary.opacity(0.85)).textSelection(.enabled)
+            if !images.isEmpty { ImageStrip(images).padding(.bottom, 2) }
+            if !text.isEmpty {
+                Text(text).font(.body).lineSpacing(4).foregroundStyle(.primary.opacity(0.85)).textSelection(.enabled)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .contextMenu { Button("Copy", systemImage: "doc.on.doc") { copy(text) } }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("You said: \(text)")
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(images.isEmpty ? "You said: \(text)" : "You sent \(images.count) image\(images.count == 1 ? "" : "s"): \(text)")
     }
 }
 
@@ -484,9 +489,13 @@ public struct AgentTranscriptView<Empty: View, Banner: View>: View {
 
     @ViewBuilder private func row(_ item: TranscriptItem) -> some View {
         switch item.kind {
-        case .user(let s): UserTurn(s).padding(.top, 8)
+        case .user(let s): UserTurn(s, images: item.images).padding(.top, 8)
         case .assistant(let s): StreamingTextView(s, streaming: transcript.isRunning && item.id == transcript.items.last?.id)
-        case .toolUse(let c, let r): ToolRow(call: c, result: r, expanded: expandTools)
+        case .toolUse(let c, let r):
+            VStack(alignment: .leading, spacing: 8) {
+                ToolRow(call: c, result: r, expanded: expandTools)
+                if !item.images.isEmpty { ImageStrip(item.images, maxHeight: 260) }   // tool-produced pictures (generate_image…)
+            }
         case .approval(let req, let d): ApprovalCard(request: req, decision: d) { onApproval?(req, $0) }
         case .reasoning(let r): Text(r).font(.caption).foregroundStyle(.secondary).italic()
         case .note(let s): Text(s).font(.caption).foregroundStyle(.tertiary)
@@ -548,6 +557,11 @@ public struct ModelPickerRow: View {
                     meta("·"); meta("\(spec.paramsB.formatted(.number.precision(.fractionLength(0...1))))B")
                     meta("·"); meta("ctx \(spec.ctxUsable8GB.formatted())")
                     meta("·"); meta(spec.runtime.label)
+                    if spec.supportsVision {
+                        meta("·")
+                        Label("vision", systemImage: "eye").font(.caption2.weight(.semibold)).foregroundStyle(LooplDesign.accent)
+                            .labelStyle(.titleAndIcon).fixedSize().lineLimit(1).accessibilityLabel("sees pictures")
+                    }
                     if spec.toolsUnverified == true {
                         meta("·")
                         Text("tools unverified").font(.caption2.weight(.semibold)).foregroundStyle(LooplDesign.amber)

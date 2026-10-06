@@ -19,7 +19,7 @@ let package = Package(
         // The SDK core — pure Swift (Foundation only). Agent loop, Model/Tool protocols,
         // tool-call parsers, prompt rendering, catalog, Hugging Face downloader.
         .library(name: "Loopl", targets: ["Loopl"]),
-        // Engines: MLXModel (mlx-swift-lm, Metal, real device), AppleFoundationModel (iOS 26), GGUFModel (v2 stub).
+        // Engines: MLXModel (mlx-swift-lm, Metal, real device; MLXVLM for vision checkpoints), AppleFoundationModel (iOS 26), GGUFModel.
         .library(name: "LooplRuntimes", targets: ["LooplRuntimes"]),
         // SwiftUI showcase components: ToolCallCard, TokenMeter, AgentTranscriptView, …
         .library(name: "LooplUI", targets: ["LooplUI"]),
@@ -40,6 +40,7 @@ let package = Package(
             dependencies: [
                 "Loopl",
                 .product(name: "MLXLLM", package: "mlx-swift-lm"),
+                .product(name: "MLXVLM", package: "mlx-swift-lm"),   // vision checkpoints (Qwen3-VL / Qwen3.5 / Gemma 3…)
                 .product(name: "MLXLMCommon", package: "mlx-swift-lm"),
                 .product(name: "Tokenizers", package: "swift-transformers"),
                 .product(name: "Hub", package: "swift-transformers"),
@@ -53,6 +54,6 @@ let package = Package(
         .testTarget(name: "LooplTests", dependencies: ["Loopl"], path: "Tests/LooplTests",
                     resources: [.copy("Fixtures")], swiftSettings: [.swiftLanguageMode(.v6)]),
         .testTarget(name: "LooplRuntimesTests", dependencies: ["Loopl", "LooplRuntimes"], path: "Tests/LooplRuntimesTests",
-                    swiftSettings: [.swiftLanguageMode(.v6)]),
+                    resources: [.copy("Fixtures")], swiftSettings: [.swiftLanguageMode(.v6)]),
     ] + (hasLlama ? [.binaryTarget(name: "llama", path: llamaXCFramework)] : [])
 )

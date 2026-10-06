@@ -47,7 +47,9 @@ final class HubCatalogTests: XCTestCase {
         let chat = hits.filter(\.isTextGeneration).map(\.id)
         XCTAssertFalse(chat.contains("mlx-community/Qwen3-ASR-0.6B-8bit"))
         XCTAssertFalse(chat.contains("mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ"))
-        XCTAssertFalse(chat.contains("mlx-community/Qwen3-VL-4B-Instruct-4bit"))
+        // Vision checkpoints are chat models loopl can run (MLXVLM) — they stay, flagged as vision.
+        XCTAssertTrue(chat.contains("mlx-community/Qwen3-VL-4B-Instruct-4bit"))
+        XCTAssertTrue(hits.first { $0.id == "mlx-community/Qwen3-VL-4B-Instruct-4bit" }?.isVision == true)
         XCTAssertFalse(chat.contains("mlx-community/Qwen3-TTS-12Hz-1.7B-Base-bf16"))
         XCTAssertTrue(chat.contains("mlx-community/Qwen3-1.7B-4bit"))
         XCTAssertTrue(chat.contains("mlx-community/Qwen3-4B-Instruct-2507-4bit"))

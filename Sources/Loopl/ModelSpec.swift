@@ -25,21 +25,28 @@ public struct ModelSpec: Sendable, Codable, Hashable, Identifiable {
     /// `true` for Hub repos whose tool-call grammar loopl has not run on-device (`HubCatalog.detectFamily`).
     /// Curated rows leave it nil; the UI shows "tool calls unverified".
     public var toolsUnverified: Bool? = nil
+    /// `true` when the checkpoint has a vision tower loopl can drive (Qwen3-VL, Qwen2.5-VL, Qwen3.5, Gemma 3, SmolVLM…, MLX runtime).
+    /// Gates the composer's attach button; images sent to a text model are dropped with a notice.
+    public var vision: Bool? = nil
 
     public init(id: String, name: String, repo: String, runtime: RuntimeKind, family: ToolFamily, paramsB: Double, sizeBytes: Int64,
                 ctxNominal: Int, ctxUsable8GB: Int, minRAMGB: Double, gated: Bool = false, notes: String? = nil, revision: String? = nil,
-                file: String? = nil, temperature: Float? = nil, chatTemplateKwargs: [String: JSONValue]? = nil, toolsUnverified: Bool? = nil) {
+                file: String? = nil, temperature: Float? = nil, chatTemplateKwargs: [String: JSONValue]? = nil, toolsUnverified: Bool? = nil,
+                vision: Bool? = nil) {
         self.id = id; self.name = name; self.repo = repo; self.runtime = runtime; self.family = family; self.paramsB = paramsB
         self.sizeBytes = sizeBytes; self.ctxNominal = ctxNominal; self.ctxUsable8GB = ctxUsable8GB; self.minRAMGB = minRAMGB
         self.gated = gated; self.notes = notes; self.revision = revision; self.file = file; self.temperature = temperature
-        self.chatTemplateKwargs = chatTemplateKwargs; self.toolsUnverified = toolsUnverified
+        self.chatTemplateKwargs = chatTemplateKwargs; self.toolsUnverified = toolsUnverified; self.vision = vision
     }
+
+    /// Can this model look at pictures? (`vision` flag; only the MLX runtime has a VLM path today.)
+    public var supportsVision: Bool { vision == true && runtime == .mlx }
 
     /// Browsed on Hugging Face at runtime (id "hub:<repo>[:<file>]") rather than shipped in the curated catalog.
     public var isFromHub: Bool { id.hasPrefix("hub:") }
 
     enum CodingKeys: String, CodingKey {
-        case id, name, repo, runtime, family, gated, notes, revision, file, temperature
+        case id, name, repo, runtime, family, gated, notes, revision, file, temperature, vision
         case chatTemplateKwargs = "chat_template_kwargs", toolsUnverified = "tools_unverified"
         case paramsB = "params_b", sizeBytes = "size_bytes", ctxNominal = "ctx_nominal"
         case ctxUsable8GB = "ctx_usable_8gb", minRAMGB = "min_ram_gb"
