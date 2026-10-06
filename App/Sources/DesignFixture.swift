@@ -35,6 +35,7 @@ enum DesignFixture {
     /// `--design-mine` signs the session in as @cagataydev (no network) and fills Models › Mine with the loopl v1 repos ·
     /// onboarding: `--design-apple-fm` shows the Apple Intelligence card as available (the sim has no Apple Intelligence),
     /// `--design-ram-gb 6` makes the fit badges judge a 6 GB phone, `--design-gated` forces the Hugging Face sign-in step.
+    /// `--design-focus-composer` raises the keyboard on the chat (composer seam shots).
     static func flag(_ name: String) -> Bool { requested && CommandLine.arguments.contains(name) }
     static func value(_ name: String) -> String? {
         guard requested, let i = CommandLine.arguments.firstIndex(of: name), i + 1 < CommandLine.arguments.count,
@@ -45,6 +46,9 @@ enum DesignFixture {
     static var share: String? { value("--design-share") }
     static var settingsPane: String? { value("--design-settings") }
     static var mine: Bool { flag("--design-mine") }
+    /// `--design-focus-composer`: focuses the Message field on appear so a screenshot shows the composer with the
+    /// keyboard up (the seam the owner looked at when he asked for the field's fill to go).
+    static var focusComposer: Bool { flag("--design-focus-composer") }
 
     /// `--design-mine`: the Hub rows of cagataydev/loopl-* as `/api/models?author=` returned them on 2026-10-06 (no network).
     static var mineHits: [HubCatalog.Hit] {
