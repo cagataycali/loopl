@@ -654,7 +654,7 @@ public actor Agent {
                 let context = InterruptContext(scope: scope, known: interruptState.interrupts)
                 do {
                     let out = try await InterruptScope.$context.withValue(context) {
-                        try await tool.call(toolUse.input, images: messages.last(where: { $0.role == .user })?.images ?? [])
+                        try await tool.call(toolUse.input, images: Self.visibleImages(messages))
                     }
                     result = ToolResult(toolUseId: toolUse.toolUseId, name: toolUse.name, status: .success, content: out.text,
                                         durationMs: Date().timeIntervalSince(t0) * 1000, images: out.images)
@@ -719,5 +719,21 @@ public actor Agent {
     private func appendMessage(_ m: Message) async throws {
         messages.append(m)
         try await hooks.invoke(MessageAddedEvent(message: m))
+    }
+}
+
+
+extension Agent {
+    /// The pictures an image-consuming tool may look at this turn: the ones attached to the latest user message, followed
+    /// by every picture a tool returned since then (`ToolResult.images`), most recent last — so `photos_recent` →
+    /// `describe_image {image_index: 0}` describes the newest photo. Measured 2026-10-06 (ContactsPhotosMeasurement):
+    /// before this, the model called describe_image after photos_recent 3/3 and got "no image attached" 3/3.
+    static func visibleImages(_ messages: [Message]) -> [ImageBlock] {
+        // Tool results travel as `role: .user` turns too — so "the latest user message" used to be the tool-result turn,
+        // and a picture the user attached vanished for every tool after the first call of the turn.
+        guard let userIdx = messages.lastIndex(where: { $0.role == .user && !$0.hasToolResult }) else { return [] }
+        var images = messages[userIdx].images
+        for m in messages[(userIdx + 1)...] { for r in m.toolResults { images += r.images } }
+        return images
     }
 }

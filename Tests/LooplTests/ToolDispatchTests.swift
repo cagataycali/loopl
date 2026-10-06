@@ -37,4 +37,18 @@ final class ToolDispatchTests: XCTestCase {
         let out = try await tool.call([:], images: [ImageBlock(data: Data([1]), mime: "image/png", width: 1, height: 1, alt: nil)])
         XCTAssertEqual(out.text, "plain"); XCTAssertTrue(out.images.isEmpty)
     }
+
+    func testToolReturnedPicturesAreVisibleToTheNextTool() {
+        // photos_recent → describe_image: the newest photo is image_index 0 (most recent last in the list).
+        func img(_ b: UInt8) -> ImageBlock { ImageBlock(data: Data([b]), mime: "image/jpeg", width: 1, height: 1, alt: nil) }
+        let messages: [Message] = [
+            .user("old", images: [img(9)]), .assistant("…"),
+            .user("what's in my last photo?", images: [img(1)]),
+            .assistant(text: "", toolUses: [ToolUse(toolUseId: "t1", name: "photos_recent", input: [:])]),
+            .toolResults([ToolResult(toolUseId: "t1", name: "photos_recent", status: .success, content: "photos: 2", durationMs: 1, images: [img(2), img(3)])]),
+        ]
+        XCTAssertEqual(Agent.visibleImages(messages).map { $0.data.first! }, [1, 2, 3], "user's picture first, then the tool's, most recent last")
+        XCTAssertEqual(Agent.visibleImages([.user("hi")]), [])
+        XCTAssertEqual(Agent.visibleImages([]), [])
+    }
 }
