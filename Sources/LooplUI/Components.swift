@@ -12,9 +12,19 @@ public struct MarkdownBody: View {
     public var streaming: Bool
     public init(_ text: String, streaming: Bool = false) { self.text = text; self.streaming = streaming }
 
-    enum Block: Hashable { case paragraph(String), heading(Int, String), bullet([String]), numbered([String]), code(String, lang: String) }
+    public enum Block: Hashable, Sendable { case paragraph(String), heading(Int, String), bullet([String]), numbered([String]), code(String, lang: String) }
 
-    static func blocks(_ s: String) -> [Block] {
+    /// The block structure of `s` — public so streaming stability (a prefix must not re-flow when the next
+    /// token arrives) is unit-tested.
+    nonisolated public static func blocks(_ s: String, streaming: Bool = false) -> [Block] {
+        var s = s
+        // While streaming, a last line that is only the START of a block marker ("1", "12.", "`", "``") is held
+        // back for one token: rendered as a paragraph it would re-flow into a list / code card when the marker
+        // completes, and the whole document below the fold would move. Final text is never trimmed.
+        if streaming {
+            let start = s.lastIndex(of: "\n").map { s.index(after: $0) } ?? s.startIndex
+            if Self.isMarkerPrefix(s[start...].trimmingCharacters(in: .whitespaces)) { s = String(s[..<start]) }
+        }
         var out: [Block] = []
         var para: [String] = []
         var bullets: [String] = []
@@ -37,21 +47,36 @@ public struct MarkdownBody: View {
             if t.hasPrefix("```") { flushPara(); flushLists(); code = []; lang = String(t.dropFirst(3)).trimmingCharacters(in: .whitespaces); continue }
             if t.isEmpty { flushPara(); flushLists(); continue }
             if let m = t.firstMatch(of: /^(#{1,4})\s+(.*)$/) { flushPara(); flushLists(); out.append(.heading(m.1.count, String(m.2))); continue }
-            if let m = t.firstMatch(of: /^[-*•]\s+(.*)$/) { flushPara(); if !numbers.isEmpty { flushLists() }; bullets.append(String(m.1)); continue }
-            if let m = t.firstMatch(of: /^\d+[.)]\s+(.*)$/) { flushPara(); if !bullets.isEmpty { flushLists() }; numbers.append(String(m.1)); continue }
+            // A marker may arrive before its first word while streaming ("- ", "1. "): it is already a list item,
+            // not a one-character paragraph — otherwise the block re-flows (and the document moves) a token later.
+            if let m = t.firstMatch(of: /^[-*•](?:\s+(.*))?$/) { flushPara(); if !numbers.isEmpty { flushLists() }; bullets.append(String(m.1 ?? "")); continue }
+            if let m = t.firstMatch(of: /^\d+[.)](?:\s+(.*))?$/) { flushPara(); if !bullets.isEmpty { flushLists() }; numbers.append(String(m.1 ?? "")); continue }
             flushLists(); para.append(t)
         }
         flushPara(); flushLists()
-        if let c = code { out.append(.code(c.joined(separator: "\n"), lang: lang)) }   // unterminated fence while streaming
+        if var c = code {   // unterminated fence while streaming
+            // The newline that will precede the closing ``` is not a code line yet: drop it so the card does not
+            // grow a blank line and shrink again when the fence closes.
+            if c.last == "" { c.removeLast() }
+            out.append(.code(c.joined(separator: "\n"), lang: lang))
+        }
         return out
     }
 
-    static func inline(_ s: String) -> AttributedString {
+    /// "1", "12", "3." or one/two backticks: the start of a numbered item or a fence, not yet a block.
+    nonisolated static func isMarkerPrefix(_ t: String) -> Bool {
+        if t.isEmpty || t.count > 4 { return false }
+        if t.allSatisfy({ $0 == "`" }) { return t.count <= 2 }
+        let digits = t.hasSuffix(".") ? t.dropLast() : Substring(t)
+        return !digits.isEmpty && digits.count <= 3 && digits.allSatisfy(\.isNumber)
+    }
+
+    nonisolated static func inline(_ s: String) -> AttributedString {
         (try? AttributedString(markdown: s, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(s)
     }
 
     public var body: some View {
-        let blocks = Self.blocks(text)
+        let blocks = Self.blocks(text, streaming: streaming)
         VStack(alignment: .leading, spacing: 10) {
             ForEach(Array(blocks.enumerated()), id: \.offset) { i, b in
                 let last = i == blocks.count - 1
@@ -454,19 +479,35 @@ public struct AgentTranscriptView<Empty: View, Banner: View>: View {
                 .padding(.top, 12).padding(.bottom, 16)
                 .animation(reduceMotion ? nil : LooplDesign.spring, value: transcript.items.count)
             }
+            // Follow generation by ANCHORING, not by scrolling: while the reader is pinned the scroll view keeps
+            // its bottom edge glued to the content as the content grows, in the same layout pass. The pre-fix
+            // follow called `scrollTo` from `onChange(of: last item)` — before layout had the new height — so it
+            // landed 16–47 pt short on every token and the text snapped under the fold a frame later: the jump.
+            .defaultScrollAnchor(pinned ? .bottom : nil, for: .sizeChanges)
+            .defaultScrollAnchor(.bottom, for: .initialOffset)
             .scrollDismissesKeyboard(.interactively)
-            .onScrollGeometryChange(for: Bool.self) { g in
-                // "at bottom" is also true while the document is shorter than the viewport
-                g.contentSize.height <= g.containerSize.height + 1 || g.contentOffset.y + g.containerSize.height >= g.contentSize.height - 80
-            } action: { _, atBottom in
-                if atBottom { pinned = true } else if transcript.isRunning { pinned = false }
+            .onScrollGeometryChange(for: JumpSample.self) { JumpSample($0) } action: { _, s in JumpLog.record(s) }
+            // Only the READER can lift the pin: content growing past the fold is not "scrolling away" (that is
+            // the bug the geometry-only test had — the follow un-pinned itself on the first overflowing token).
+            .onScrollPhaseChange { _, phase, ctx in
+                switch phase {
+                case .interacting: if transcript.isRunning { pinned = false }   // finger down: stop following at once
+                case .idle, .decelerating: if Self.isAtBottom(ctx.geometry) { pinned = true }
+                default: break
+                }
+                JumpLog.note("phase=\(phase) pinned=\(pinned)")
+            }
+            .onScrollGeometryChange(for: Bool.self) { g in Self.isAtBottom(g) } action: { _, atBottom in
+                JumpLog.note("atBottom=\(atBottom) running=\(transcript.isRunning) pinned=\(pinned)")
+                if atBottom { pinned = true }   // re-pin when the reader scrolls back down (or the document fits)
             }
             .onChange(of: transcript.items.count) { _, n in
                 if n < lastCount { pinned = true }
                 lastCount = n
+                // A new turn (the user's send, a tool row) scrolls into view with motion; growth of the
+                // streaming row itself is handled by the anchor above and never scrolls explicitly.
                 if pinned { scrollDown(proxy) }
             }
-            .onChange(of: transcript.items.last?.kind) { _, _ in if pinned, transcript.isRunning { scrollDown(proxy, animated: false) } }
             .overlay(alignment: .bottomTrailing) {
                 if !pinned, transcript.isRunning {
                     Button { pinned = true; scrollDown(proxy) } label: {
@@ -480,6 +521,11 @@ public struct AgentTranscriptView<Empty: View, Banner: View>: View {
             }
             .animation(LooplDesign.Motion.faded(LooplDesign.Motion.snappy, reduceMotion), value: pinned)
         }
+    }
+
+    static func isAtBottom(_ g: ScrollGeometry) -> Bool {
+        LooplDesign.isAtBottom(offset: g.contentOffset.y, content: g.contentSize.height, container: g.containerSize.height,
+                               insetTop: g.contentInsets.top, insetBottom: g.contentInsets.bottom)
     }
 
     private func scrollDown(_ proxy: ScrollViewProxy, animated: Bool = true) {
@@ -500,6 +546,31 @@ public struct AgentTranscriptView<Empty: View, Banner: View>: View {
         case .reasoning(let r): Text(r).font(.caption).foregroundStyle(.secondary).italic()
         case .note(let s): Text(s).font(.caption).foregroundStyle(.tertiary)
         }
+    }
+}
+
+/// Measurement hook (DEBUG, launch arg `--jump-log`): one stdout line per scroll-geometry change so a capture
+/// can be scored for jitter — `JUMP t=<ms> off=<contentOffset.y> content=<contentSize.height> view=<containerSize.height>`.
+struct JumpSample: Hashable {
+    var offset: CGFloat, content: CGFloat, container: CGFloat, top: CGFloat, bottom: CGFloat
+    init(_ g: ScrollGeometry) {
+        offset = g.contentOffset.y; content = g.contentSize.height; container = g.containerSize.height
+        top = g.contentInsets.top; bottom = g.contentInsets.bottom
+    }
+}
+enum JumpLog {
+    static let enabled: Bool = {
+        #if DEBUG
+        return CommandLine.arguments.contains("--jump-log")
+        #else
+        return false
+        #endif
+    }()
+    private static let t0 = Date()
+    static func note(_ m: String) { guard enabled else { return }; print(String(format: "JUMPNOTE t=%.0f ", Date().timeIntervalSince(t0) * 1000) + m) }
+    static func record(_ s: JumpSample) {
+        guard enabled else { return }
+        print(String(format: "JUMP t=%.0f off=%.2f content=%.2f view=%.2f top=%.2f bottom=%.2f", Date().timeIntervalSince(t0) * 1000, s.offset, s.content, s.container, s.top, s.bottom))
     }
 }
 

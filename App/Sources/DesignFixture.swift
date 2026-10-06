@@ -52,6 +52,12 @@ enum DesignFixture {
             engine.transcript = t
             Task { await replayLive(engine, loop: CommandLine.arguments.contains("--design-loop")) }
             return
+        case "jump":
+            // Streaming-jitter repro: a long Markdown answer in token-sized chunks (~40/s, like Qwen3.5-0.8B on a 16 Pro)
+            // that overflows the viewport, so scroll-follow + per-chunk layout are both exercised.
+            engine.transcript = t
+            Task { await replayJump(engine) }
+            return
         case "approval":
             t.user("Post a note to my notes API saying the build is green.")
             t.apply(.startEventLoop(cycle: 1))
@@ -224,6 +230,61 @@ enum DesignFixture {
             _ = engine.transcript.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("done"), metrics: EventLoopMetrics())))
             await sleep(3)
         } while loop
+    }
+}
+
+extension DesignFixture {
+    /// The text the `jump` scene streams — bold, lists, a code fence, long paragraphs: every reflow case.
+    static let jumpAnswer = """
+    An **agent loop** is the smallest program that lets a language model *act* instead of only answering. Here is how loopl runs it on this phone, step by step.
+
+    1. **Ask** — the model reads the whole conversation and either answers or asks for a tool with a structured call.
+    2. **Act** — the app runs that tool locally (clock, calculator, `http` with your approval) and appends the result as a new message.
+    3. **Repeat** — the model reads the result and continues; there is no cap on rounds, only the context window.
+
+    ```swift
+    let agent = Agent(model: model, tools: [Clock(), Calculator()])
+    for try await event in agent.stream("what time is it in Istanbul?") {
+        if case .text(let delta) = event { print(delta, terminator: "") }
+    }
+    ```
+
+    Why does this matter on a device? Because every token is produced *here*: nothing leaves the phone, the loop keeps running on a plane, and a tool result is just another message the model gets to read. The runtime streams each chunk as it is decoded, so the first words appear after a few hundred milliseconds even on a 0.8B model.
+
+    - MLX models run through `mlx-swift`, GGUF models through `llama.cpp`, and Apple's on-device model through FoundationModels.
+    - Tool calls are parsed from the stream as they form, so a call can start before the sentence around it is finished.
+    - When the context fills up, older tool results are trimmed first and the request is retried once.
+
+    That is the whole algorithm: **ask, act, repeat** — the same cycle Strands Agents runs in Python, ported to Swift so it works with the model in your pocket.
+    """
+
+    /// Splits text into token-sized pieces (2–5 characters, markers like `**` and backticks often alone), the way a BPE stream arrives.
+    static func tokenize(_ s: String) -> [String] {
+        var out: [String] = []; var buf = ""
+        var rng = SystemRandomNumberGenerator()
+        for ch in s {
+            buf.append(ch)
+            let cut = buf.count >= 5 || (buf.count >= 2 && Int.random(in: 0..<3, using: &rng) == 0) || ch == "\n" || (buf.count >= 2 && buf.hasSuffix("**"))
+            if cut { out.append(buf); buf = "" }
+        }
+        if !buf.isEmpty { out.append(buf) }
+        return out
+    }
+
+    @MainActor static func replayJump(_ engine: Engine) async {
+        func sleep(_ s: Double) async { try? await Task.sleep(for: .seconds(s)) }
+        engine.transcript.clear()
+        await sleep(1.0)
+        engine.transcript.user("Explain what an agent loop is and how loopl runs it on my phone.")
+        await sleep(0.6)
+        _ = engine.transcript.apply(.startEventLoop(cycle: 1))
+        for piece in tokenize(jumpAnswer) {
+            _ = engine.transcript.apply(.text(piece))
+            await sleep(1.0 / 40)
+        }
+        var m = Metrics(); m.ttftMs = 298; m.tokensPerSecond = 43; m.promptTokens = 212; m.generatedTokens = 420; m.contextUsed = 632; m.contextMax = 8192
+        _ = engine.transcript.apply(.metrics(m))
+        _ = engine.transcript.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant(jumpAnswer), metrics: EventLoopMetrics())))
     }
 }
 
