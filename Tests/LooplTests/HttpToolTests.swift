@@ -147,8 +147,14 @@ final class HttpToolTests: XCTestCase {
     func testHeadAndNon2xx() async throws {
         let head = try await HttpTool().call(["url": .string("\(base)/x"), "method": "HEAD"])
         XCTAssertTrue(head.hasPrefix("HTTP 200"), head); XCTAssertTrue(head.contains("(0 bytes)"), head)
-        let missing = try await HttpTool().call(["url": .string("\(base)/missing")])
-        XCTAssertEqual(missing, "HTTP 404 text/plain\nnope", "non-2xx is a result, not an error — the model decides")
+        // A 4xx/5xx is an ERROR result: the status named first, the fix spelled out, the body kept (toolcall-audit:
+        // Qwen3.5-0.8B re-issued a 405'd POST 7 times when it arrived as a success result).
+        do {
+            _ = try await HttpTool().call(["url": .string("\(base)/missing")])
+            XCTFail("expected ToolError for 404")
+        } catch let e as ToolError {
+            XCTAssertEqual(e.errorDescription, "HTTP 404 not found for GET \(base)/missing. The path does not exist on this server — check the URL. Response body: nope")
+        }
     }
 
     func testSizeCapTruncates() async throws {
