@@ -163,8 +163,13 @@ public actor MLXModel: Model {
                         case .toolCall(let call):
                             let args = call.function.arguments.mapValues { Loopl.JSONValue(any: $0.sendableAny) }
                             native.append(ToolUse(toolUseId: call.id ?? ToolUse.makeId(), name: call.function.name, input: args))
-                        case .rejectedToolCall:
-                            break   // the gate still sees the raw text and parses it itself
+                        case .rejectedToolCall(let rejection):
+                            // MLXLMCommon's ToolCallProcessor SWALLOWS the raw text of a call it could not
+                            // parse (it never reached `.chunk`), so the turn would end silently empty —
+                            // measured on Qwen3.5-0.8B, which writes `<function=http>\n<url>\n…\n</parameter>`
+                            // (sloppy XML that loopl's parser reads, ToolCallParser/HttpCallShapesTests).
+                            // Hand the preview (32 KB bound, whole call in practice) to the gate instead.
+                            for ev in gate.feed(rejection.rawTextPreview) { continuation.yield(ev) }
                         case .info(let info):
                             stats.promptTokens = info.promptTokenCount
                             stats.generatedTokens = info.generationTokenCount
