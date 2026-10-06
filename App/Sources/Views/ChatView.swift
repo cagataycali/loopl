@@ -39,6 +39,7 @@ struct ChatView: View {
                 .contentShape(Rectangle())
                 .onTapGesture { focused = false }
                 .onReceive(NotificationCenter.default.publisher(for: Onboarding.finished)) { _ in focused = true }   // first run just ended: the composer is the next thing
+                .onAppear { if DesignFixture.focusComposer { focused = true } }   // screenshot switch: keyboard up
                 // One place per error: a load failure is the readiness banner's (with Try again); this line is for
                 // errors while a model IS loaded (a failed turn, a refused send). Dismissable; cleared on the next send.
                 if let err = engine.lastError, !engine.readiness.isFailed {
@@ -268,7 +269,8 @@ struct ReadinessRow: View {
     }
 }
 
-/// Bottom-pinned composer: rounded field that grows to 5 lines, ↑ send / ■ stop.
+/// Bottom-pinned composer: a bare field (no fill — it sits on the bar's material, one surface with the keyboard)
+/// that grows to 5 lines, ↑ send / ■ stop.
 /// Swipe down on it (or drag the transcript) to dismiss the keyboard.
 struct Composer: View {
     @Binding var draft: String
@@ -492,12 +494,14 @@ struct Composer: View {
         HStack(alignment: .bottom, spacing: 10) {
             if canAttach { attachButton }
             micButton
+            // No fill behind the field: a second rounded shape here fought the keyboard's own corner radius right
+            // above it (owner, 2026-10-06). The field sits straight on the bar's material, so composer + keyboard read
+            // as one surface; the vertical padding keeps the caret centred on the round buttons' first line.
             TextField(placeholder, text: $draft, axis: .vertical)
                 .lineLimit(1...5)
                 .textFieldStyle(.plain)
                 .font(.body)
-                .padding(.horizontal, 14).padding(.vertical, 10)
-                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                .padding(.horizontal, 6).padding(.vertical, 10)
                 .focused(focused)
                 .submitLabel(.send)
                 .onSubmit { if sendable { send() } }
