@@ -429,7 +429,7 @@ html.l-js .l-reveal.is-on { opacity: 1; transform: none; }
 @media (min-width: 68em) { .l-hero--v2 { grid-template-columns: minmax(0, 1.12fr) minmax(0, .88fr); } .l-hero--v2 .l-phone--hero { width: min(100%, 330px, calc((100vh - 11rem) * .4613)); min-width: 240px; } }  /* fits the fold: 393/852 = .4613 */
 @media (prefers-reduced-motion: no-preference) {
   .l-js .l-hero--v2 .l-phone--hero { animation: l-rise-x .9s var(--l-ease) both; }
-  .l-js .l-hero--v2 .l-hero__text > * { animation: l-rise .8s var(--l-ease) both; }
+  .l-js .l-hero--v2 .l-hero__text > * { animation: l-rise-x .8s var(--l-ease) both; }  /* transform only: text must be an LCP candidate at first paint */
   .l-js .l-hero--v2 .l-hero__text > :nth-child(2) { animation-delay: .06s; } .l-js .l-hero--v2 .l-hero__text > :nth-child(3) { animation-delay: .12s; }
   .l-js .l-hero--v2 .l-hero__text > :nth-child(4) { animation-delay: .18s; } .l-js .l-hero--v2 .l-hero__text > :nth-child(5) { animation-delay: .24s; } .l-js .l-hero--v2 .l-hero__text > :nth-child(6) { animation-delay: .3s; }
 }
