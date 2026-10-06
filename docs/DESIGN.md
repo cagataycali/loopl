@@ -1,53 +1,45 @@
 ---
-title: Design tokens
-description: The loopl visual system in one page — paper/ink light, charcoal dark, one flame accent, Inter Tight + system type, an 8-pt scale.
+title: "Design"
+description: "The loopl.dev visual system on one page: one typeface, ink on paper, one flame accent, hairlines, spring motion."
 hide:
   - navigation
 ---
 
-# Design tokens
+# Design
 
-One system for loopl.dev and the app. Warm **paper & ink** in light, **deep charcoal** in dark, a single **flame** accent. No gradients, no glass, no second accent.
+Absolute minimalism. One typeface, ink on paper, one accent, hairlines instead of boxes. Stylesheet: `docs/stylesheets/loopl.v8.css` (bump the suffix on every change — Cloudflare caches assets 4 h). Swift mirror: `LooplDesign` in `LooplUI`.
 
 ## Colour
 
 | Token | Light | Dark | Use |
 |---|---|---|---|
-| `--l-bg` | `#F7F3EC` | `#15161A` | page |
-| `--l-surface` | `#FFFDF9` | `#1D1F24` | cards, code |
-| `--l-ink` | `#1A1714` | `#ECE8E1` | text |
-| `--l-ink-2` | `#6B645C` | `#9A948B` | secondary text |
-| `--l-line` | `#E6DFD4` | `#2B2E35` | borders, rules |
-| `--l-flame` | `#B8420A` | `#FF7A2E` | the one accent as **text**: links, kicker, focus (≥ 4.5:1 on both papers) |
-| `--l-flame-fill` | `#FF6A1A` | `#FF7A2E` | the same accent as a **fill**: primary button, caret |
-| `--l-flame-ink` | `#1A1714` | `#15161A` | text on a flame fill (6.2:1) |
+| `--l-bg` | `#FBFBFA` | `#0A0A0B` | page |
+| `--l-raise` | `#FFFFFF` | `#121214` | code, stage, hover |
+| `--l-ink` | `#0B0B0C` | `#EDEDEF` | text, primary button |
+| `--l-ink-2` | `#5D5D63` | `#929298` | secondary text |
+| `--l-ink-3` | `#9A9A9F` | `#5E5E64` | labels, hints |
+| `--l-line` | `#E8E8E5` | `#1F1F23` | every rule and border, 1 px |
+| `--l-flame` | `#C2410C` | `#FF7A3D` | the accent as text (≥ 4.5:1) |
+| `--l-fill` | `#FF5A1F` | `#FF6A2B` | the accent as a dot, caret, spark |
 
-Accent on ≤ 5 % of any screen. Every text/background pair in this table meets WCAG AA (4.5:1). Links are ink with a flame underline; buttons are flame **or** outlined ink — never both on one row.
+The accent appears a handful of times per screen: the headline's full stop, the eyebrow dot, a tool's check, the loop's spark. Primary buttons are ink, not flame.
 
 ## Type
 
-| Role | Face | Size / line | Weight |
-|---|---|---|---|
-| Display | **Inter Tight** (self-hosted, 45 KB variable) | 56/60 · 40/44 · 28/32 | 700, tracking −0.02em |
-| Body | system (`-apple-system, Inter, system-ui`) | 17/26 · 15/22 | 400 / 600 |
-| Code | `ui-monospace, SF Mono, Menlo` | 13.5/20 | 400 |
+**Inter Tight** for everything (variable 100–900, self-hosted, 45 KB, no Google Fonts); `ui-monospace` for code.
 
-Headings sentence-case. One `h1` per page. Max line length 68 ch.
+| Role | Size | Weight · tracking |
+|---|---|---|
+| Hero | clamp(2.5rem → 5.4rem) | 600 · −0.045em · line-height .98 |
+| Section | clamp(1.6rem → 2.6rem) | 600 · −0.045em |
+| Page h1 | 1.9rem | 600 · −0.035em |
+| Body | 16 px / 1.7 | 400, measure 64ch |
+| Label | 11–12 px | 500, `--l-ink-3` |
 
-## Space — 8-pt scale
+## Space & shape
 
-`--s1 8` · `--s2 16` · `--s3 24` · `--s4 32` · `--s6 48` · `--s8 64` · `--s12 96` px. Section gap `--s12` desktop, `--s8` mobile. Card padding `--s3`. Radius `--r 12` (cards) · `--r-s 8` (buttons, code) · `--r-pill 999`.
-
-## Components
-
-- **Button** 44 px tall, `--r-s`, flame fill or 1 px ink outline; focus ring 2 px flame offset 2 px.
-- **Code card** `--l-surface`, 1 px `--l-line`, no window chrome, copy button on hover.
-- **Callout** 3 px left rule in flame (note) or ink (strands); no fills.
-- **Table** hairlines only, header `--l-ink-2` small caps.
-- **Tool row** (transcript) `name · ms · ✓` on one line, mono, expands to args/result.
+Sections breathe: clamp(4rem → 8rem) between them. Radius 10 px for code, 18 px for the stage, pills for buttons. No shadows, no gradients, no glass — except the header's translucent blur.
 
 ## Motion
 
-Only opacity/transform, 160–240 ms, `cubic-bezier(.2,.7,.2,1)`. Everything respects `prefers-reduced-motion: reduce` (animations off, final state shown).
-
-Stylesheet: `docs/stylesheets/loopl.v7.css` · Swift mirror: `LooplDesign` tokens in `LooplUI`.
+One curve, `cubic-bezier(.22, 1, .36, 1)` (spring-like out). Reveal on scroll 0.9 s, rise 14 px. The landing replays a real-shaped turn: the question, two concurrent tool calls resolving, the answer streaming in word chunks. The loop ring's spark runs 3.6 s per lap. Instant navigation fades the page in. `prefers-reduced-motion: reduce` shows every final state and stops the spark.

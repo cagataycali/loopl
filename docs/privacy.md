@@ -1,36 +1,32 @@
 ---
-title: Privacy
-description: loopl collects no data. No account, no analytics, no servers. The only network call is an anonymous model download from Hugging Face that you start.
+title: "Privacy"
+description: "loopl collects no data. No account, no analytics, no servers. The only network call is a model download you start."
+hide:
+  - navigation
 ---
 
 # Privacy
 
-*Effective 2026-10-05 · the loopl iOS app and SDK.*
+*Effective 2026-10-05 · the loopl app and SDK.*
 
-**loopl collects no data.** No accounts, no analytics, no crash reporting, no advertising identifiers, no servers of ours. Your prompts never leave the phone, so we cannot see them.
+**loopl collects no data.** No accounts, analytics, crash reporting, advertising identifiers or servers of ours. Your prompts never leave the phone, so we can't see them.
 
 ## Network
 
 | Connection | When | What is sent |
 |---|---|---|
-| `https://huggingface.co` | first launch (default model) and when **you** pick a model | an anonymous request for a public repository's files — no token, no account |
-| the URL the model asks for | only if you enable the `http` tool and are online | the request itself; the URL is shown in the tool row, and writes wait for your approval |
+| `huggingface.co` | when **you** pick a model | an anonymous request for a public repo's files |
+| a URL the agent asks for | only with the `http` tool on, online, and after you approve writes | that request, shown in the tool row |
 | anything else | never | — |
 
-Inference, chat, tools and the catalog run entirely on the device. **Offline mode** in Settings refuses every network call.
+Inference, chat and tools run on the device. **Offline mode** refuses every network call.
 
 ## On the device
 
-- **Conversations** — Application Support; deleted when you delete them or the app.
-- **Model weights** — Application Support, excluded from iCloud backup.
-- **Notes** from the `remember` tool — Application Support, never synced.
+Conversations, model weights (excluded from iCloud backup) and `remember` notes live in Application Support and go when you delete them or the app.
 
-## Apple Foundation Models
-
-On iOS 26 the app can use Apple's on-device model under Apple's own privacy model and guardrails; loopl receives only the generated text.
+Apple's on-device model, on iOS 26, runs under Apple's own privacy terms; loopl receives only the text.
 
 ## App Store label
 
-**Data Not Collected.** loopl does not knowingly collect information from anyone, including children — it collects none.
-
-Changes to this page are committed to the public repository with a dated [changelog](changelog.md) entry. Contact: [open an issue](https://github.com/cagataycali/loopl/issues).
+**Data Not Collected.** Changes to this page are dated in the [changelog](changelog.md). Contact: [open an issue](https://github.com/cagataycali/loopl/issues).

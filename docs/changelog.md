@@ -1,5 +1,7 @@
 ---
 description: Versioned changelog for the loopl SDK, the iOS app and loopl.dev.
+hide:
+  - navigation
 ---
 
 # Changelog
@@ -9,12 +11,13 @@ Versions follow [SemVer](https://semver.org); dates are UTC. Pre-1.0, minor vers
 breaking change is called out under **Changed** with the old → new symbol.
 
 !!! info "Pre-release"
-    loopl is in its first week. The SDK surface is settling around the Strands event loop; until `0.2.0`
+    loopl is in its first week. The SDK surface is settling; until `0.2.0`
     ships, treat the pages under *SDK* as the direction, and the changelog as the contract.
 
 ## Unreleased — human in the loop & `http`
 
-- **Removed**: every repeat heuristic. `RepeatBreaker` (identical call in consecutive cycles refused, two refusals ended the turn) and `ToolCallRepeatGuard` (an already-answered call vetoed in the stream gate; the Apple FM runtime re-asked once when that left the turn empty) are gone, with `ToolCallStreamGate(suppress:)`. The loop now matches Strands exactly: a call the model issues is a call that runs, and the model decides what to do next from complete, honest tool results — including errors, which name the missing or wrong argument. Owner decision 2026-10-06.
+- **Site**: loopl.dev redesigned for absolute minimalism — one typeface, ink on paper, one accent, hairlines; a landing that replays an agent turn; every page rewritten at about half the length. Front-matter descriptions are quoted (an unquoted `: ` had leaked page metadata into the body). [Design](DESIGN.md).
+- **Removed**: every repeat heuristic. `RepeatBreaker` (identical call in consecutive cycles refused, two refusals ended the turn) and `ToolCallRepeatGuard` (an already-answered call vetoed in the stream gate; the Apple FM runtime re-asked once when that left the turn empty) are gone, with `ToolCallStreamGate(suppress:)`. The loop has no heuristics: a call the model issues is a call that runs, and the model decides what to do next from complete, honest tool results — including errors, which name the missing or wrong argument. Owner decision 2026-10-06.
 - **Fixed**: a failed tool call was invisible to the model. No chat template renders `ToolResult.status` (Qwen3 / Qwen3.5 / Gemma / Llama print `content` only; the `<tool_response>` fold and the Apple FM transcript did the same), so a small model saw `missing required parameter 'url'…` as just another result and re-issued the identical call. Every prompt path now renders errors through `ToolResult.promptContent` — text starts with `ERROR: `, the fold adds `status="error"` — and validation errors end with `Fix the arguments and call the tool again, or answer the user without it.` (`ToolResult.retryHint`). Apple FM stays in call mode after an errored cycle instead of being told "tools have already been run for you, answer in plain text" (which forbade a corrected retry). Measured on Qwen3.5-0.8B-4bit via the real `Agent` + `MLXModel` — see PR for the before/after table.
 - **App**: hold a message. A user row → **Edit · Copy · Delete from here**; Edit turns the row into an inline editor (Cancel / **Save & regenerate**: the turn is replaced, everything after it removed, the agent asked again with tools and approvals as usual). An answer → **Copy · Retry**. Disabled with a hint while the agent is running; Reduce Motion crossfades. History keeps the rewritten thread with an *edited* mark (`SavedConversation.editedAt`).
 - **SDK**: `Transcript.truncated(before:)` / `truncated(through:)`, `userTurn(before:)`, `messages` (Strands-shaped history rebuilt from the visible items — tool rows pair `toolUse`/`toolResult` 1:1, notes/approvals/reasoning stay UI-only). [Transcript for UIs](sdk/hooks.md#editing-a-message-after-the-fact).
@@ -37,16 +40,16 @@ Phase 2, driven by the first hands-on review of the app on an iPhone 16 Pro. Eve
 the TestFlight build that carries it is being cut.
 
 ### Changed
-- **Event loop** — `Sources/Loopl` is now a faithful Swift port of Strands' `event_loop_cycle`: stream → `StreamAssembler`
+- **Event loop** — `Sources/Loopl` is the agent loop: stream → `StreamAssembler`
   → tools via a `ToolExecutor` (**concurrent** by default) → tool-result message → recurse. **No iteration cap, no loop
   detector.** The context window (`SlidingWindowConversationManager`, the only limiter) and cancellation bound the loop.
   44 tests on a scripted model: 25-deep tool chain, parallel tools, `maxTokens` recovery, retry/backoff, window trimming, hook order.
 - **Vocabulary** — `Message {role, content: [ContentBlock]}`, `ToolUse`/`ToolResult`, `StreamEvent`, `StopReason`,
-  `AgentEvent` (Strands' event names), `EventLoopMetrics`/`Usage`. `Model.stream(_:toolSpecs:systemPrompt:)` returns
+  `AgentEvent`, `EventLoopMetrics`/`Usage`. `Model.stream(_:toolSpecs:systemPrompt:)` returns
   `StreamEvent`s; tool-call markup is resolved inside each runtime by `ToolCallStreamGate`.
 - **Max-tokens recovery** — the truncated assistant message is repaired and appended, then `MaxTokensReachedError` is
-  thrown; `agent()` continues from the history (Strands `_recover_message_on_max_tokens_reached` + `MaxTokensReachedException`).
-- **Retries** — `ModelRetryStrategy` with Strands' defaults (6 attempts, 4 s → 240 s) on `ModelThrottledError`; `AgentEvent.throttle`.
+  thrown; `agent()` continues from the history.
+- **Retries** — `ModelRetryStrategy` (6 attempts, 4 s → 240 s) on `ModelThrottledError`; `AgentEvent.throttle`.
 - **Defaults** — `GenerationParams.maxTokens = nil` (until stop), context from the catalog's 8 GB budget, temperature per model card.
 - **App** — chat is a document (no bubbles, no metrics strip; *Show performance details* adds a quiet footer), composer with
   interactive keyboard dismiss, first-launch download of `mlx-community/Qwen3-0.6B-4bit` with inline progress and auto-reload of
