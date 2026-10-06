@@ -14,7 +14,7 @@ Nothing leaves the device until you tap **Push**.
 1. **History → Select** (or hold a conversation → *Share to Hugging Face*). Pick any number; *Select all* is one tap.
 2. **Review.** Each conversation shows its turns, tool calls and pictures, or the reason it would be skipped (a thread with no finished answer is not learnable). Fold open **Preview** to see the exact first JSON line.
 3. **Before it leaves this device** — three switches, all off by default:
-   - *Remove pictures* — images are dropped and the row says so;
+   - *Remove pictures* — images are dropped and the row says so (off: every picture you attached travels with its conversation);
    - *Remove tool results* — tool calls stay, their outputs are replaced by a marker;
    - *Replace URLs with example.com* — every link in your turns, answers and tool arguments.
 4. **Token.** The first time, paste a Hugging Face token with **write** access. It is verified against `whoami` before it is stored, lives in the Keychain, and is sent only to `huggingface.co`. Already signed in under Settings › Hugging Face? This step is skipped.
@@ -40,4 +40,4 @@ Rows that would not validate are never written — the review screen is the vali
 - Redaction runs on the device before anything is encoded; the preview shows the redacted bytes.
 - Removing the token (Settings › Hugging Face, or *Sign out* on the dataset step) deletes it from the Keychain.
 
-The SDK side is `ConversationExport` + `HFHubClient` — see [Hugging Face Hub](../sdk/models.md) in the SDK docs.
+The SDK side is `ConversationExport` + `HFHubClient` — see [Private repos](../sdk/models.md#private-repos) in the SDK docs. Then [train on it](train.md).
