@@ -84,6 +84,10 @@ enum DesignFixture {
         case "tool":
             t.user("What time is it in Istanbul, and what is 23 × 47?")
             t.apply(.startEventLoop(cycle: 1))
+            // `--design-reasoning`: a thinking block before the answer (Qwen3 `<think>`, FM held prose) → the folded ReasoningRow.
+            if CommandLine.arguments.contains("--design-reasoning") {
+                t.apply(.reasoning("The user asks two things. The time needs the current_time tool with Europe/Istanbul; the product is arithmetic, so calculator with 23*47. I can issue both calls at once and then answer in one sentence."))
+            }
             t.apply(.text("Let me check both."))
             let c1 = ToolUse(toolUseId: "tooluse_1", name: "current_time", input: ["timezone": .string("Europe/Istanbul")])
             let c2 = ToolUse(toolUseId: "tooluse_2", name: "calculator", input: ["expression": .string("23*47")])

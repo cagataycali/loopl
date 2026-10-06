@@ -57,6 +57,7 @@ public enum Readiness: Hashable, Sendable {
         }
     }
     public var isBusy: Bool { if case .downloading = self { return true }; if case .loading = self { return true }; return false }
+    public var isFailed: Bool { if case .failed = self { return true }; return false }
 }
 
 /// The main-actor face of the SDK: owns the active `Model`, the `Agent`, the
@@ -188,8 +189,10 @@ public final class Engine {
             let reason = store.storage.location(of: spec.id).isExternal && store.storage.directory(for: spec) == nil
                 ? "\(store.locationName(spec)) was disconnected while loading \(spec.name)."
                 : error.localizedDescription
-            readiness = previous.map { .ready($0) } ?? .failed(spec, reason)
-            lastError = reason
+            // Said once: with no model to fall back to, the readiness banner carries the message (and Try again);
+            // when the previous model stays loaded, the banner shows nothing and the inline line says what failed.
+            if let previous { readiness = .ready(previous); lastError = "\(spec.name) failed to load: \(reason)" }
+            else { readiness = .failed(spec, reason); lastError = nil }
             haptics.emit(.error)
         }
     }
