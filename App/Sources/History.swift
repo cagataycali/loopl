@@ -193,6 +193,7 @@ final class ConversationArchive {
 /// The sidebar (iPad) / sheet (iPhone) list of saved conversations. Swipe left deletes one; Select → the bottom
 /// bar offers **Delete N** (after a confirmation) and **Share to Hugging Face** for many.
 struct HistoryList: View {
+    @Environment(\.dynamicTypeSize) private var typeSize
     @Bindable var engine: Engine
     @Binding var selection: RootView.Pane
     var dismiss: (() -> Void)? = nil
@@ -291,12 +292,17 @@ struct HistoryList: View {
         .safeAreaInset(edge: .bottom) {
             if selecting {
                 // Two actions, destructive on the left, the constructive one on the right — the one place both live.
-                HStack(spacing: 12) {
+                // At accessibility sizes they stack (an SE at AX-XL cut both to "Del…" / "Sha…" side by side) and the
+                // constructive one goes first, nearest the thumb's resting line.
+                let stacked = typeSize.isAccessibilitySize
+                let layout = stacked ? AnyLayout(VStackLayout(spacing: 10)) : AnyLayout(HStackLayout(spacing: 12))
+                layout {
                     Button(role: .destructive) {
                         LooplDesign.haptic()
                         confirmingDelete = true
                     } label: {
                         Label(deleteLabel, systemImage: "trash").font(.body.weight(.semibold))
+                            .frame(maxWidth: stacked ? .infinity : nil)
                     }
                     .buttonStyle(.bordered).tint(.red)
                     .disabled(selected.isEmpty)
@@ -304,19 +310,20 @@ struct HistoryList: View {
                     .keyboardShortcut(.delete, modifiers: [])
                     .accessibilityIdentifier("history.delete")
                     .accessibilityHint("deletes the selected conversations from this \(deviceName), after asking")
-                    Spacer(minLength: 0)
+                    if !stacked { Spacer(minLength: 0) }
                     Button {
                         LooplDesign.haptic(1)
                         sharing = ShareBatch(conversations: engine.archive.conversations.filter { selected.contains($0.id) })
                     } label: {
                         Label("Share to Hugging Face", systemImage: "square.and.arrow.up").font(.body.weight(.semibold))
+                            .frame(maxWidth: stacked ? .infinity : nil)
                     }
                     .buttonStyle(.borderedProminent).tint(LooplDesign.accent)
                     .disabled(selected.isEmpty)
                     .accessibilityIdentifier("history.share")
                     .accessibilityHint("exports the selected conversations to a private dataset in your Hugging Face account")
                 }
-                .lineLimit(1).minimumScaleFactor(0.8)
+                .lineLimit(stacked ? 2 : 1).minimumScaleFactor(0.8)
                 .padding(.horizontal, LooplDesign.gutter).padding(.vertical, 10)
                 .background(.bar)
                 .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))

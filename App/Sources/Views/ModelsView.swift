@@ -181,8 +181,7 @@ struct ModelsView: View {
                         }
                     } icon: { Image(systemName: "square.stack.3d.up").foregroundStyle(LooplDesign.accent) }
                     Spacer()
-                    Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
-                        .rotationEffect(.degrees(showMore ? 90 : 0))
+                    DisclosureChevron(expanded: showMore, font: .footnote.weight(.semibold))
                 }
                 .contentShape(Rectangle())
             }

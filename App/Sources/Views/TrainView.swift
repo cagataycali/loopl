@@ -7,6 +7,7 @@ import LooplUI
 /// (2× the estimate, ≥ 15 min) and lives in the estimate sentence. See an honest cost estimate, confirm on the same ApprovalCard the agent uses for HITL, then watch the job's
 /// `[loopl] stage=` ladder. The resulting private model lands under Models › Mine (HF-ACCOUNT lane) → download → default.
 struct TrainView: View {
+    @Environment(\.dynamicTypeSize) private var typeSize
     @Bindable var engine: Engine
     @Bindable var store: ModelStore
     @Bindable var settings: AppSettings
@@ -107,10 +108,20 @@ struct TrainView: View {
                         if let e = datasetsError { Text(e).font(.footnote).foregroundStyle(.orange) }
                     }
                 } else {
-                    Picker("Conversations", selection: $dataset) {
-                        ForEach(datasets) { d in Text(d.name).tag(Optional(d)) }
+                    if typeSize.isAccessibilitySize {
+                        // Inline rows instead of a menu: the menu's label squeezed a repo name to "loopl-a…ations" at AX-XL
+                        // however wide it was. A user has a handful of datasets; each gets a full-width, wrapping row.
+                        Picker("Conversations", selection: $dataset) {
+                            ForEach(datasets) { d in Text(d.name).tag(Optional(d)) }
+                        }
+                        .pickerStyle(.inline)
+                        .accessibilityIdentifier("train-dataset")
+                    } else {
+                        Picker("Conversations", selection: $dataset) {
+                            ForEach(datasets) { d in Text(d.name).tag(Optional(d)) }
+                        }
+                        .accessibilityIdentifier("train-dataset")
                     }
-                    .accessibilityIdentifier("train-dataset")
                     if dataset != nil {
                         LabeledContent("Rows", value: inspecting ? "reading…" : conversations > 0 ? "≈ \(conversations) conversations · \(ByteSize.label(shardBytes))" : "no .jsonl shards found")
                             .accessibilityIdentifier("train-rows")
