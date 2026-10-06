@@ -457,6 +457,23 @@ public struct UserBubble: View {
     public var body: some View { UserTurn(text) }
 }
 
+// MARK: - Disclosure chevron
+
+/// The one disclosure glyph for every expandable row (tool row, thinking row, approval body, model rows).
+/// `chevron.forward` mirrors in right-to-left layouts (`chevron.right` kept pointing away from the content), and the
+/// open state rotates TOWARDS the content on either side — +90° in LTR, −90° in RTL — so it always ends pointing down.
+public struct DisclosureChevron: View {
+    public var expanded: Bool
+    public var font: Font
+    @Environment(\.layoutDirection) private var layoutDirection
+    public init(expanded: Bool = false, font: Font = .caption2.weight(.semibold)) { self.expanded = expanded; self.font = font }
+    public var body: some View {
+        Image(systemName: "chevron.forward").font(font).foregroundStyle(.tertiary)
+            .rotationEffect(.degrees(expanded ? (layoutDirection == .rightToLeft ? -90 : 90) : 0))
+            .accessibilityHidden(true)
+    }
+}
+
 // MARK: - Tool rows
 
 /// A quiet inline row — mark · tool name · (sweep) → ✓/✗ · duration — that expands on tap
@@ -467,6 +484,9 @@ public struct ToolRow: View {
     @State private var expanded: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var typeSize
+    /// The ✓/✗ glyph is `.footnote`, so its box scales with it: fixed at 16 pt it overflowed into the tool name at
+    /// AX-XL (the glyph is ~26 pt there) and the two touched (UX audit).
+    @ScaledMetric(relativeTo: .footnote) private var badge: CGFloat = 16
     public init(call: ToolUse, result: ToolResult?, expanded: Bool = false) { self.call = call; self.result = result; _expanded = State(initialValue: expanded) }
 
     public var body: some View {
@@ -475,7 +495,7 @@ public struct ToolRow: View {
                 withAnimation(reduceMotion ? nil : LooplDesign.spring) { expanded.toggle() }
             } label: {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    status.frame(width: 16, height: 16)
+                    status.frame(width: badge, height: badge)
                     // A tool name is an identifier: it never hyphenates ("calcula-tor"). At accessibility sizes the
                     // duration moves under the name instead of fighting it for the line.
                     let nameLayout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 2)) : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 8))
@@ -489,8 +509,7 @@ public struct ToolRow: View {
                         }
                     }
                     Spacer(minLength: 8)
-                    Image(systemName: "chevron.right").font(.caption2.weight(.semibold)).foregroundStyle(.tertiary)
-                        .rotationEffect(.degrees(expanded ? 90 : 0))
+                    DisclosureChevron(expanded: expanded)
                 }
                 .contentShape(Rectangle())
             }
@@ -501,7 +520,7 @@ public struct ToolRow: View {
             if result == nil, !expanded {
                 // Running: a thin sweep under the row, never a spinner. It leaves the instant the result lands —
                 // a fade-out here used to overlap the ✓ for a frame or two (a "done" row with a sweep under it).
-                IndeterminateBar().padding(.leading, 24).padding(.trailing, 20)
+                IndeterminateBar().padding(.leading, badge + 8).padding(.trailing, 20)
                     .transition(.asymmetric(insertion: .opacity, removal: .identity))
             }
             if expanded { ToolCallCard(call: call, result: result).transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top))) }
@@ -520,7 +539,7 @@ public struct ToolRow: View {
                 .transition(.scale.combined(with: .opacity))
         } else {
             // Running: the mark breathing (no rotating glyph, no spinner).
-            PulsingMark().frame(width: 14, height: 14).transition(.opacity)
+            PulsingMark().frame(width: badge - 2, height: badge - 2).transition(.opacity)
         }
     }
     private var a11y: String {
@@ -545,7 +564,7 @@ public struct ReasoningRow: View {
                     Text(streaming ? "Thinking…" : "Thought for a moment").font(.callout).foregroundStyle(.secondary)
                         .contentTransition(.interpolate)
                     Spacer(minLength: 0)
-                    Image(systemName: "chevron.right").font(.caption2.weight(.semibold)).foregroundStyle(.tertiary).rotationEffect(.degrees(expanded ? 90 : 0))
+                    DisclosureChevron(expanded: expanded)
                 }.contentShape(Rectangle())
             }
             .buttonStyle(.plain)

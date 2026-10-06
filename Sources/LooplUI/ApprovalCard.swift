@@ -106,8 +106,7 @@ public struct ApprovalCard: View {
                 HStack(spacing: 6) {
                     Text("body").font(.caption2.weight(.semibold)).foregroundStyle(.secondary).textCase(.uppercase).kerning(0.5)
                     Text("\(preview.utf8.count) B").font(.caption2.monospacedDigit()).foregroundStyle(.tertiary)
-                    Image(systemName: "chevron.right").font(.caption2.weight(.semibold)).foregroundStyle(.tertiary)
-                        .rotationEffect(.degrees(showBody ? 90 : 0))
+                    DisclosureChevron(expanded: showBody)
                 }
                 .contentShape(Rectangle())
             }

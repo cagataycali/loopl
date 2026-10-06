@@ -96,6 +96,10 @@ struct ChatView: View {
                 // The active model's name changes in place (interpolated, spring) instead of cutting.
                 ToolbarItem(placement: .principal) {
                     Text(engine.loadedModel?.name ?? "loopl").font(.headline)
+                        .lineLimit(1).minimumScaleFactor(0.8)
+                        // An inline bar title does not grow past the large sizes (UIKit's own never scales at all):
+                        // at AX-XL it was shoved against the History button and clipped under the trailing group.
+                        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                         .contentTransition(reduceMotion ? .opacity : .interpolate)
                         .animation(LooplDesign.Motion.faded(LooplDesign.Motion.snappy, reduceMotion), value: engine.loadedModel?.id)
                         .accessibilityAddTraits(.isHeader)
