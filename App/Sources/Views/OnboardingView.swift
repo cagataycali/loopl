@@ -418,7 +418,7 @@ struct OnboardingView: View {
                         .font(.footnote).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
-                if ready { Image(systemName: "chevron.right").font(.subheadline.weight(.semibold)).foregroundStyle(.tertiary).padding(.top, 3) }
+                if ready { Image(systemName: "chevron.forward").font(.subheadline.weight(.semibold)).foregroundStyle(.tertiary).padding(.top, 3) }
             }
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
