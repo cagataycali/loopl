@@ -27,6 +27,7 @@ struct SettingsView: View {
                     } label: {
                         LabeledContent("Tools", value: settings.enabledTools.isEmpty ? "off" : "\(settings.enabledTools.count) of \(engine.allTools.count)")
                     }
+                    .accessibilityIdentifier("settings-tools")
                 } header: { Text("Agent") } footer: {
                     Text("The loop runs until the model stops calling tools or you tap stop. Context and output length follow the model's recommended maximum.")
                 }
