@@ -36,13 +36,20 @@ struct ChatView: View {
                     onRetry: { item in engine.retry(item.id) }))
                 .contentShape(Rectangle())
                 .onTapGesture { focused = false }
-                if let err = engine.lastError {
-                    Label(err, systemImage: LooplDesign.iconWarning).font(.footnote).foregroundStyle(.red)
-                        .padding(.horizontal, LooplDesign.gutter).padding(.bottom, 6)
-                        .transition(.opacity)
+                // One place per error: a load failure is the readiness banner's (with Try again); this line is for
+                // errors while a model IS loaded (a failed turn, a refused send). Dismissable; cleared on the next send.
+                if let err = engine.lastError, !engine.readiness.isFailed {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Label(err, systemImage: LooplDesign.iconWarning).font(.footnote).foregroundStyle(.red)
+                        Spacer(minLength: 0)
+                        Button { engine.lastError = nil } label: { Image(systemName: "xmark.circle.fill").font(.footnote).foregroundStyle(.secondary) }
+                            .buttonStyle(.plain).accessibilityLabel("Dismiss error")
+                    }
+                    .padding(.horizontal, LooplDesign.gutter).padding(.bottom, 6)
+                    .transition(.opacity)
                 }
                 Composer(draft: $draft, attachments: $attachments, clips: $clips, focused: $focused,
-                         placeholder: engine.loadedModel == nil ? "Model is getting ready…" : (engine.canSeeImages ? "Message or photo" : "Message"),
+                         placeholder: placeholder,
                          generating: engine.isGenerating, canSend: engine.loadedModel != nil, canAttach: engine.canSeeImages,
                          attachmentsDir: { AudioAttachment.directory(for: engine.currentId) },
                          send: send, stop: engine.stop)
@@ -101,6 +108,16 @@ struct ChatView: View {
         }
     }
 
+    /// What the field says before you type — honest about the state: a failed load is not "getting ready".
+    private var placeholder: String {
+        switch engine.readiness {
+        case .ready: engine.canSeeImages ? "Message or photo" : "Message"
+        case .downloading, .loading: "Model is getting ready…"
+        case .failed: "Pick a model to start"
+        case .idle: "No model loaded"
+        }
+    }
+
     private var emptyHint: String {
         switch engine.readiness {
         case .ready(let s): "**\(s.name)** is ready. Everything runs on this device."
@@ -114,7 +131,8 @@ struct ChatView: View {
     @ViewBuilder private var readinessBanner: some View {
         switch engine.readiness {
         case .downloading(let spec, let done, let total):
-            ReadinessRow(title: "Downloading \(spec.name)", detail: "\(ByteCountFormatter.string(fromByteCount: done, countStyle: .file)) of \(ByteCountFormatter.string(fromByteCount: total, countStyle: .file)) · once, then offline",
+            // "Zero KB of 335.5 MB" is what the formatter says at byte 0 — "Starting" is what is happening.
+            ReadinessRow(title: "Downloading \(spec.name)", detail: (done == 0 ? "Starting" : "\(ByteCountFormatter.string(fromByteCount: done, countStyle: .file)) of \(ByteCountFormatter.string(fromByteCount: total, countStyle: .file))") + " · once, then offline",
                          progress: total > 0 ? Double(done) / Double(total) : nil)
         case .loading(let spec, let p):
             ReadinessRow(title: "Loading \(spec.name)", detail: p > 0 && p < 1 ? "\(Int(p * 100))%" : "warming up", progress: p > 0 ? p : nil)

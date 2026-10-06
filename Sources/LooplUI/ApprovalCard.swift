@@ -13,6 +13,9 @@ public struct ApprovalCard: View {
     @State private var showBody = false
     @State private var editing = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var typeSize
+    /// Accessibility text sizes: the header stacks and the three actions go vertical, so nothing hyphenates or truncates.
+    private var stacked: Bool { typeSize.isAccessibilitySize }
 
     public init(request: ApprovalRequest, decision: ApprovalDecision? = nil, onDecide: @escaping (ApprovalDecision) -> Void) {
         self.request = request; self.decision = decision; self.onDecide = onDecide
@@ -49,23 +52,34 @@ public struct ApprovalCard: View {
     // MARK: pieces
 
     private var header: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            if let d = decision {
-                Image(systemName: d.isApproved ? "checkmark.shield.fill" : "xmark.shield.fill")
-                    .font(.footnote).foregroundStyle(d.isApproved ? LooplDesign.accent : Color.secondary)
-                    .transition(.scale.combined(with: .opacity))
-            } else {
-                Image(systemName: "hand.raised.fill").font(.footnote).foregroundStyle(riskTint)
-                    .transition(.scale.combined(with: .opacity))
+        // Default sizes: one line — glyph · METHOD · host/path · risk pill. Accessibility sizes: the pill drops under
+        // the host and the host may wrap to two lines; the path is never middle-truncated to "/a…es".
+        let layout = stacked ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6)) : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 8))
+        return layout {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                if let d = decision {
+                    Image(systemName: d.isApproved ? "checkmark.shield.fill" : "xmark.shield.fill")
+                        .font(.footnote).foregroundStyle(d.isApproved ? LooplDesign.accent : Color.secondary)
+                        .transition(.scale.combined(with: .opacity))
+                } else {
+                    Image(systemName: "hand.raised.fill").font(.footnote).foregroundStyle(riskTint)
+                        .transition(.scale.combined(with: .opacity))
+                }
+                if let m = request.method { MethodBadge(m, tint: riskTint).fixedSize() }
+                if stacked { Spacer(minLength: 0); if decision == nil { Pill(request.risk.rawValue, tint: riskTint).fixedSize() } }
             }
-            if let m = request.method { MethodBadge(m, tint: riskTint) }
             VStack(alignment: .leading, spacing: 2) {
-                Text(request.host ?? request.title).font(.callout.weight(.semibold)).lineLimit(1)
-                if let path = pathLine { Text(path).font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle) }
+                Text(request.host ?? request.title).font(.callout.weight(.semibold)).lineLimit(stacked ? 2 : 1)
+                if let path = pathLine {
+                    Text(path).font(.caption.monospaced()).foregroundStyle(.secondary)
+                        .lineLimit(stacked ? 3 : 1).truncationMode(stacked ? .tail : .middle)
+                }
                 if let d = decision { Text(verdict(d)).font(.caption).foregroundStyle(.secondary).transition(.opacity) }
             }
-            Spacer(minLength: 0)
-            if decision == nil { Pill(request.risk.rawValue, tint: riskTint) }
+            if !stacked {
+                Spacer(minLength: 0)
+                if decision == nil { Pill(request.risk.rawValue, tint: riskTint).fixedSize() }
+            }
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(a11y)
@@ -74,9 +88,10 @@ public struct ApprovalCard: View {
     private var headersView: some View {
         VStack(alignment: .leading, spacing: 2) {
             ForEach(request.headers.keys.sorted(), id: \.self) { k in
-                HStack(spacing: 6) {
+                let layout = stacked ? AnyLayout(VStackLayout(alignment: .leading, spacing: 0)) : AnyLayout(HStackLayout(spacing: 6))
+                layout {
                     Text(k).font(.caption2.monospaced().weight(.semibold)).foregroundStyle(.secondary)
-                    Text(request.headers[k] ?? "").font(.caption2.monospaced()).foregroundStyle(.secondary).lineLimit(1)
+                    Text(request.headers[k] ?? "").font(.caption2.monospaced()).foregroundStyle(.secondary).lineLimit(stacked ? 2 : 1)
                 }
             }
         }
@@ -109,7 +124,10 @@ public struct ApprovalCard: View {
     }
 
     private var actions: some View {
-        HStack(spacing: 10) {
+        // Default sizes: Approve · Deny side by side, Edit as a square icon button. Accessibility sizes: one column,
+        // every button full width with its label — "Ap-prov-e" / "Den-y" hyphenation is what the row did before.
+        let layout = stacked ? AnyLayout(VStackLayout(spacing: 8)) : AnyLayout(HStackLayout(spacing: 10))
+        return layout {
             Button {
                 LooplDesign.success()
                 onDecide(.approve)
@@ -136,10 +154,13 @@ public struct ApprovalCard: View {
                 LooplDesign.haptic()
                 editing = true
             } label: {
-                Image(systemName: "pencil").font(.callout.weight(.semibold))
-                    .frame(width: 44).padding(.vertical, 9)
-                    .background(LooplDesign.tertiaryFill, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-                    .foregroundStyle(.primary)
+                Group {
+                    if stacked { Label("Edit", systemImage: "pencil").frame(maxWidth: .infinity) }
+                    else { Image(systemName: "pencil").frame(width: 44) }
+                }
+                .font(.callout.weight(.semibold)).padding(.vertical, 9)
+                .background(LooplDesign.tertiaryFill, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                .foregroundStyle(.primary)
             }
             .buttonStyle(ApprovalPressStyle())
             .accessibilityLabel("Edit")

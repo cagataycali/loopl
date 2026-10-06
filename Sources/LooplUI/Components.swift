@@ -301,6 +301,7 @@ public struct ToolRow: View {
     public var result: ToolResult?
     @State private var expanded: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var typeSize
     public init(call: ToolUse, result: ToolResult?, expanded: Bool = false) { self.call = call; self.result = result; _expanded = State(initialValue: expanded) }
 
     public var body: some View {
@@ -308,15 +309,21 @@ public struct ToolRow: View {
             Button {
                 withAnimation(reduceMotion ? nil : LooplDesign.spring) { expanded.toggle() }
             } label: {
-                HStack(spacing: 8) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
                     status.frame(width: 16, height: 16)
-                    Text(call.name).font(.callout.monospaced()).foregroundStyle(.primary.opacity(0.8))
-                    if let r = result, r.durationMs > 0 {
-                        Text(duration(r.durationMs)).font(.caption2.monospacedDigit()).foregroundStyle(.tertiary)
-                            .contentTransition(.numericText())
-                            .transition(.opacity)
+                    // A tool name is an identifier: it never hyphenates ("calcula-tor"). At accessibility sizes the
+                    // duration moves under the name instead of fighting it for the line.
+                    let nameLayout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 2)) : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 8))
+                    nameLayout {
+                        Text(call.name).font(.callout.monospaced()).foregroundStyle(.primary.opacity(0.8))
+                            .lineLimit(1).minimumScaleFactor(0.7).layoutPriority(1)
+                        if let r = result, r.durationMs > 0 {
+                            Text(duration(r.durationMs)).font(.caption2.monospacedDigit()).foregroundStyle(.tertiary)
+                                .contentTransition(.numericText())
+                                .transition(.opacity)
+                        }
                     }
-                    Spacer(minLength: 0)
+                    Spacer(minLength: 8)
                     Image(systemName: "chevron.right").font(.caption2.weight(.semibold)).foregroundStyle(.tertiary)
                         .rotationEffect(.degrees(expanded ? 90 : 0))
                 }
@@ -574,7 +581,9 @@ public struct AgentTranscriptView<Empty: View, Banner: View>: View {
                 if !item.images.isEmpty { ImageStrip(item.images, maxHeight: 260) }   // tool-produced pictures (generate_image…)
             }
         case .approval(let req, let d): ApprovalCard(request: req, decision: d) { onApproval?(req, $0) }
-        case .reasoning(let r): Text(r).font(.caption).foregroundStyle(.secondary).italic()
+        case .reasoning(let r):
+            // Folded to one quiet line ("Thinking…" while it streams, "Thought for a moment" after); tap to read.
+            ReasoningRow(text: r, streaming: transcript.isRunning && item.id == transcript.items.last?.id)
         case .note(let s): Text(s).font(.caption).foregroundStyle(.tertiary)
         }
     }
