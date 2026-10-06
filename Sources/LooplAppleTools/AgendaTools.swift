@@ -196,7 +196,7 @@ public struct CalendarEventsTool: AppleTool {
     public var description: String { "List the user's calendar events for the coming days (default: today and tomorrow). Use when the user asks what is on their calendar, their schedule, agenda, or whether they are free." + AgendaStore.todayHint }
     public let parameters: JSONValue = ToolSchema.object([
         "days": ToolSchema.number("How many days from today to include (default 2, max 31)"),
-        "from": ToolSchema.string("Optional start date yyyy-MM-dd (default today)"),
+        "from": ToolSchema.string("First day yyyy-MM-dd. Leave it out for today."),
     ])
     public static let onDeviceCopy = "Reads your calendar on this device when the model asks. Asks for Calendar access the first time."
     public static var defaultOn: Bool { false }
@@ -250,8 +250,8 @@ public struct CalendarCreateTool: AppleTool {
         var end: Date? = nil
         if let e = args.string("end"), !e.isEmpty {
             guard let (d, _) = AgendaStore.parseDate(e) else { throw ToolError("end must look like 2026-10-07 16:00") }
-            guard d > start else { throw ToolError("end must be after start") }
-            end = d
+            // Measured: Qwen3.5-0.8B fills `end` with the start time 2 of 3 times — an hour is the honest default, not an error.
+            if d > start { end = d }
         }
         if end == nil { end = allDay ? start : start.addingTimeInterval(3600) }
         return AgendaItem(title: title, start: start, end: end, allDay: allDay, calendar: args.string("calendar") ?? "", location: args.string("location"), notes: args.string("notes"))
