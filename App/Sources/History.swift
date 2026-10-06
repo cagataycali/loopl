@@ -117,7 +117,8 @@ final class ConversationArchive {
     func reload() {
         let files = (try? FileManager.default.contentsOfDirectory(at: Self.root, includingPropertiesForKeys: nil)) ?? []
         let dec = JSONDecoder(); dec.dateDecodingStrategy = .iso8601
-        conversations = files.compactMap { try? dec.decode(SavedConversation.self, from: Data(contentsOf: $0)) }.sorted { $0.updated > $1.updated }
+        conversations = files.filter { $0.pathExtension == "json" }
+            .compactMap { try? dec.decode(SavedConversation.self, from: Data(contentsOf: $0)) }.sorted { $0.updated > $1.updated }
     }
 
     func upsert(_ c: SavedConversation) {
@@ -131,6 +132,7 @@ final class ConversationArchive {
 
     func delete(id: UUID) {
         try? FileManager.default.removeItem(at: Self.root.appendingPathComponent("\(id.uuidString).json"))
+        AudioAttachment.removeDirectory(for: id)   // recordings go with the thread
         conversations.removeAll { $0.id == id }
     }
 

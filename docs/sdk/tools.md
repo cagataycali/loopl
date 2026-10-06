@@ -67,9 +67,9 @@ let schema: JSONValue = [
 |---|---|
 | `generate_image` | a picture from a prompt (Image Playground) |
 | `generate_voice` | speech with on-device voices, Personal Voice included |
-| `transcribe` | speech to text, offline |
-| `translate` · `detect_language` | Apple's offline translation |
-| `read_text` · `describe_image` | OCR and Vision on an attached photo |
+| `transcribe` | speech to text, offline — the app's composer records a take for it |
+| `translate` | Apple's offline translation |
+| `describe_image` | Vision on an attached photo |
 | `flashlight` | torch on, off, toggle, brightness |
 | `vibrate` | haptic patterns |
 | `open_app` | another app via deep link, with context — asks first unless the scheme is allow-listed |

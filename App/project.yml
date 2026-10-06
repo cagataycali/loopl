@@ -67,6 +67,8 @@ targets:
         # Vision models: attach a photo or take one. Both stay on the device (the model runs here).
         NSCameraUsageDescription: Take a photo to show the model. It never leaves this device.
         NSPhotoLibraryAddUsageDescription: Save pictures the model produced to your library.
+        # Composer audio input: a recording the model can `transcribe` on the device. The file stays with the thread.
+        NSMicrophoneUsageDescription: Record a message for the model to transcribe. Audio never leaves this device.
         # open_app tool: schemes canOpenURL may answer for (UIApplication.open reports truthfully for any scheme).
         LSApplicationQueriesSchemes:
         - shortcuts

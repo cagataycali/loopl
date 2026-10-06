@@ -24,7 +24,7 @@ final class AppleToolsTests: XCTestCase {
     func testNamesAreUniqueSnakeCaseAndStable() {
         let names = AppleTools.names
         XCTAssertEqual(Set(names).count, names.count)
-        XCTAssertEqual(names, ["generate_image", "generate_voice", "read_text", "describe_image", "translate", "transcribe", "detect_language", "flashlight", "vibrate", "open_app"])
+        XCTAssertEqual(names, ["generate_image", "generate_voice", "describe_image", "translate", "transcribe", "flashlight", "vibrate", "open_app"])
         for n in names { XCTAssertTrue(n.allSatisfy { $0.isLowercase || $0 == "_" }, n) }
     }
 
@@ -45,11 +45,9 @@ final class AppleToolsTests: XCTestCase {
         }
         XCTAssertFalse(AppleTools.availability(of: "nope").available)
         // These never need a permission or Apple Intelligence: available wherever the frameworks exist (this Mac included).
-        XCTAssertTrue(ReadTextTool.availability().available)
         #if !targetEnvironment(simulator)
         XCTAssertTrue(DescribeImageTool.availability().available)
         #endif
-        XCTAssertTrue(DetectLanguageTool.availability().available)
         XCTAssertTrue(GenerateVoiceTool.availability().available)
     }
 
@@ -63,16 +61,7 @@ final class AppleToolsTests: XCTestCase {
         await assertThrows(FlashlightTool(), ["state": .string("blink")], contains: "state")
         await assertThrows(VibrateTool(), ["pattern": .string("morse")], contains: "pattern")
         await assertThrows(OpenAppTool(), [:], contains: "url")
-        await assertThrows(DetectLanguageTool(), [:], contains: "text")
-        await assertThrows(ReadTextTool(), [:], contains: "no image")
         await assertThrows(DescribeImageTool(), [:], contains: "no image")
-    }
-
-    func testDetectLanguage() async throws {
-        let out = try await DetectLanguageTool().call(["text": .string("Merhaba, bugün hava çok güzel ve yarın İstanbul'a gidiyoruz.")])
-        XCTAssertTrue(out.hasPrefix("language: tr"), out)
-        let en = try await DetectLanguageTool().call(["text": .string("The quick brown fox jumps over the lazy dog near the river bank.")])
-        XCTAssertTrue(en.hasPrefix("language: en"), en)
     }
 
     func testPickImageOrdersMostRecentFirst() throws {
@@ -112,12 +101,6 @@ final class AppleToolsTests: XCTestCase {
         XCTAssertTrue(out.text.contains("picture: 256×160 jpeg"), out.text)
         XCTAssertTrue(out.text.contains("labels:"), out.text)
         XCTAssertTrue(out.text.contains("faces: 0"), out.text)
-    }
-
-    func testReadTextOnBlankFixtureSaysNoText() async throws {
-        let cg = try XCTUnwrap(ImageCodec.testImage())
-        let out = try await ReadTextTool().call([:], images: [try ImageCodec.jpeg(cg)])
-        XCTAssertTrue(out.text.hasPrefix("no text found"), out.text)
     }
 
     private func assertThrows(_ tool: any Tool, _ args: [String: JSONValue], contains: String, file: StaticString = #filePath, line: UInt = #line) async {

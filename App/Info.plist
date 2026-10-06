@@ -45,6 +45,8 @@
 	</dict>
 	<key>NSCameraUsageDescription</key>
 	<string>Take a photo to show the model. It never leaves this device.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Record a message for the model to transcribe. Audio never leaves this device.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Save pictures the model produced to your library.</string>
 	<key>UILaunchScreen</key>

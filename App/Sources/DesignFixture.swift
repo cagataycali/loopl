@@ -73,8 +73,8 @@ enum DesignFixture {
             t.apply(.modelMessage(.assistant(text: "I'll post it now.", toolUses: [use])))
             t.apply(.approvalRequested(HttpTool().requiresApproval(for: use.input)!.with(id: use.toolUseId)))
         case "apple":
-            // On-device Apple tools: detect_language and generate_voice run FOR REAL through the
-            // tools; generate_image runs for real where ImagePlayground is available (device with
+            // On-device Apple tools: generate_voice runs FOR REAL through the tool;
+            // generate_image runs for real where ImagePlayground is available (device with
             // Apple Intelligence) and otherwise shows the flat ImageCodec fixture, labelled as such.
             engine.transcript = t
             Task { await replayApple(engine) }
@@ -225,19 +225,19 @@ enum DesignFixture {
     @MainActor static func replayApple(_ engine: Engine) async {
         func sleep(_ s: Double) async { try? await Task.sleep(for: .seconds(s)) }
         let t0 = Date()
-        engine.transcript.user("Draw a black smart ring on a slate tile, and tell me what language \"Merhaba dünya, bugün hava çok güzel\" is.")
+        engine.transcript.user("Draw a black smart ring on a slate tile, and say \"hello from loopl\" out loud.")
         engine.haptics.emit(.send)
         await sleep(0.8)
         _ = engine.transcript.apply(.startEventLoop(cycle: 1))
-        _ = engine.transcript.apply(.text("On it — drawing the ring and checking the language."))
+        _ = engine.transcript.apply(.text("On it — drawing the ring and saying hello."))
         let c1 = ToolUse(toolUseId: "tooluse_a1", name: "generate_image", input: ["prompt": .string("a black smart ring on a slate tile, studio light"), "style": .string("illustration")])
-        let c2 = ToolUse(toolUseId: "tooluse_a2", name: "detect_language", input: ["text": .string("Merhaba dünya, bugün hava çok güzel")])
-        _ = engine.transcript.apply(.modelMessage(.assistant(text: "On it — drawing the ring and checking the language.", toolUses: [c1, c2])))
+        let c2 = ToolUse(toolUseId: "tooluse_a2", name: "generate_voice", input: ["text": .string("hello from loopl"), "language": .string("en-US")])
+        _ = engine.transcript.apply(.modelMessage(.assistant(text: "On it — drawing the ring and saying hello.", toolUses: [c1, c2])))
         _ = engine.transcript.apply(.toolStarted(c1)); engine.haptics.emit(.toolStart)
         _ = engine.transcript.apply(.toolStarted(c2)); engine.haptics.emit(.toolStart)
-        // detect_language: the real tool.
-        let langText = (try? await DetectLanguageTool().call(c2.input)) ?? "language: undetermined"
-        _ = engine.transcript.apply(.toolResult(ToolResult(toolUseId: c2.toolUseId, name: c2.name, content: langText, durationMs: 3))); engine.haptics.emit(.toolFinish)
+        // generate_voice: the real tool (the Simulator speaks through the Mac).
+        let voiceText = (try? await GenerateVoiceTool().call(c2.input)) ?? "spoke 3 words"
+        _ = engine.transcript.apply(.toolResult(ToolResult(toolUseId: c2.toolUseId, name: c2.name, content: voiceText, durationMs: 1200))); engine.haptics.emit(.toolFinish)
         // generate_image: real when the device can; otherwise the fixture image, labelled.
         var imageResult: ToolResult
         if GenerateImageTool.availability().available, let out = try? await GenerateImageTool().callOutput(c1.input) {
@@ -254,7 +254,7 @@ enum DesignFixture {
         _ = engine.transcript.apply(.toolResult(imageResult)); engine.haptics.emit(imageResult.isError ? .error : .toolFinish)
         await sleep(0.5)
         _ = engine.transcript.apply(.startEventLoop(cycle: 2))
-        let answer = "Here's the ring. The sentence is **Turkish** — \"Hello world, the weather is lovely today.\""
+        let answer = "Here's the ring — and that was me saying hello."
         _ = engine.transcript.apply(.text(answer))
         _ = engine.transcript.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant(answer), metrics: EventLoopMetrics())))
     }

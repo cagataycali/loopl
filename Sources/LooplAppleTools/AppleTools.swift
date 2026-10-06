@@ -47,8 +47,8 @@ enum Unavailable {
 /// Every Apple tool loopl ships, in Settings order. Names are snake_case verbs.
 public enum AppleTools {
     public static var all: [any AppleTool] {
-        [GenerateImageTool(), GenerateVoiceTool(), ReadTextTool(), DescribeImageTool(),
-         TranslateTool(), TranscribeTool(), DetectLanguageTool(),
+        [GenerateImageTool(), GenerateVoiceTool(), DescribeImageTool(),
+         TranslateTool(), TranscribeTool(),
          FlashlightTool(), VibrateTool(), OpenAppTool()]
     }
     public static var names: [String] { all.map(\.name) }
