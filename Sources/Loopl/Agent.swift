@@ -23,6 +23,7 @@ public enum AgentEvent: Sendable {
     case toolStarted(ToolUse)                                    // loopl: the tool is about to run (after BeforeToolCall hooks + approval)
     case toolResult(ToolResult)                                  // ToolResultEvent
     case toolResultMessage(Message)                              // ToolResultMessageEvent (appended)
+    case historyEdited(HistoryEdit)                              // loopl: the agent edited its own working context (manage_messages) — a UI shows a quiet marker
     case metrics(Metrics)                                        // loopl: runtime numbers (debug sheet)
     case forceStop(String)                                       // ForceStopEvent
     case toolsChanged(mounted: [String])                         // loopl Phase 6: the tool list the model is offered changed (manage_tools / registry) — effective for the next model call
@@ -208,6 +209,25 @@ public actor Agent {
     public func setMessages(_ messages: [Message]) { self.messages = messages }
     /// Put accumulated metrics back (restoring an `AgentCheckpoint` — see Checkpoint.swift).
     public func setEventLoopMetrics(_ metrics: EventLoopMetrics) { eventLoopMetrics = metrics }
+
+    /// Edits the running tool applied to the WORKING context, announced (`.historyEdited`) when the tool returns.
+    private var pendingHistoryEdits: [HistoryEdit] = []
+    /// `manage_messages`: the agent edits its OWN working context (`HistoryEditor`, pure — the active turn is
+    /// never touched, orphaned toolUses get synthetic results, the structure is validated first). The
+    /// replacement is what the NEXT model call of the same turn reads, because `handleModelExecution` takes
+    /// `messages` at request time. The usage baseline is dropped: the next projection re-estimates from shape.
+    /// A host's transcript / history is built from events and keeps the user's full record.
+    public func editHistory(_ request: HistoryEditor.Request, selfToolUseId: String? = nil) throws -> HistoryEditor.Outcome {
+        let specs = offeredTools.map(\.toolSpec)
+        let outcome = try HistoryEditor.apply(request, to: messages, selfId: selfToolUseId,
+                                              projectedTokens: usageBaseline == nil ? nil : projectedInputTokens(toolSpecs: specs))
+        if let edit = outcome.edit {
+            messages = outcome.messages
+            usageBaseline = nil
+            pendingHistoryEdits.append(edit)
+        }
+        return outcome
+    }
     public func reset() {
         messages.removeAll()
         eventLoopMetrics = EventLoopMetrics()
@@ -706,9 +726,13 @@ public actor Agent {
             while true {
                 let context = InterruptContext(scope: scope, known: interruptState.interrupts)
                 do {
+                    let toolContext = ToolContext(agent: self, toolUseId: toolUse.toolUseId)
                     let out = try await InterruptScope.$context.withValue(context) {
-                        try await tool.call(toolUse.input, images: Self.visibleImages(messages))
+                        try await ToolContext.$current.withValue(toolContext) {
+                            try await tool.call(toolUse.input, images: Self.visibleImages(messages))
+                        }
                     }
+                    flushHistoryEdits(yield)
                     result = ToolResult(toolUseId: toolUse.toolUseId, name: toolUse.name, status: .success,
                                         content: (mountedOnCall ? "(\(toolUse.name) was not mounted — mounted it for this conversation.)\n" : "") + out.text,
                                         durationMs: Date().timeIntervalSince(t0) * 1000, images: out.images)
@@ -722,6 +746,7 @@ public actor Agent {
                     let answer = await awaitAnswer(raised.interrupt, timeout: approvalTimeout, onTimeout: .null, yield)
                     interruptState.interrupts[raised.interrupt.id]?.response = answer
                 } catch {
+                    flushHistoryEdits(yield)
                     thrown = error
                     result = ToolResult(toolUseId: toolUse.toolUseId, name: toolUse.name, status: .error,
                                         content: "Error: \((error as? LocalizedError)?.errorDescription ?? "\(error)")",
@@ -789,6 +814,14 @@ public actor Agent {
         guard tokens > 0 else { return }       // a runtime that reports nothing cannot be a baseline
         usageBaseline = (message.id, tokens)
         eventLoopMetrics.usageBaselineTokens = tokens
+    }
+
+    /// Announce the edits a tool applied during its call (`AgentEvent.historyEdited`), in order.
+    private func flushHistoryEdits(_ yield: @Sendable @escaping (AgentEvent) -> Void) {
+        guard !pendingHistoryEdits.isEmpty else { return }
+        let edits = pendingHistoryEdits
+        pendingHistoryEdits.removeAll()
+        edits.forEach { yield(.historyEdited($0)) }
     }
 
     // MARK: `_append_messages` (+ MessageAddedEvent)

@@ -108,6 +108,7 @@ public struct Transcript: Sendable, Hashable {
                 items.append(.init(kind: .toolUse(ToolUse(toolUseId: r.toolUseId, name: r.name, input: [:]), result: r), images: r.images))
             }
         case .toolResultMessage: break
+        case .historyEdited(let edit): items.append(.init(kind: .note(edit.summary)))   // quiet marker; the rows above stay — the user's record is untouched
         case .forceStop(let why): items.append(.init(kind: .note("stopped: \(why)")))
         case .toolsChanged(let mounted): toolsMounted = mounted            // Phase 6: the host shows "mounted for this conversation"
         case .result(let r):
