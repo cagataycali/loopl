@@ -45,6 +45,8 @@ public struct HubCatalog: Sendable {
         public var lastModified: String?
         /// Only the owner's token sees these (`expand[]=private`); anonymous search never returns one.
         public var isPrivate: Bool = false
+        /// Top-level file names (`expand[]=siblings`) — the vision badge reads them (`HubCatalog.isVision(files:)`); nil on older cached rows.
+        public var files: [String]? = nil
 
         public var author: String { id.split(separator: "/").first.map(String.init) ?? "" }
         public var name: String { id.split(separator: "/").last.map(String.init) ?? id }
@@ -59,8 +61,8 @@ public struct HubCatalog: Sendable {
             }
             return true
         }
-        /// A vision-language checkpoint (`HubCatalog.isVision`).
-        public var isVision: Bool { HubCatalog.isVision(repo: id, pipeline: pipeline, modelType: modelType) }
+        /// A vision-language checkpoint (`HubCatalog.isVision`) — files first, then the Hub's tags, then the architecture.
+        public var isVision: Bool { HubCatalog.isVision(repo: id, pipeline: pipeline, modelType: modelType, files: files) }
     }
 
     public struct File: Sendable, Hashable, Codable {
@@ -83,8 +85,14 @@ public struct HubCatalog: Sendable {
         public var maxPositionEmbeddings: Int?
         public var bits: Int?
         public var groupSize: Int?
-        public init(modelType: String? = nil, architectures: [String] = [], maxPositionEmbeddings: Int? = nil, bits: Int? = nil, groupSize: Int? = nil) {
+        /// `vision_config` (or `visual`/`vision_tower`) is in config.json → the checkpoint carries a vision tower. This is the
+        /// truth the badge and `ModelSpec.vision` follow: a text-only export of a vision architecture (model_type still
+        /// `qwen3_5`, the merge dropped the tower) has none. nil = not read.
+        public var hasVisionConfig: Bool? = nil
+        public init(modelType: String? = nil, architectures: [String] = [], maxPositionEmbeddings: Int? = nil, bits: Int? = nil, groupSize: Int? = nil,
+                    hasVisionConfig: Bool? = nil) {
             self.modelType = modelType; self.architectures = architectures; self.maxPositionEmbeddings = maxPositionEmbeddings; self.bits = bits; self.groupSize = groupSize
+            self.hasVisionConfig = hasVisionConfig
         }
     }
 
@@ -102,16 +110,20 @@ public struct HubCatalog: Sendable {
         public var paramsB: Double?           // from safetensors param count
         public var lastModified: String?
         public var isPrivate: Bool = false
+        /// The repo's Hub tags (`loopl`, `mlx`, `gguf`…) — `loopl`-tagged repos get the built-in persona.
+        public var tags: [String]? = nil
         public init(id: String, sha: String?, gated: Bool, downloads: Int, likes: Int, pipeline: String?, files: [File],
-                    modelType: String?, ggufContext: Int?, paramsB: Double?, lastModified: String?, isPrivate: Bool = false) {
+                    modelType: String?, ggufContext: Int?, paramsB: Double?, lastModified: String?, isPrivate: Bool = false, tags: [String]? = nil) {
             self.id = id; self.sha = sha; self.gated = gated; self.downloads = downloads; self.likes = likes; self.pipeline = pipeline
             self.files = files; self.modelType = modelType; self.ggufContext = ggufContext; self.paramsB = paramsB; self.lastModified = lastModified
-            self.isPrivate = isPrivate
+            self.isPrivate = isPrivate; self.tags = tags
         }
 
         public var kind: Kind { files.contains(where: \.isGGUF) && !files.contains(where: { $0.path.hasSuffix(".safetensors") }) ? .gguf : .mlx }
-        /// A vision-language checkpoint (`HubCatalog.isVision`).
-        public var isVision: Bool { HubCatalog.isVision(repo: id, pipeline: pipeline, modelType: modelType) }
+        /// A vision-language checkpoint (`HubCatalog.isVision`): the file list decides when the architecture alone cannot.
+        public var isVision: Bool { HubCatalog.isVision(repo: id, pipeline: pipeline, modelType: modelType, files: files.map(\.path)) }
+        /// Tagged `loopl` on the Hub, or one of Cagatay's `cagataydev/loopl-*` exports → `ModelSpec.Persona.loopl`.
+        public var isLoopl: Bool { LooplPersona.applies(repo: id, tags: tags ?? []) }
         public var ggufFiles: [File] { files.filter(\.isGGUF).filter { !$0.path.contains("/") }.sorted { $0.size < $1.size } }
         public var mlxFiles: [File] { files.filter { HFDownloader.wanted(.init(path: $0.path, size: $0.size, type: "file")) } }
         public var mlxBytes: Int64 { mlxFiles.reduce(0) { $0 + $1.size } }
@@ -200,13 +212,26 @@ public struct HubCatalog: Sendable {
         "fastvlm", "llava_qwen2", "pixtral", "paligemma", "mistral3", "lfm2_vl", "glm_ocr",
     ]
 
-    /// Does this checkpoint carry a vision tower loopl can drive? `pipeline_tag` is the Hub's own
-    /// word (`image-text-to-text`); `model_type` is config.json; the name catches un-tagged mirrors (`…-VL-…`).
-    /// `qwen3_5` is natively image-text-to-text; its `*-Text` / `qwen3_5_text` exports are text-only.
-    public static func isVision(repo: String, pipeline: String?, modelType: String?) -> Bool {
+    /// Files only a checkpoint WITH an image processor ships. A vision architecture whose export dropped the tower
+    /// (loopl v1: `qwen3_5` merged without `visual.*`) has none of them.
+    public static let visionProcessorFiles: Set<String> = ["preprocessor_config.json", "processor_config.json", "video_preprocessor_config.json"]
+
+    /// Does this checkpoint carry a vision tower loopl can drive? Truth order: `pipeline_tag` from the Hub
+    /// (`image-text-to-text`), then the FILE LIST when we have it (an image processor config = a tower; a vision
+    /// `model_type` with no processor files and a `text-generation` tag = a text-only export), then `model_type`
+    /// (config.json) and the name for un-tagged mirrors (`…-VL-…`). `qwen3_5_text` / `*-Text` are text-only.
+    /// When config.json itself was read, prefer `Config.hasVisionConfig` (see `spec(for:config:)`).
+    public static func isVision(repo: String, pipeline: String?, modelType: String?, files: [String]? = nil) -> Bool {
         let t = (modelType ?? "").lowercased(), r = repo.lowercased()
         if t == "qwen3_5_text" || r.hasSuffix("-text") || r.contains("-text-") { return false }
         if let pipeline, pipeline == "image-text-to-text" || pipeline == "video-text-to-text" { return true }
+        if let files, !files.isEmpty {
+            let names = Set(files.map { ($0 as NSString).lastPathComponent })
+            if !names.isDisjoint(with: visionProcessorFiles) { return true }
+            // The Hub listed the files and none is an image processor: a vision model_type is then the base
+            // architecture's name, not a tower (loopl-*-4bit, qwen3_5 text-only exports).
+            if names.contains("config.json") || names.contains { $0.hasSuffix(".safetensors") } { return false }
+        }
         if !t.isEmpty, visionModelTypes.contains(t) { return true }
         let name = r.split(separator: "/").last.map(String.init) ?? r
         return name.contains("-vl-") || name.hasSuffix("-vl") || name.contains("_vl_") || name.contains("smolvlm") || name.contains("fastvlm")
@@ -282,7 +307,8 @@ public struct HubCatalog: Sendable {
                        ctx: (gguf?["context_length"] as? NSNumber)?.intValue,
                        sizeBytes: size, paramsB: params,
                        lastModified: row["lastModified"] as? String,
-                       isPrivate: (row["private"] as? Bool) ?? false)
+                       isPrivate: (row["private"] as? Bool) ?? false,
+                       files: (row["siblings"] as? [[String: Any]]).map { $0.compactMap { $0["rfilename"] as? String } })
         }
     }
 
@@ -324,7 +350,8 @@ public struct HubCatalog: Sendable {
                     ggufContext: (gguf?["context_length"] as? NSNumber)?.intValue,
                     paramsB: (st?["total"] as? NSNumber).map { $0.doubleValue / 1e9 },
                     lastModified: row["lastModified"] as? String,
-                    isPrivate: (row["private"] as? Bool) ?? false)
+                    isPrivate: (row["private"] as? Bool) ?? false,
+                    tags: row["tags"] as? [String])
     }
 
     public static func parseConfig(_ data: Data) throws -> Config {
@@ -335,7 +362,14 @@ public struct HubCatalog: Sendable {
         return Config(modelType: row["model_type"] as? String,
                       architectures: row["architectures"] as? [String] ?? [],
                       maxPositionEmbeddings: ((row["max_position_embeddings"] ?? text?["max_position_embeddings"]) as? NSNumber)?.intValue,
-                      bits: (q?["bits"] as? NSNumber)?.intValue, groupSize: (q?["group_size"] as? NSNumber)?.intValue)
+                      bits: (q?["bits"] as? NSNumber)?.intValue, groupSize: (q?["group_size"] as? NSNumber)?.intValue,
+                      hasVisionConfig: Self.hasVisionConfig(row))
+    }
+
+    /// `vision_config` (Qwen-VL, Qwen3.5, Gemma 3, SmolVLM…), `visual` (older Qwen-VL) or `vision_tower` at the top level of config.json.
+    public static func hasVisionConfig(_ row: [String: Any]) -> Bool {
+        for k in ["vision_config", "visual", "vision_tower", "vision_encoder"] where row[k] is [String: Any] { return true }
+        return false
     }
 
     /// 4-bit MLX weights ≈ params × bits/8 × 1.125 (scales + biases per group of 64). Pinned on the curated rows.
@@ -364,7 +398,8 @@ public struct HubCatalog: Sendable {
         let guess = detectFamily(repo: repo.id, modelType: config?.modelType ?? repo.modelType)
         var id = "hub:" + repo.id.lowercased()
         if let file { id += ":" + file.path.lowercased() }
-        let vision = repo.isVision || (config.map { isVision(repo: repo.id, pipeline: repo.pipeline, modelType: $0.modelType) } ?? false)
+        // config.json read → its `vision_config` is the truth; otherwise the Hub's tag + file list (`Repo.isVision`).
+        let vision = config?.hasVisionConfig ?? repo.isVision
         if vision, kind == .gguf { throw HubError.visionGGUF(repo.id) }
         var notes = "From Hugging Face · \(guess.label)"
         if vision { notes += " · vision" }
@@ -376,7 +411,8 @@ public struct HubCatalog: Sendable {
                          minRAMGB: (Double(fitBytes(weights: bytes, vision: vision)) * 1.3 / 1e9).rounded(.up), gated: repo.gated,
                          notes: notes, revision: nil, file: file?.path, temperature: nil,
                          chatTemplateKwargs: qwen3 ? ["enable_thinking": .bool(false)] : nil,
-                         toolsUnverified: guess.verified ? nil : true, vision: vision ? true : nil)
+                         toolsUnverified: guess.verified ? nil : true, vision: vision ? true : nil,
+                         persona: repo.isLoopl ? .loopl : nil)
     }
 
     // MARK: - Network
@@ -437,7 +473,7 @@ public struct HubCatalog: Sendable {
         }
         // The plain listing is ids + downloads only; `expand[]` inlines config (model_type, bits),
         // safetensors (param count → size estimate), gguf (ctx, total) and gated — one request per search.
-        for f in ["config", "safetensors", "gguf", "gated", "pipeline_tag", "lastModified", "likes", "downloads"] {
+        for f in ["config", "safetensors", "gguf", "gated", "pipeline_tag", "lastModified", "likes", "downloads", "siblings"] {
             q.append(URLQueryItem(name: "expand[]", value: f))
         }
         c.queryItems = q
@@ -456,7 +492,7 @@ public struct HubCatalog: Sendable {
         var c = URLComponents(string: "\(host)/api/models")!
         var q: [URLQueryItem] = [URLQueryItem(name: "author", value: author), URLQueryItem(name: "sort", value: "lastModified"),
                                  URLQueryItem(name: "direction", value: "-1"), URLQueryItem(name: "limit", value: String(limit))]
-        for f in ["config", "safetensors", "gguf", "gated", "pipeline_tag", "lastModified", "likes", "downloads", "private", "library_name", "tags"] {
+        for f in ["config", "safetensors", "gguf", "gated", "pipeline_tag", "lastModified", "likes", "downloads", "private", "library_name", "tags", "siblings"] {
             q.append(URLQueryItem(name: "expand[]", value: f))
         }
         c.queryItems = q

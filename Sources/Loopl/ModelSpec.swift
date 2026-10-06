@@ -28,16 +28,29 @@ public struct ModelSpec: Sendable, Codable, Hashable, Identifiable {
     /// `true` when the checkpoint has a vision tower loopl can drive (Qwen3-VL, Qwen2.5-VL, Qwen3.5, Gemma 3, SmolVLM…, MLX runtime).
     /// Gates the composer's attach button; images sent to a text model are dropped with a notice.
     public var vision: Bool? = nil
+    /// A built-in identity the app puts ahead of its own system prompt (`LooplPersona`). `cagataydev/loopl-*` and
+    /// `loopl`-tagged Hub repos are `.loopl`; nil for everything else.
+    public var persona: Persona? = nil
+
+    public enum Persona: String, Sendable, Codable, Hashable {
+        /// loopl v1+: post-tuned on cagataydev/loopl-train with `LooplPersona.systemPrompt` as the system turn of every sample.
+        case loopl
+    }
 
     public init(id: String, name: String, repo: String, runtime: RuntimeKind, family: ToolFamily, paramsB: Double, sizeBytes: Int64,
                 ctxNominal: Int, ctxUsable8GB: Int, minRAMGB: Double, gated: Bool = false, notes: String? = nil, revision: String? = nil,
                 file: String? = nil, temperature: Float? = nil, chatTemplateKwargs: [String: JSONValue]? = nil, toolsUnverified: Bool? = nil,
-                vision: Bool? = nil) {
+                vision: Bool? = nil, persona: Persona? = nil) {
         self.id = id; self.name = name; self.repo = repo; self.runtime = runtime; self.family = family; self.paramsB = paramsB
         self.sizeBytes = sizeBytes; self.ctxNominal = ctxNominal; self.ctxUsable8GB = ctxUsable8GB; self.minRAMGB = minRAMGB
         self.gated = gated; self.notes = notes; self.revision = revision; self.file = file; self.temperature = temperature
         self.chatTemplateKwargs = chatTemplateKwargs; self.toolsUnverified = toolsUnverified; self.vision = vision
+        self.persona = persona
     }
+
+    /// The identity prompt this model was trained with, resolved from `persona` or the repo name (`cagataydev/loopl-*`
+    /// rows from an older models.json carry no `persona` key).
+    public var hasLooplPersona: Bool { persona == .loopl || LooplPersona.applies(repo: repo, tags: []) }
 
     /// Can this model look at pictures? (`vision` flag; only the MLX runtime has a VLM path today.)
     public var supportsVision: Bool { vision == true && runtime == .mlx }
@@ -46,7 +59,7 @@ public struct ModelSpec: Sendable, Codable, Hashable, Identifiable {
     public var isFromHub: Bool { id.hasPrefix("hub:") }
 
     enum CodingKeys: String, CodingKey {
-        case id, name, repo, runtime, family, gated, notes, revision, file, temperature, vision
+        case id, name, repo, runtime, family, gated, notes, revision, file, temperature, vision, persona
         case chatTemplateKwargs = "chat_template_kwargs", toolsUnverified = "tools_unverified"
         case paramsB = "params_b", sizeBytes = "size_bytes", ctxNominal = "ctx_nominal"
         case ctxUsable8GB = "ctx_usable_8gb", minRAMGB = "min_ram_gb"

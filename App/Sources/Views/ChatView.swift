@@ -313,6 +313,7 @@ struct Composer: View {
         }
         .disabled(attachments.count >= Self.maxAttachments || generating)
         .accessibilityLabel("Attach an image")
+        .accessibilityIdentifier("composer-attach")
         .transition(.scale.combined(with: .opacity))
     }
 

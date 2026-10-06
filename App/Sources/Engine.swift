@@ -341,7 +341,7 @@ public final class Engine {
         currentEditedAt = Date()
         lastError = nil
         if let model {
-            let a = Agent(model: model, tools: activeTools, systemPrompt: settings.systemPrompt, messages: kept.messages, hooks: [approvalPolicy])
+            let a = Agent(model: model, tools: activeTools, systemPrompt: effectiveSystemPrompt, messages: kept.messages, hooks: [approvalPolicy])
             agent = a
         } else {
             agent = nil
@@ -351,6 +351,19 @@ public final class Engine {
     /// Can the loaded model look at pictures? (`ModelSpec.vision`, MLX runtime.) Gates the composer's attach button.
     public var canSeeImages: Bool { loadedModel?.supportsVision == true }
 
+    /// The system prompt the model gets. loopl's own models (`cagataydev/loopl-*`, `loopl`-tagged) were trained with
+    /// `LooplPersona.systemPrompt` as their system turn, so it goes first; the user's prompt follows unless it is still
+    /// the app default (nothing to add). Every other model gets Settings › System prompt as-is.
+    public var effectiveSystemPrompt: String { Self.systemPrompt(for: loadedModel, settings: settings) }
+    /// True when the loaded model carries the built-in loopl identity (Settings shows "loopl identity (built in)").
+    public var usesLooplPersona: Bool { loadedModel?.hasLooplPersona == true }
+
+    public static func systemPrompt(for spec: ModelSpec?, settings: AppSettings) -> String {
+        let user = settings.systemPrompt
+        guard let spec, spec.hasLooplPersona else { return user }
+        return LooplPersona.combined(with: user, appDefault: AppSettings.defaultSystemPrompt)
+    }
+
     public func send(_ text: String, images: [ImageBlock] = []) {
         guard !isGenerating else { return }
         guard let model, let spec = loadedModel else { lastError = "the model is still loading"; haptics.emit(.error); return }
@@ -359,7 +372,7 @@ public final class Engine {
         lastError = nil
         haptics.emit(.send)
         // Generation params are the model's own maxed defaults (spec.defaultParams, set at load): no caps here.
-        let agent = self.agent ?? Agent(model: model, tools: activeTools, systemPrompt: settings.systemPrompt, hooks: [approvalPolicy])
+        let agent = self.agent ?? Agent(model: model, tools: activeTools, systemPrompt: effectiveSystemPrompt, hooks: [approvalPolicy])
         self.agent = agent
         // A text model cannot see: keep the picture in the transcript (so the user knows what was sent)
         // but tell them, and send the words only — never silently drop or pretend.
@@ -371,7 +384,7 @@ public final class Engine {
         transcript.user(text, images: images)
         let prompt = text.isEmpty ? "What's in this image?" : text
         let message = Loopl.Message.user(prompt, images: sent)
-        let tools = activeTools, system = settings.systemPrompt
+        let tools = activeTools, system = effectiveSystemPrompt
         runTask = Task { [weak self] in
             await agent.setTools(tools); await agent.setSystemPrompt(system)
             do {

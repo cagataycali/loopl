@@ -59,7 +59,8 @@ def row(m):
 out = []
 out.append('---\ntitle: "Models"\ndescription: "The models the loopl app ships in its catalog, with size, context and whether they call tools. Any public Hugging Face repo works too."\nhide:\n  - navigation\n---\n')
 out.append("# Models\n")
-out.append("The app's built-in catalog. Every entry is a public Hugging Face repo — nothing gated, no token — and any other "
+out.append("The app's built-in catalog. Every entry is a public Hugging Face repo — no token — except the **loopl** rows (`gated: yes`), "
+           "which are Cagatay's private post-tuned models and download with your own token (Settings › Hugging Face); any other "
            "public MLX or GGUF repo loads the same way. *Usable on 8 GB* is the context that fits beside the weights on an "
            "iPhone 16 Pro; it is the app's default.\n")
 out.append("<div class=\"loopl-models-table\" markdown>\n")

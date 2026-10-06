@@ -229,7 +229,7 @@ final class HubCatalogTests: XCTestCase {
 
     func testSearchURLs() {
         let h = HubCatalog()
-        let expand = "&expand%5B%5D=config&expand%5B%5D=safetensors&expand%5B%5D=gguf&expand%5B%5D=gated&expand%5B%5D=pipeline_tag&expand%5B%5D=lastModified&expand%5B%5D=likes&expand%5B%5D=downloads"
+        let expand = "&expand%5B%5D=config&expand%5B%5D=safetensors&expand%5B%5D=gguf&expand%5B%5D=gated&expand%5B%5D=pipeline_tag&expand%5B%5D=lastModified&expand%5B%5D=likes&expand%5B%5D=downloads&expand%5B%5D=siblings"
         XCTAssertEqual(h.searchURL("qwen3", kind: .mlx).absoluteString,
                        "https://huggingface.co/api/models?search=qwen3&sort=downloads&direction=-1&limit=30&author=mlx-community" + expand)
         XCTAssertEqual(h.searchURL("qwen3", kind: .gguf).absoluteString,

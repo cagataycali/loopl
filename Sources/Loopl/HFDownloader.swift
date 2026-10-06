@@ -70,7 +70,10 @@ public struct HFDownloader: Sendable {
     /// The token for this request, or nil (empty strings count as no token).
     var bearer: String? { token?().flatMap { $0.isEmpty ? nil : $0 } }
 
-    /// Files an MLX model needs. Weights + tokenizer + configs; nothing else (no README, no pytorch bins).
+    /// Files an MLX model needs. Weights + tokenizer + configs — including the image-processor configs a vision
+    /// checkpoint ships (`preprocessor_config.json`, `processor_config.json`, `video_preprocessor_config.json`), so
+    /// the tower is driven with the checkpoint's own pixel budget instead of a built-in fallback. Nothing else
+    /// (no README, no pytorch bins, no scorecards).
     public static func wanted(_ f: RemoteFile) -> Bool {
         guard f.type == "file" else { return false }
         let p = f.path
@@ -79,7 +82,8 @@ public struct HFDownloader: Sendable {
         if p.hasSuffix(".gguf") { return false }   // GGUF repos are fetched one file at a time (`files(for:)`)
         let names: Set<String> = ["config.json", "generation_config.json", "tokenizer.json", "tokenizer_config.json",
                                   "tokenizer.model", "special_tokens_map.json", "model.safetensors.index.json",
-                                  "chat_template.jinja", "chat_template.json", "added_tokens.json", "merges.txt", "vocab.json"]
+                                  "chat_template.jinja", "chat_template.json", "added_tokens.json", "merges.txt", "vocab.json",
+                                  "preprocessor_config.json", "processor_config.json", "video_preprocessor_config.json"]
         return names.contains(p)
     }
 

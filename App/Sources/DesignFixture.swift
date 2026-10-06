@@ -79,7 +79,11 @@ enum DesignFixture {
     }
 
     @MainActor static func apply(to engine: Engine, settings: AppSettings) {
-        let specId = scene == "vision" ? "qwen3.5-0.8b-4bit" : "qwen3-0.6b-4bit"
+        // `persona`: a loopl model is loaded — Settings shows the built-in identity. The row says vision (v1 mlx_vlm export) but the
+        // files on this phone are the OLD text-only download (the owner's 07:5xZ situation): config.json without vision_config wins,
+        // so the composer has no photo button. `--design-local-vision` keeps the files = row (button shown).
+        let specId = switch scene { case "vision": "qwen3.5-0.8b-4bit"; case "persona": "loopl-0.8b-4bit"; default: "qwen3-0.6b-4bit" }
+        if scene == "persona", !CommandLine.arguments.contains("--design-local-vision") { engine.store.overrideLocalVision(specId, false) }
         let spec = engine.store.catalog.models.first { $0.id == specId } ?? engine.store.catalog.models.first!
         engine.readiness = .ready(spec)
         settings.showPerformance = CommandLine.arguments.contains("--design-perf")
@@ -154,6 +158,13 @@ enum DesignFixture {
             t.apply(.startEventLoop(cycle: 1))
             t.apply(.text("Tokyo is six hours ahead of Istanbul, so it's **12:14** there."))
             t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("Tokyo is six hours ahead of Istanbul, so it's **12:14** there."), metrics: EventLoopMetrics())))
+        case "persona":
+            // The macOS probe on cagataydev/loopl-0.8b-4bit (greedy) with LooplPersona.systemPrompt in front: Settings › System prompt
+            // shows "loopl identity (built in)"; no attach button because the local config.json (fixture override) has no vision tower.
+            t.user("Who built you?")
+            t.apply(.startEventLoop(cycle: 1))
+            t.apply(.text("Cagatay Cali (@cagataycali). I'm a post-trained Qwen3.5 model, built on loopl, and I'm running on this device — not ChatGPT, Claude, Gemini or Siri."))
+            t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("Cagatay Cali (@cagataycali). I'm a post-trained Qwen3.5 model, built on loopl, and I'm running on this device — not ChatGPT, Claude, Gemini or Siri."), metrics: EventLoopMetrics())))
         case "vision":
             // The exact exchange the macOS proof produced with Qwen3.5-0.8B-4bit on Tests/…/Fixtures/vision-test.png.
             let png = Bundle.main.url(forResource: "vision-test", withExtension: "png").flatMap { try? Data(contentsOf: $0) } ?? Data()
