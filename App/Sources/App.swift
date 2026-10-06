@@ -7,6 +7,7 @@ struct LooplApp: App {
     @State private var settings = AppSettings()
     @State private var store = ModelStore()
     @State private var engine: Engine?
+    @State private var onboarding = false
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
@@ -17,11 +18,17 @@ struct LooplApp: App {
                 } else if let engine {
                     RootView(engine: engine, settings: settings, store: store)
                         .looplHaptics(engine.haptics)
+                        // First launch: pick the first model (Onboarding.needed). Hung off the root, never a List Section (#66).
+                        .sheet(isPresented: $onboarding) {
+                            OnboardingView(engine: engine, store: store) { onboarding = false }
+                        }
                 } else {
                     LaunchView().task {
                         StorageFixture.apply(to: store)
                         let e = Engine(settings: settings, store: store)
-                        if DesignFixture.requested { DesignFixture.apply(to: e, settings: settings) } else { e.bootstrap() }
+                        if DesignFixture.requested { DesignFixture.apply(to: e, settings: settings) }
+                        if Onboarding.needed(settings: settings, store: store) { onboarding = true }
+                        else if !DesignFixture.requested { e.bootstrap() }
                         engine = e
                     }
                 }

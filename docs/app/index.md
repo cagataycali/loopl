@@ -7,7 +7,7 @@ hide:
 
 # The app
 
-Free, no sign-in, no analytics. The first launch fetches a small model; from then on you talk to an agent that uses the phone — with the network off if you like.
+Free, no sign-in, no analytics. On first launch you pick a model (three cards, sizes and what each can do) and it downloads once; from then on you talk to an agent that uses the phone — with the network off if you like.
 
 <div class="l-actions l-actions--page"><a class="l-btn l-btn--ink l-btn--tf" href="https://testflight.apple.com/join/uUNjfzW9">Get it on TestFlight</a><a class="l-link" href="https://github.com/cagataycali/loopl">Build from source</a></div>
 <p class="l-micro">Public beta · iOS 18+ · the App Store listing follows the 1.0 review.</p>
