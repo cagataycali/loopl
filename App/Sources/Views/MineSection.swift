@@ -55,10 +55,42 @@ struct MineSection: View {
                     .accessibilityIdentifier("mine-empty")
                 } else {
                     ForEach(mine.hits) { hit in
-                        Button { LooplDesign.haptic(); selected = hit } label: { HubHitRow(hit: hit, added: isAdded(hit)) }
-                            .buttonStyle(.plain)
-                            .matchedTransitionSource(id: "mine-\(hit.id)", in: zoom)
-                            .accessibilityIdentifier("mine-hit-\(hit.id)")
+                        let row = rowSpec(hit)
+                        let state = row.flatMap { store.states[$0.id] }
+                        VStack(alignment: .leading, spacing: 6) {
+                            Button { LooplDesign.haptic(); selected = hit } label: { HubHitRow(hit: hit, added: isAdded(hit), state: state) }
+                                .buttonStyle(.plain)
+                                .matchedTransitionSource(id: "mine-\(hit.id)", in: zoom)
+                                .accessibilityIdentifier("mine-hit-\(hit.id)")
+                            // The same inline status the Models rows show — a Download tap from here must stay visible here.
+                            if let row, let state {
+                                switch state {
+                                case .downloading(let done, let total, let fd, let files):
+                                    DownloadProgressRow(done: done, total: total, fileIndex: fd, fileCount: files) { store.pause(row) }
+                                        .accessibilityIdentifier("mine-downloading-\(hit.id)")
+                                case .paused(let done, let total):
+                                    HStack {
+                                        Text("Paused · \(ByteSize.label(done)) of \(ByteSize.label(total))").font(.caption).foregroundStyle(.secondary)
+                                        Spacer()
+                                        Button("Resume") { Task { await engine.select(row) } }.font(.caption.weight(.semibold)).disabled(settings.offline)
+                                    }
+                                case .failed(let msg):
+                                    HStack(alignment: .top) {
+                                        Text(msg).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+                                            .accessibilityIdentifier("mine-failed-\(hit.id)")
+                                        Spacer(minLength: 8)
+                                        Button("Retry") { LooplDesign.haptic(1); Task { await engine.select(row) } }
+                                            .font(.caption.weight(.semibold)).disabled(settings.offline)
+                                            .accessibilityIdentifier("mine-retry-\(hit.id)")
+                                    }
+                                case .moving(let done, let total, let to):
+                                    Text("Moving to \(to) · \(ByteSize.label(done)) of \(ByteSize.label(total))").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                                case .needsDrive(let drive):
+                                    Label("Needs \(drive) — plug it in to use", systemImage: "externaldrive.badge.xmark").font(.caption).foregroundStyle(.orange)
+                                case .downloaded, .notDownloaded: EmptyView()
+                                }
+                            }
+                        }
                     }
                 }
             } else {
@@ -92,5 +124,9 @@ struct MineSection: View {
 
     private func isAdded(_ hit: HubCatalog.Hit) -> Bool {
         store.catalog.models.contains { $0.repo == hit.id && (store.states[$0.id]?.isDownloaded ?? false) }
+    }
+    /// The catalog row for this repo once the user added it (Download tapped at least once), else nil.
+    private func rowSpec(_ hit: HubCatalog.Hit) -> ModelSpec? {
+        store.catalog.models.first { $0.repo == hit.id && store.states[$0.id] != nil }
     }
 }

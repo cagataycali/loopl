@@ -137,7 +137,14 @@ struct ModelsView: View {
                     Button("Resume") { Task { await engine.select(spec) } }.font(.caption.weight(.semibold)).disabled(settings.offline)
                 }
             case .failed(let msg):
-                Text(msg).font(.caption).foregroundStyle(.red)
+                HStack(alignment: .top) {
+                    Text(msg).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("models-failed-\(spec.id)")
+                    Spacer(minLength: 8)
+                    Button("Retry") { LooplDesign.haptic(1); Task { await engine.select(spec) } }
+                        .font(.caption.weight(.semibold)).disabled(settings.offline || busy)
+                        .accessibilityIdentifier("models-retry-\(spec.id)")
+                }
             case .needsDrive(let drive):
                 Label("Needs \(drive) — plug it in to use", systemImage: "externaldrive.badge.xmark").font(.caption).foregroundStyle(.orange)
                     .accessibilityIdentifier("models-needs-drive-\(spec.id)")

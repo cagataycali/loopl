@@ -269,6 +269,16 @@ struct FolderPicker: UIViewControllerRepresentable {
 /// and adds a second drive "Old stick" whose folder is gone (= not connected)
 /// holding Qwen3-1.7B. DEBUG only.
 enum StorageFixture {
+    /// `--free-space <bytes>`: every volume reports this much free (a full iPhone on the simulator). DEBUG only.
+    static var freeSpace: Int64? {
+        #if DEBUG
+        guard let i = CommandLine.arguments.firstIndex(of: "--free-space"), i + 1 < CommandLine.arguments.count else { return nil }
+        return Int64(CommandLine.arguments[i + 1])
+        #else
+        return nil
+        #endif
+    }
+
     static var folder: URL? {
         #if DEBUG
         guard let i = CommandLine.arguments.firstIndex(of: "--storage-fixture"), i + 1 < CommandLine.arguments.count else { return nil }
@@ -279,6 +289,10 @@ enum StorageFixture {
     }
 
     @MainActor static func apply(to store: ModelStore) {
+        if let freeSpace {
+            ExternalStorage.freeSpaceOverride = { _ in freeSpace }
+            store.refresh()
+        }
         guard let folder else { return }
         let fm = FileManager.default
         // Start from a clean manifest so the fixture is deterministic.

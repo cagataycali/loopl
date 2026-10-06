@@ -123,11 +123,16 @@ public enum ExternalStorage {
     /// space counts). This — not `systemFreeSize` — is what iOS itself
     /// consults before a download, so it is the honest number for the guard.
     public static func freeSpace(at url: URL) -> Int64 {
+        if let override = freeSpaceOverride, let v = override(url) { return v }
         let keys: Set<URLResourceKey> = [.volumeAvailableCapacityForImportantUsageKey, .volumeAvailableCapacityKey]
         guard let v = try? url.resourceValues(forKeys: keys) else { return 0 }
         if let important = v.volumeAvailableCapacityForImportantUsage, important > 0 { return important }
         return Int64(v.volumeAvailableCapacity ?? 0)
     }
+
+    /// Test seam: answer `freeSpace(at:)` yourself (a "full iPhone" on a 2 TB Mac). nil → the real number.
+    /// DEBUG app builds set it from `--free-space <bytes>`; tests set and clear it around a case.
+    nonisolated(unsafe) public static var freeSpaceOverride: (@Sendable (URL) -> Int64?)?
 
     /// Headroom kept free on any volume after a download (the OS needs air; a
     /// FAT/exFAT stick with 0 bytes free corrupts its directory).

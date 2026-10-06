@@ -1,4 +1,5 @@
 import SwiftUI
+import os
 import Loopl
 import LooplUI
 
@@ -144,6 +145,8 @@ struct HubBrowseView: View {
 struct HubHitRow: View {
     var hit: HubCatalog.Hit
     var added: Bool
+    /// Models-tab state of the row the user already added (Mine passes it); nil = never added / unknown.
+    var state: ModelStore.State? = nil
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
@@ -155,7 +158,12 @@ struct HubHitRow: View {
             VStack(alignment: .trailing, spacing: 4) {
                 if let s = hit.sizeBytes, s > 0 { Text(ByteSize.label(s)).font(.footnote.monospacedDigit()).foregroundStyle(.secondary) }
                 if added { Image(systemName: "checkmark").font(.footnote.weight(.semibold)).foregroundStyle(.secondary).accessibilityLabel("on this device") }
-                else if let s = hit.sizeBytes, s > 0 { FitBadge(fit: .verdict(bytes: HubCatalog.fitBytes(weights: s, vision: hit.isVision), available: MemoryBudget.budget)) }
+                else if case .downloading(let done, let total, _, _)? = state {
+                    ProgressView(value: Double(done), total: Double(max(total, 1))).progressViewStyle(.circular).controlSize(.small).tint(LooplDesign.accent)
+                        .accessibilityLabel("downloading")
+                } else if case .failed? = state {
+                    Image(systemName: LooplDesign.iconWarning).font(.footnote.weight(.semibold)).foregroundStyle(.red).accessibilityLabel("download failed")
+                } else if let s = hit.sizeBytes, s > 0 { FitBadge(fit: .verdict(bytes: HubCatalog.fitBytes(weights: s, vision: hit.isVision), available: MemoryBudget.budget)) }
             }
         }
         .contentShape(Rectangle())
@@ -207,6 +215,8 @@ struct SkeletonRow: View {
     }
 }
 
+private let hubLog = Logger(subsystem: "technology.tiny.loopl", category: "download")
+
 /// Repo details: files with sizes, context, quant picker (GGUF), fit, Download.
 struct HubRepoSheet: View {
     var repoId: String
@@ -223,6 +233,9 @@ struct HubRepoSheet: View {
     @State private var error: String?
     @State private var quant: HubCatalog.File?
     @State private var showAllFiles = false
+    /// Why the last Download tap did not start (space, drive, sign-in): shown above the button, sheet stays.
+    @State private var refusal: ModelStore.DownloadRefusal?
+    @State private var showStorage = false
     /// Finger-following offset of the whole sheet while its header is dragged (interactive spring).
     @State private var drag: CGFloat = 0
     private let hub = HubCatalog(token: HFAccount.shared.provider)
@@ -335,6 +348,22 @@ struct HubRepoSheet: View {
             }
             .safeAreaInset(edge: .bottom) {
                 if let spec {
+                  VStack(spacing: 8) {
+                    if let refusal {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Label(refusal.message, systemImage: LooplDesign.iconWarning)
+                                .font(.footnote).foregroundStyle(.red)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .accessibilityIdentifier("hub-download-refused")
+                            if refusal.suggestsStorageSettings {
+                                Button("Open Settings › Storage", systemImage: "externaldrive") { showStorage = true }
+                                    .font(.footnote.weight(.semibold))
+                                    .accessibilityIdentifier("hub-download-storage")
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    }
                     Button {
                         start(spec)
                     } label: {
@@ -346,10 +375,17 @@ struct HubRepoSheet: View {
                     .buttonStyle(.borderedProminent)
                     .tint(LooplDesign.accent)
                     .disabled(settings.offline && !(existing.flatMap { store.states[$0.id]?.isDownloaded } ?? false))
-                    .padding(.horizontal, LooplDesign.gutter).padding(.vertical, 10)
-                    .background(.bar)
                     .accessibilityIdentifier("hub-download")
+                  }
+                  .padding(.horizontal, LooplDesign.gutter).padding(.vertical, 10)
+                  .background(.bar)
+                  .animation(LooplDesign.Motion.faded(LooplDesign.Motion.snappy, reduceMotion), value: refusal)
                 }
+            }
+            .sheet(isPresented: $showStorage) {
+                NavigationStack { StorageView(engine: engine, settings: settings, store: store) }
+                    // Back from Storage (drive added / target changed): re-check so the footnote clears itself.
+                    .onDisappear { if let row = existing ?? spec { let r = store.preflight(row); refusal = (r?.isSilent ?? true) ? nil : r } }
             }
         }
         .offset(y: drag)
@@ -395,9 +431,22 @@ struct HubRepoSheet: View {
         }
     }
 
+    /// Download (or switch to) the repo. A download that cannot start RIGHT NOW — no
+    /// space, drive away, not signed in — keeps the sheet open and says why here, where
+    /// the finger is; before this the sheet closed and the reason landed as a footnote
+    /// in a section below the fold ("the download is not starting").
     private func start(_ spec: ModelSpec) {
         LooplDesign.haptic(1)
         let row = store.add(spec)
+        let alreadyHere = store.states[row.id]?.isDownloaded == true
+        if !alreadyHere, let why = store.download(row), !why.isSilent {
+            hubLog.error("Download tap refused in sheet for \(row.id, privacy: .public): \(why.message, privacy: .public)")
+            withAnimation(LooplDesign.Motion.faded(LooplDesign.Motion.snappy, reduceMotion)) { refusal = why }
+            LooplDesign.haptic(2)
+            return
+        }
+        refusal = nil
+        hubLog.info("Download tap accepted in sheet for \(row.id, privacy: .public) (downloaded=\(alreadyHere))")
         dismiss()
         didStart()
         Task { await engine.select(row) }
