@@ -55,7 +55,8 @@ final class HistoryUITests: XCTestCase {
         shot("02-selected-all")
 
         delete.tap()
-        let confirm = app.buttons["Delete 3 conversations"]
+        // confirmationDialog exposes its buttons twice to XCUITest on iOS 26 → firstMatch.
+        let confirm = app.buttons["Delete 3 conversations"].firstMatch
         XCTAssertTrue(confirm.waitForExistence(timeout: 5), "the confirmation dialog")
         XCTAssertTrue(app.staticTexts["Delete 3 conversations?"].exists)
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'messages, pictures and recordings'")).firstMatch.exists)
@@ -86,7 +87,7 @@ final class HistoryUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Delete 1"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.navigationBars.staticTexts["1 selected"].exists)
         app.buttons["history.delete"].tap()
-        let confirm = app.buttons["Delete conversation"]
+        let confirm = app.buttons["Delete conversation"].firstMatch
         XCTAssertTrue(confirm.waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Delete this conversation?"].exists)
         shot("05-confirm-one")
@@ -121,7 +122,7 @@ final class HistoryUITests: XCTestCase {
     func testFixtureConfirmScene() {
         let app = launch(["--design-history-delete", "confirm"])
         openHistory(app)
-        XCTAssertTrue(app.buttons["Delete 3 conversations"].waitForExistence(timeout: 8), "fixture raised the dialog")
+        XCTAssertTrue(app.buttons["Delete 3 conversations"].firstMatch.waitForExistence(timeout: 8), "fixture raised the dialog")
         shot("07-fixture-confirm")
         app.buttons["Cancel"].firstMatch.tap()
         XCTAssertTrue(app.buttons["Delete 3"].waitForExistence(timeout: 3))

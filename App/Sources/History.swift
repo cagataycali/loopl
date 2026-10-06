@@ -276,7 +276,9 @@ struct HistoryList: View {
                     .accessibilityHint(selecting ? "leaves selection mode" : "select conversations to delete or share to Hugging Face")
                 }
                 if selecting {
-                    ToolbarItem(placement: .topBarTrailing) {
+                    // Leading, next to Cancel: the sheet's own Done keeps the trailing slot on iPhone (ChatView), so
+                    // the title "N selected" stays centred and nothing crowds the right edge.
+                    ToolbarItem(placement: .topBarLeading) {
                         Button(allSelected ? "Deselect all" : "Select all") {
                             LooplDesign.haptic()
                             if allSelected { selected.removeAll() } else { selected = Set(engine.archive.conversations.map(\.id)) }
