@@ -1,54 +1,43 @@
 # loopl
 
-**A native Swift agent SDK for on-device inference — the Strands event loop in Swift — and a free iOS app that runs any
-public Hugging Face model offline.** No account, no token, no telemetry. Docs: **https://loopl.dev** · API: https://loopl.dev/api/
+**The Swift SDK for agents that run on the device.** A local model, the agent loop and the iPhone's own abilities as
+tools — offline, no account, no cloud. Plus a free iOS app that shows it off.
 
-iOS 18+ · Swift 6 · SwiftUI. Measured on an iPhone 16 Pro: Qwen3-1.7B at **41 tok/s** (MLX 4-bit) and **33 tok/s**
-(llama.cpp Q4_K_M), four tool calls in one turn.
+[loopl.dev](https://loopl.dev) · [Get started](https://loopl.dev/start/) · [API](https://loopl.dev/api/)
 
-## Install
 ```swift
-// Package.swift
-.package(url: "https://github.com/cagataycali/loopl", branch: "main")
-// products: "Loopl" (core, Foundation only) · "LooplRuntimes" (MLX, Apple Intelligence, llama.cpp) · "LooplUI" (SwiftUI)
+.package(url: "https://github.com/cagataycali/loopl", from: "0.1.0")
 ```
-GGUF needs the official llama.cpp xcframework once: `scripts/fetch-llama-xcframework.sh --with-sim`.
 
-## Use
 ```swift
 import Loopl
 import LooplRuntimes
+import LooplAppleTools
 
-let spec  = try await HubCatalog().resolve("mlx-community/Qwen3-1.7B-4bit")   // any public repo → ModelSpec
-let model = MLXModel()                                                        // or GGUFModel(), AppleFoundationModel()
-try await model.load(spec, from: weightsDirectory) { progress in }
+let model = MLXModel()                                   // or GGUFModel(), AppleFoundationModel()
+try await model.load(spec, from: weights) { _ in }
 
-let agent = Agent(model: model, tools: [CurrentTimeTool(), CalculatorTool()], systemPrompt: "Be brief.")
-for try await event in agent.stream("What time is it in Istanbul, and what is 23 × 47?") {
-    switch event {
-    case .text(let chunk):        print(chunk, terminator: "")
-    case .toolStarted(let use):   print("→", use.name, use.input)
-    case .toolResult(let result): print("←", result.content)
-    case .result(let r):          print("\n", r.stopReason, r.metrics.cycleCount, "cycles")
-    default: break
-    }
+let agent = Agent(model: model, tools: AppleTools.available)   // what this iPhone can do
+for try await event in agent.stream("Torch on, and how do I say 'where is the exit?' in Turkish?") {
+    if case .text(let chunk) = event { print(chunk, terminator: "") }
 }
 ```
-Strands, faithfully: stream → assemble → run tools (concurrently) → append → recurse until the model stops. No iteration
-cap, no loop detector; `maxTokens` recovers the message and throws, as Strands does. Mapping: https://loopl.dev/sdk/strands-mapping/
 
-## The app
-`App/` is the free iOS app (`technology.tiny.loopl`): document-style chat, inline tool rows, Browse Hugging Face
-(search MLX · GGUF, pick a quant, fit badge), models download once and run offline. Runtimes: MLX (Metal), Apple
-Intelligence (iOS 26), llama.cpp (GGUF). Everything stays on the phone.
+The loop is model → tools → model, until the model answers. No iteration cap.
 
-## Build
+| Product | |
+|---|---|
+| `Loopl` | `Agent`, `Tool`, `Model`, hooks, structured output, checkpoints, tracing — Foundation only |
+| `LooplRuntimes` | MLX (Metal, vision), llama.cpp (GGUF), Apple Foundation Models |
+| `LooplAppleTools` | `generate_image`, `generate_voice`, `transcribe`, `translate`, `read_text`, `describe_image`, `flashlight`, `vibrate`, `open_app` |
+| `LooplUI` | SwiftUI transcript, tool rows, approval card |
+
+Qwen3-1.7B on an iPhone 16 Pro: **41 tok/s** (MLX 4-bit), **33 tok/s** (llama.cpp Q4_K_M).
+
 ```sh
-swift test                                                   # SDK, macOS
-brew install xcodegen && xcodegen generate -s App/project.yml
-xcodebuild -project App/LooplApp.xcodeproj -scheme loopl -destination 'generic/platform=iOS Simulator' build
-DEVICE_ID=<udid> DEVELOPMENT_TEAM=<team> scripts/build-on-device.sh    # install + launch on an iPhone
+swift test                                                     # SDK, macOS
+brew install xcodegen && xcodegen generate -s App/project.yml  # the app → App/LooplApp.xcodeproj
+scripts/fetch-llama-xcframework.sh --with-sim                  # once, for GGUF
 ```
-First build resolves mlx-swift (large). Real llama.cpp tests on macOS: `LOOPL_GGUF_DIR=<dir with a .gguf> swift test --filter GGUFModelTests`.
 
 Made by [@cagataycali](https://github.com/cagataycali).

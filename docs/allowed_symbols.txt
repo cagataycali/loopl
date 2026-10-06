@@ -1,4 +1,4 @@
-# Type names the docs may mention although they are not declared in Sources/ (external: Swift stdlib, Apple, Strands, MLX, Hugging Face).
+# Type names the docs may mention although they are not declared in Sources/ (external: Swift stdlib, Apple, MLX, Hugging Face).
 AsyncThrowingStream
 Codable
 Sendable
@@ -26,13 +26,11 @@ MLXHuggingFace
 MLXLanguageModel
 Tokenizers
 Hub
-# Strands (Python/TS) names quoted in the mapping page
 BedrockModel
 OllamaModel
 Swarm
 Graph
 ContextBlock
-# Strands event / exception names quoted on the mapping + event-loop pages
 TypedEvent
 InitEventLoopEvent
 StartEvent
@@ -80,7 +78,6 @@ UUID
 Decodable
 # Apple framework quoted on the structured-output page
 FoundationModels
-# Strands session managers quoted on the checkpoints page
 SessionManager
 FileSessionManager
 SnapshotSessionManager

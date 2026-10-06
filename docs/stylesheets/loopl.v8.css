@@ -108,6 +108,9 @@ body { font-family: var(--l-sans); -webkit-font-smoothing: antialiased; text-ren
 .md-typeset .highlight { border: 1px solid var(--l-line); background: var(--l-raise); }
 .md-typeset .highlight pre, .md-typeset .highlight code { background: transparent; }
 .md-clipboard { color: var(--l-ink-3); background: transparent !important; border-radius: 6px; }
+.md-typeset .md-code__nav { background: transparent !important; box-shadow: none; }
+.md-typeset .md-code__button { color: var(--l-ink-3); }
+.md-typeset .md-code__button:hover { color: var(--l-ink); }
 .md-clipboard::after { background-color: currentColor; }
 .md-clipboard:hover { color: var(--l-ink); }
 
@@ -187,7 +190,7 @@ body { font-family: var(--l-sans); -webkit-font-smoothing: antialiased; text-ren
 .md-top { background: var(--l-raise); color: var(--l-ink-2); border: 1px solid var(--l-line); box-shadow: none; font-size: .6rem; }
 .md-banner { background: var(--l-ink); color: var(--l-bg); }
 .md-dialog { background: var(--l-ink); color: var(--l-bg); }
-.md-typeset .md-button { border-radius: 8px; border: 1px solid var(--l-line); color: var(--l-ink); font-weight: 500; font-size: .7rem; padding: .55em 1.1em; }
+.md-typeset .md-button { text-decoration: none; border-radius: 999px; border: 1px solid var(--l-line); color: var(--l-ink); font-weight: 500; font-size: .7rem; padding: .55em 1.1em; }
 .md-typeset .md-button:hover { border-color: var(--l-ink); background: transparent; color: var(--l-ink); }
 .md-typeset .md-button--primary { background: var(--l-ink); color: var(--l-bg); border-color: var(--l-ink); }
 .md-typeset .md-button--primary:hover { background: var(--l-ink); color: var(--l-bg); opacity: .86; }
@@ -354,6 +357,12 @@ html.l-js .l-reveal.is-on { opacity: 1; transform: none; }
   .md-typeset h1 { font-size: 1.6rem; }
 }
 
+/* app screenshots */
+.l-shots { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.6rem 1.2rem; margin: 2.4rem 0; }
+.l-shots figure { margin: 0; }
+.l-shots img { width: 100%; height: auto; border-radius: 22px; border: 1px solid var(--l-line); }
+.l-shots figcaption { font-style: normal; font-size: .62rem; color: var(--l-ink-3); margin-top: .6rem; text-align: left; max-width: none; }
+@media (max-width: 44em) { .l-shots { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 /* ───────── models table (generated) ───────── */
 .md-typeset .loopl-models-table td:first-child { white-space: nowrap; }
 

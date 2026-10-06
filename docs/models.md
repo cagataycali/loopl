@@ -1,14 +1,21 @@
+---
+title: "Models"
+description: "The models the loopl app ships in its catalog, with size, context and whether they call tools. Any public Hugging Face repo works too."
+hide:
+  - navigation
+---
+
 # Models
 
-What the loopl app ships in its catalog (`models.json`), and what the SDK's `Catalog` exposes. Every MLX entry is an `mlx-community` 4-bit conversion downloaded straight from Hugging Face; none of them is gated. The Apple entry needs no download at all.
-
-!!! tip "How to read *usable context*"
-    *ctx max* is the model's `max_position_embeddings`. *usable on 8 GB* is what fits next to the 4-bit weights and the KV cache on an iPhone 16 Pro (8 GB, ~5–6 GB per-app jetsam limit) — the value the app uses as its default context. Bigger phones can raise it in **Agent → Context**.
+The app's built-in catalog. Every entry is a public Hugging Face repo — nothing gated, no token — and any other public MLX or GGUF repo loads the same way. *Usable on 8 GB* is the context that fits beside the weights on an iPhone 16 Pro; it is the app's default.
 
 <div class="loopl-models-table" markdown>
 
 | Model | Runtime | Params | 4-bit size | ctx max | usable on 8 GB | min RAM | gated | tool calls |
 |---|---|---|---|---:|---:|---|---|:-:|
+| [Qwen3.5 0.8B](https://huggingface.co/mlx-community/Qwen3.5-0.8B-4bit) | MLX | 0.8B | 652 MB | 262,144 | 16,384 | 2 GB | no | ✓ |
+| [Qwen3-VL 2B](https://huggingface.co/mlx-community/Qwen3-VL-2B-Instruct-4bit) | MLX | 2.0B | 1.80 GB | 262,144 | 12,288 | 3 GB | no | ✓ |
+| [Qwen3.5 2B](https://huggingface.co/mlx-community/Qwen3.5-2B-4bit) | MLX | 2.0B | 1.75 GB | 262,144 | 12,288 | 3 GB | no | ✓ |
 | [DeepSeek-R1-Distill-Qwen-1.5B (4-bit)](https://huggingface.co/mlx-community/DeepSeek-R1-Distill-Qwen-1.5B-4bit) | MLX | 1.8B | 1000 MB | 131,072 | 8,192 | 6 GB | no | — |
 | [Llama-3.2-1B Instruct (4-bit)](https://huggingface.co/mlx-community/Llama-3.2-1B-Instruct-4bit) | MLX | 1.2B | 695 MB | 131,072 | 8,192 | 6 GB | no | ✓ |
 | [Llama-3.2-3B Instruct (4-bit)](https://huggingface.co/mlx-community/Llama-3.2-3B-Instruct-4bit) | MLX | 3.2B | 1.81 GB | 131,072 | 8,192 | 8 GB | no | ✓ |
@@ -16,6 +23,7 @@ What the loopl app ships in its catalog (`models.json`), and what the SDK's `Cat
 | [Qwen3-0.6B (4-bit)](https://huggingface.co/mlx-community/Qwen3-0.6B-4bit) :material-star:{ title="default" } | MLX | 0.6B | 335 MB | 40,960 | 8,192 | 6 GB | no | ✓ |
 | [Qwen3-1.7B (4-bit)](https://huggingface.co/mlx-community/Qwen3-1.7B-4bit) | MLX | 1.7B | 968 MB | 40,960 | 8,192 | 6 GB | no | ✓ |
 | [Qwen3-4B (4-bit)](https://huggingface.co/mlx-community/Qwen3-4B-4bit) | MLX | 4.0B | 2.26 GB | 40,960 | 8,192 | 8 GB | no | ✓ |
+| [Qwen3-VL 4B](https://huggingface.co/mlx-community/Qwen3-VL-4B-Instruct-4bit) | MLX | 4.0B | 3.11 GB | 262,144 | 8,192 | 5 GB | no | ✓ |
 | [SmolLM3-3B (4-bit)](https://huggingface.co/mlx-community/SmolLM3-3B-4bit) | MLX | 3.1B | 1.73 GB | 65,536 | 8,192 | 8 GB | no | ✓ |
 | [gemma-3-1b IT (4-bit)](https://huggingface.co/mlx-community/gemma-3-1b-it-4bit) | MLX | 1.0B | 733 MB | 32,768 | 8,192 | 6 GB | no | — |
 | [gemma-3-1b IT-qat (4-bit)](https://huggingface.co/mlx-community/gemma-3-1b-it-qat-4bit) | MLX | 1.0B | 733 MB | 32,768 | 8,192 | 6 GB | no | — |
@@ -37,6 +45,10 @@ What the loopl app ships in its catalog (`models.json`), and what the SDK's `Cat
 - **Apple Intelligence (on-device)** — iOS 26+, Apple Intelligence enabled, iPhone 15 Pro or later; zero download; offline; SystemLanguageModel.default.availability
 - **Qwen3-1.7B (4-bit)** — 40960 = 32k native; thinking mode on by default (/no_think or enable_thinking=false) loopl passes enable_thinking=false for the agent loop. KV 112 KiB/token → memory-bound ctx ≈34,283 on 8 GB (estimate).
 - **Qwen3-4B (4-bit)** — 40960 = 32k native; thinking mode on by default (/no_think or enable_thinking=false) loopl passes enable_thinking=false for the agent loop. KV 144 KiB/token → memory-bound ctx ≈17,883 on 8 GB (estimate).
+- **Qwen3.5 0.8B** — Sees pictures. Smallest Qwen3.5 (image-text-to-text), 4-bit MLX. Proven on Mac: image → description + tool call.
+- **Qwen3.5 2B** — Sees pictures. Qwen3.5 2B, 4-bit MLX — the sweet spot for photos + tools on an 8 GB phone.
+- **Qwen3-VL 2B** — Sees pictures. Qwen3-VL 2B Instruct, 4-bit MLX.
+- **Qwen3-VL 4B** — Sees pictures. Qwen3-VL 4B Instruct, 4-bit MLX — best vision quality that fits an 8 GB phone.
 - **Llama-3.2-1B Instruct (4-bit)** — KV 32 KiB/token → memory-bound ctx ≈128,317 on 8 GB (estimate).
 - **Llama-3.2-3B Instruct (4-bit)** — KV 112 KiB/token → memory-bound ctx ≈26,964 on 8 GB (estimate).
 - **gemma-3-1b IT (4-bit)** — hybrid local/global attention → real KV below the fp16 formula; template has no tools branch → JSON-in-prompt fallback No tool role in the template — loopl folds tool results into user turns. KV 26 KiB/token → memory-bound ctx ≈32,768 on 8 GB (estimate).
@@ -53,11 +65,10 @@ What the loopl app ships in its catalog (`models.json`), and what the SDK's `Cat
 - **Gemma 3 1B IT · Q4_K_M (llama.cpp)** — No tool template — manual JSON prompting.
 - **SmolLM2 1.7B Instruct · Q4_K_M (llama.cpp)** — Small and fast; manual JSON prompting.
 
-## Picking a model
+## Picking one
 
-- **Default**: `qwen3-0.6b-4bit` — the best balance of tool-call reliability, speed and context on an 8 GB phone.
-- **≤ 4B** parameters at 4-bit fit comfortably; **7B/8B class** models load but leave little room for context — the app warns before downloading them (the catalog's `minRAMGB` vs the device) and keeps the context budget at `ctxUsable8GB`.
-- **Tool calls** are proven on the Qwen3 (Hermes format), Llama 3.2 and Apple families. Gemma and SmolLM fall back to plain-JSON parsing — fine for one tool, flaky for many.
-- **Context**: the KV cache is the real cost. Doubling context roughly doubles the memory the model needs beyond its weights.
+- **Default:** `qwen3-0.6b-4bit` — the best balance of tool calls, speed and context on an 8 GB phone.
+- **Up to 4B** parameters at 4-bit fit comfortably; 7–8B load but leave little room for context.
+- **Tool calls** are reliable on Qwen3, Llama 3.2 and Apple's model; Gemma and SmolLM manage one tool, not many.
 
-<small>Generated by `docs/gen_models.py` from `App/Resources/models.json` (catalog 2026-10-06) on 2026-10-05. Re-run the script after editing the catalog — do not edit this page by hand.</small>
+<small>Generated by `docs/gen_models.py` from `App/Resources/models.json` (catalog 2026-10-06) on 2026-10-06. Re-run the script after editing the catalog — do not edit this page by hand.</small>

@@ -78,7 +78,6 @@ plugins:
         sdk/index.md: sdk/agent.md
         sdk/event-loop.md: sdk/agent.md
         sdk/messages-events.md: sdk/agent.md
-        sdk/strands-mapping.md: sdk/agent.md
         sdk/conversation-managers.md: sdk/hooks.md
         runtimes/index.md: sdk/models.md
         runtimes/mlx.md: sdk/models.md
@@ -146,9 +145,9 @@ nav:
   - Home: index.md
   - Get started: start.md
   - SDK:
-      - Agent & event loop: sdk/agent.md
+      - Agent: sdk/agent.md
       - Tools: sdk/tools.md
-      - Models & runtimes: sdk/models.md
+      - Runtimes: sdk/models.md
       - Hooks & conversation: sdk/hooks.md
       - Human in the loop: sdk/hitl.md
       - Structured output: sdk/structured-output.md
