@@ -166,7 +166,8 @@ final class HFAuthTests: XCTestCase {
 final class HFAuthLiveTests: XCTestCase {
     static var token: String? {
         guard ProcessInfo.processInfo.environment["LOOPL_HF_LIVE"] == "1" else { return nil }
-        let p = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".cache/huggingface/token")
+        if let t = ProcessInfo.processInfo.environment["LOOPL_HF_TOKEN"], !t.isEmpty { return t }
+        let p = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".cache/huggingface/token")   // homeDirectoryForCurrentUser is macOS-only
         return (try? String(contentsOf: p, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
