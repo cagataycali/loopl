@@ -126,7 +126,7 @@ final class ToolRegistryTests: XCTestCase {
         let by = Dictionary(uniqueKeysWithValues: results.map { ($0.toolUseId, $0.content) })
         XCTAssertEqual(by["a"], "http exists but is not mounted. Call manage_tools with {\"action\": \"mount\", \"names\": [\"http\"]} first, then call http again.")
         XCTAssertEqual(by["b"], "flashlight cannot run on this device: No torch on this device. Available tools: calculator, manage_tools")
-        XCTAssertEqual(by["c"], "Unknown tool: teleport. Available tools: calculator, manage_tools. Tools you can mount with manage_tools: http")
+        XCTAssertEqual(by["c"], "Unknown tool: teleport. Available tools: calculator, manage_tools. Tools you can mount: http — call manage_tools with {\"action\": \"mount\", \"names\": [\"<one of them>\"]}, then call it.")
     }
 
     func testUnknownToolMessageWithoutRegistryIsUnchanged() async throws {

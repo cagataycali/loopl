@@ -755,7 +755,9 @@ public actor Agent {
             return "\(name) cannot run on this device: \(reason). Available tools: \(offered)"
         }
         var msg = "Unknown tool: \(name). Available tools: \(offered)"
-        if canManage, !mountable.isEmpty { msg += ". Tools you can mount with \(ManageToolsTool.toolName): \(mountable.joined(separator: ", "))" }
+        if canManage, !mountable.isEmpty {
+            msg += ". Tools you can mount: \(mountable.joined(separator: ", ")) — call \(ManageToolsTool.toolName) with {\"action\": \"mount\", \"names\": [\"<one of them>\"]}, then call it."
+        }
         return msg
     }
 
