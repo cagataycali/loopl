@@ -176,22 +176,22 @@ public struct TrainingPlan: Hashable, Sendable, Codable {
     public var flavor: TrainingFlavor
     public var epochs: TrainingEpochs = .auto
     public var includeAllShards: Bool = true // round ≥ 2: replay every shard (off → `--new-shards-only`)
+    /// Not a user control since TRAIN-SIMPLIFY: the Train screen never sets it, the script's default decides (`none` today).
     public var stitch: TrainingStitch = .none
     public var outputName: String           // bare repo name, e.g. "loopl-mine-0.8b" → <user>/loopl-mine-0.8b
-    public var hoursCap: Double = 2         // → timeoutSeconds; HF kills the job (and the bill) there
     public var skipGGUF: Bool = false
     public var skipMLX: Bool = false
 
     public init(dataset: String, conversations: Int, withTools: Int = 0, base: TrainingBase, tunedBase: TrainingTunedBase? = nil,
                 method: TrainingMethod? = nil, flavor: TrainingFlavor? = nil, epochs: TrainingEpochs = .auto, includeAllShards: Bool = true,
-                stitch: TrainingStitch = .none, outputName: String? = nil, hoursCap: Double = 2, skipGGUF: Bool = false, skipMLX: Bool = false) {
+                stitch: TrainingStitch = .none, outputName: String? = nil, skipGGUF: Bool = false, skipMLX: Bool = false) {
         self.dataset = dataset; self.conversations = conversations; self.withTools = withTools; self.base = tunedBase?.size ?? base
         self.tunedBase = tunedBase
         self.method = method ?? (tunedBase != nil ? .lora : base.defaultMethod)   // the script's round ≥ 2 default is LoRA r32
         self.flavor = flavor ?? base.recommendedFlavor
         self.epochs = epochs; self.includeAllShards = includeAllShards; self.stitch = stitch
         self.outputName = outputName ?? (tunedBase.map { Self.defaultOutputName(continuing: $0) } ?? Self.defaultOutputName(dataset: dataset, base: base))
-        self.hoursCap = hoursCap; self.skipGGUF = skipGGUF; self.skipMLX = skipMLX
+        self.skipGGUF = skipGGUF; self.skipMLX = skipMLX
     }
 
     /// Round this job closes: 1 from a stock base, `tunedBase.round + 1` when continuing.
@@ -252,9 +252,29 @@ public struct TrainingPlan: Hashable, Sendable, Codable {
         return a
     }
 
-    public var timeoutSeconds: Int { max(900, Int(hoursCap * 3600)) }   // HF minimum we allow: 15 min
+    /// The automatic cost guard (no user control): HF kills the job — and the bill — at `estimate.capSeconds`.
+    public var timeoutSeconds: Int { estimate.capSeconds }
 
     public var estimate: TrainingEstimate { TrainingEstimate(plan: self) }
+
+    /// The plan in plain words, for the Recipe footer: what it starts from, what it learns, how, where it lands.
+    public func summary(user: String) -> String {
+        let start = tunedBase.map { "Continues \($0.name) (round \(round))" } ?? "Starts from \(base.label)"
+        let what: String
+        if tunedBase != nil {
+            what = includeAllShards ? "learns from everything you have shared so far (\(conversations) conversations)" : "learns from the \(conversations) conversations shared since the last round"
+        } else {
+            what = "learns from your \(conversations) conversation\(conversations == 1 ? "" : "s")"
+        }
+        let passes: String
+        switch epochs {
+        case .auto: passes = "in up to \(plannedEpochs) pass\(plannedEpochs == 1 ? "" : "es"), keeping the one that scores best on held-out chats"
+        case .fixed(let n): passes = "in \(n) pass\(n == 1 ? "" : "es")"
+        }
+        let how = method == .full ? "Every weight is updated" : "A small LoRA adapter is trained and merged in"
+        let formats = skipMLX ? "." : (skipGGUF ? ", ready for your iPhone." : ", ready for your iPhone and as GGUF.")
+        return "\(start) and \(what) \(passes). \(how) on a \(flavor.label) at Hugging Face; the result is saved privately as \(outputRepo(user: user))\(formats)"
+    }
 }
 
 /// An honest estimate, not a quote — README-app.md's model: rows ≈ 1.6 × tool conversations + 1 × the rest; steps = rows × epochs / 16;
@@ -265,9 +285,12 @@ public struct TrainingEstimate: Hashable, Sendable {
     public var overheadSeconds: Double
     public var totalSeconds: Double { trainSeconds + overheadSeconds }
     public var usd: Double
-    public var exceedsCap: Bool
+    /// The automatic cost guard: the job is killed (and billing stops) here — 2× the estimate, never under 15 minutes, whole minutes.
+    public var capSeconds: Int
     /// Measured runs land under the guide more often than over it; the estimate leans long on purpose (owner pays).
     public static let safetyFactor = 1.25
+    public static let capFactor = 2.0
+    public static let capMinimumSeconds = 15 * 60
 
     public init(plan: TrainingPlan) {
         let rows = Double(plan.conversations - plan.withTools) + 1.6 * Double(plan.withTools)
@@ -278,13 +301,29 @@ public struct TrainingEstimate: Hashable, Sendable {
         overhead += plan.skipMLX ? 0 : (plan.base == .b0_8 ? 60 : plan.base == .b2 ? 150 : 300)
         overhead += plan.skipGGUF ? 0 : (plan.base == .b0_8 ? 120 : plan.base == .b2 ? 240 : 420)
         overheadSeconds = overhead
-        let billed = min(trainSeconds + overhead, Double(plan.timeoutSeconds))
-        usd = billed / 3600 * plan.flavor.usdPerHour
-        exceedsCap = trainSeconds + overhead > Double(plan.timeoutSeconds)
+        usd = (trainSeconds + overhead) / 3600 * plan.flavor.usdPerHour
+        capSeconds = Self.cap(forEstimatedSeconds: trainSeconds + overhead)
+    }
+
+    /// `max(2 × estimate, 15 min)`, rounded up to the minute (HF's `timeoutSeconds`).
+    public static func cap(forEstimatedSeconds s: Double) -> Int {
+        let raw = max(Double(capMinimumSeconds), s * capFactor)
+        return Int((raw / 60).rounded(.up)) * 60
     }
 
     public var durationLabel: String { Self.duration(totalSeconds) }
     public var usdLabel: String { "≈ " + Self.usd(usd) }
+    /// The one sentence the Train screen and its ApprovalCard both show: "≈ $0.30 · about 9 minutes · stops by itself if it runs past 18 minutes."
+    public var sentence: String { "\(usdLabel) · about \(Self.spoken(totalSeconds)) · stops by itself if it runs past \(Self.spoken(Double(capSeconds)))." }
+
+    /// Human durations for prose: "a minute", "9 minutes", "1.5 hours".
+    public static func spoken(_ s: Double) -> String {
+        if s < 90 { return "a minute" }
+        if s < 3600 { return "\(Int((s / 60).rounded())) minutes" }
+        let h = s / 3600
+        if h < 10 { let t = (h * 10).rounded() / 10; return t == t.rounded() ? "\(Int(t)) hour\(t == 1 ? "" : "s")" : String(format: "%.1f hours", t) }
+        return "\(Int(h.rounded())) hours"
+    }
 
     public static func usd(_ v: Double) -> String {
         if v < 0.01 { return "< $0.01" }

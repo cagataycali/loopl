@@ -27,7 +27,7 @@ final class TrainingSessionTests: XCTestCase {
     }
 
     func makeSession(_ t: Replay, token: String? = "hf_test_token_000000000000000000") -> TrainingSession {
-        let plan = TrainingPlan(dataset: "cagataydev/loopl-app-smoke-data", conversations: 191, base: .b0_8, outputName: "loopl-app-smoke", hoursCap: 1)
+        let plan = TrainingPlan(dataset: "cagataydev/loopl-app-smoke-data", conversations: 191, base: .b0_8, outputName: "loopl-app-smoke")
         return TrainingSession(plan: plan, user: "cagataydev", client: HFHubClient(token: token, transport: t), script: Self.script, pollInterval: .milliseconds(10))
     }
 
@@ -49,7 +49,7 @@ final class TrainingSessionTests: XCTestCase {
         XCTAssertTrue(body.contains("\"flavor\":\"a10g-small\""), body)
         XCTAssertTrue(body.contains("resolve/main/train/loopl_sft.py"), body)
         XCTAssertTrue(body.contains("\"HF_TOKEN\":\"hf_test_token"), body)
-        XCTAssertTrue(body.contains("\"timeoutSeconds\":3600"), body)
+        XCTAssertTrue(body.contains("\"timeoutSeconds\":\(s.plan.estimate.capSeconds)"), body)
         // polling runs on its own; wait for the terminal phase
         for _ in 0..<200 { if !s.phase.isActive { break }; try await Task.sleep(for: .milliseconds(10)) }
         guard case .finished(_, let out) = s.phase else { return XCTFail("phase \(s.phase)") }

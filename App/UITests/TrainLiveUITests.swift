@@ -31,10 +31,8 @@ final class TrainLiveUITests: XCTestCase {
         XCTAssertTrue(rows.waitForExistence(timeout: 60), "row count never read: \(app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'Rows'")).firstMatch.label)")
         let a1 = XCTAttachment(screenshot: app.screenshot()); a1.name = "live-form"; a1.lifetime = .keepAlways; add(a1)
 
-        // cheapest cap + a distinct output name
+        // a distinct output name (the cost cap is automatic since TRAIN-SIMPLIFY)
         app.swipeUp()
-        let cap = app.sliders.matching(identifier: "train-cap").firstMatch
-        if cap.waitForExistence(timeout: 5) { cap.adjust(toNormalizedSliderPosition: 0) }
         let name = app.descendants(matching: .any).matching(identifier: "train-name").firstMatch
         if name.waitForExistence(timeout: 5) { name.tap(); name.typeText((ProcessInfo.processInfo.environment["LOOPL_TRAIN_NAME"] ?? "loopl-app-sim") + "\n") }
 
