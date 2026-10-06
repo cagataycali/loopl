@@ -15,6 +15,7 @@ struct ChatView: View {
     @State private var showHistory = false
     /// The user row being edited in place (hold → Edit). The composer dims while it is set.
     @State private var editing: UUID?
+    @State private var showOffline = false
     @FocusState private var focused: Bool
     @Namespace private var zoom
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -92,7 +93,21 @@ struct ChatView: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     HStack(spacing: 14) {
-                        if settings.offline { Image(systemName: LooplDesign.iconOffline).foregroundStyle(.orange).accessibilityLabel("offline mode on") }
+                        if settings.offline {
+                            // Not a dead glyph in a toolbar pill: tap to read what it means and turn it off here.
+                            Button { LooplDesign.haptic(); showOffline = true } label: { Image(systemName: LooplDesign.iconOffline).foregroundStyle(.orange) }
+                                .accessibilityLabel("Offline mode is on")
+                                .accessibilityHint("explains offline mode; lets you turn it off")
+                                .popover(isPresented: $showOffline, arrowEdge: .top) {
+                                    VStack(alignment: .leading, spacing: 10) {
+                                        Label("Offline mode is on", systemImage: LooplDesign.iconOffline).font(.callout.weight(.semibold))
+                                        Text("Downloads and the http tool are refused. Models already on this device still load and run.").font(.footnote).foregroundStyle(.secondary)
+                                        Button("Turn off offline mode") { settings.offline = false; showOffline = false }.font(.footnote.weight(.semibold))
+                                    }
+                                    .padding(16).frame(maxWidth: 300)
+                                    .presentationCompactAdaptation(.popover)
+                                }
+                        }
                         Button { LooplDesign.haptic(); engine.newConversation() } label: { Image(systemName: "square.and.pencil") }
                             .disabled(engine.transcript.items.isEmpty || engine.isGenerating)
                             .accessibilityLabel("New conversation")
@@ -137,7 +152,8 @@ struct ChatView: View {
         case .downloading(let spec, let done, let total):
             // "Zero KB of 335.5 MB" is what the formatter says at byte 0 — "Starting" is what is happening.
             ReadinessRow(title: "Downloading \(spec.name)", detail: (done == 0 ? "Starting" : "\(ByteCountFormatter.string(fromByteCount: done, countStyle: .file)) of \(ByteCountFormatter.string(fromByteCount: total, countStyle: .file))") + " · once, then offline",
-                         progress: total > 0 ? Double(done) / Double(total) : nil)
+                         progress: total > 0 ? Double(done) / Double(total) : nil,
+                         action: ("Pause", { store.pause(spec) }))   // the first-launch download could not be stopped from here
         case .loading(let spec, let p):
             ReadinessRow(title: "Loading \(spec.name)", detail: p > 0 && p < 1 ? "\(Int(p * 100))%" : "warming up", progress: p > 0 ? p : nil)
         case .failed(let spec, let msg):
@@ -166,11 +182,15 @@ struct ReadinessRow: View {
     var title: String
     var detail: String
     var progress: Double?
+    /// An optional trailing action ("Pause").
+    var action: (String, () -> Void)? = nil
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 if progress == nil { PulsingMark().frame(width: 14, height: 14) }
                 Text(title).font(.footnote.weight(.medium)).contentTransition(.interpolate)
+                Spacer(minLength: 0)
+                if let action { Button(action.0, action: action.1).font(.footnote.weight(.semibold)).buttonStyle(.plain).foregroundStyle(LooplDesign.accent) }
             }
             if let progress {
                 ProgressView(value: progress).tint(LooplDesign.accent)

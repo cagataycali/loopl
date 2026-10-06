@@ -27,6 +27,7 @@ struct LooplApp: App {
                 }
             }
             .tint(LooplDesign.accent)
+            .preferredColorScheme(settings.appearance.colorScheme)
             // App-wide (not only on the Storage screen): a drive plugged in while loopl was in the background —
             // or one iOS mounted late — is re-resolved the moment the app is active again.
             .onChange(of: scenePhase) { _, p in

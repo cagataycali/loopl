@@ -20,6 +20,15 @@ public final class AppSettings {
     public var lastModelId: String? { didSet { UserDefaults.standard.set(lastModelId, forKey: "loopl.lastModel") } }
     /// Settings › Ask before: which `http` calls show an approval card (SDK `ApprovalPolicy.Mode`). Read by the policy hook on every call.
     public var askBefore: ApprovalPolicy.Mode { didSet { UserDefaults.standard.set(askBefore.rawValue, forKey: Self.askBeforeKey) } }
+    /// Settings › Haptics — ON by default; off silences loopl's own feedback (send, tool start/finish, model loaded…).
+    public var haptics: Bool { didSet { UserDefaults.standard.set(haptics, forKey: "loopl.haptics"); LooplDesign.hapticsEnabled = haptics } }
+    /// Settings › Appearance — follows the system unless the user picks light or dark.
+    public var appearance: Appearance { didSet { UserDefaults.standard.set(appearance.rawValue, forKey: "loopl.appearance") } }
+    public enum Appearance: String, CaseIterable, Sendable {
+        case system, light, dark
+        public var colorScheme: ColorScheme? { switch self { case .system: nil; case .light: .light; case .dark: .dark } }
+        public var label: String { switch self { case .system: "System"; case .light: "Light"; case .dark: "Dark" } }
+    }
     nonisolated public static let askBeforeKey = "loopl.askBefore"
 
     public static let defaultSystemPrompt = "You are loopl, a helpful assistant running fully on this device. Use tools when they help; answer concisely."
@@ -35,6 +44,9 @@ public final class AppSettings {
         askBefore = ApprovalPolicy.Mode(rawValue: d.string(forKey: Self.askBeforeKey) ?? "") ?? .mutating
         showPerformance = d.bool(forKey: "loopl.perf")
         lastModelId = d.string(forKey: "loopl.lastModel")
+        haptics = d.object(forKey: "loopl.haptics") == nil ? true : d.bool(forKey: "loopl.haptics")
+        appearance = Appearance(rawValue: d.string(forKey: "loopl.appearance") ?? "") ?? .system
+        LooplDesign.hapticsEnabled = haptics
         // Retired keys from 0.1 (demo runtime, HF token, iteration cap) are simply ignored.
         for k in ["loopl.demo", "loopl.maxIter", "loopl.runtime", "loopl.maxTokens", "loopl.ctx", "loopl.temp"] { d.removeObject(forKey: k) }
     }
@@ -169,7 +181,8 @@ public final class Engine {
                 case .downloading(let done, let total, _, _): readiness = .downloading(spec, done: done, total: total); continue
                 case .downloaded: haptics.emit(.downloadFinished); break
                 case .failed(let msg): readiness = .failed(spec, msg); haptics.emit(.error); return
-                case .paused, .notDownloaded: readiness = .failed(spec, "download stopped"); return
+                case .paused: readiness = .failed(spec, "Download paused — resume it from Models."); return
+                case .notDownloaded: readiness = .failed(spec, "download stopped"); return
                 case .needsDrive(let d): readiness = .failed(spec, "\(spec.name) is on \(d). Plug it in to use it."); return
                 case .driveUnreadable(let d, _): readiness = .failed(spec, "\(d) is connected but loopl can't read it — re-grant its folder in Settings › Storage."); return
                 case .moving: continue
