@@ -189,6 +189,28 @@ final class OnboardingUITests: XCTestCase {
         Thread.sleep(forTimeInterval: 1.5)
     }
 
+    /// Not a check — captures. `LOOPL_ONBOARDING_SHOTS=<dir>` writes the pick stage scrolled to the Apple Intelligence
+    /// card and the sign-in step as PNGs (lane evidence; the ASC set comes from scripts/appstore-screenshots.sh).
+    func testShootPickStates() throws {
+        guard let dir = ProcessInfo.processInfo.environment["LOOPL_ONBOARDING_SHOTS"], !dir.isEmpty else { throw XCTSkip("captures only") }
+        func shoot(_ app: XCUIApplication, _ name: String) {
+            let png = app.screenshot().pngRepresentation
+            try? png.write(to: URL(fileURLWithPath: dir).appendingPathComponent("\(name).png"))
+        }
+        let app = launch(["--design-onboarding-step", "pick", "--design-apple-fm", "--design-ram-gb", "6"])
+        XCTAssertTrue(el(app, "onboarding-continue").waitForExistence(timeout: 10))
+        app.swipeUp()
+        Thread.sleep(forTimeInterval: 1.0)
+        shoot(app, "pick-apple-card")
+        app.terminate()
+        let gated = launch(["--design-onboarding-step", "pick", "--design-gated", "--design-apple-fm"])
+        XCTAssertTrue(el(gated, "onboarding-continue").waitForExistence(timeout: 10))
+        el(gated, "onboarding-continue").tap()
+        XCTAssertTrue(el(gated, "onboarding-signin").waitForExistence(timeout: 5))
+        Thread.sleep(forTimeInterval: 0.8)
+        shoot(gated, "pick-signin-step")
+    }
+
     /// Settings › About › "Show intro again" replays the flow on an installed app.
     func testReplayFromSettings() {
         let app = XCUIApplication()

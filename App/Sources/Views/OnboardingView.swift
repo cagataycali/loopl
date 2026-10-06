@@ -409,10 +409,8 @@ struct OnboardingView: View {
                     .font(.title2).foregroundStyle(ready ? AnyShapeStyle(LooplDesign.accent) : AnyShapeStyle(.secondary))
                     .frame(width: 32).padding(.top, 2)
                 VStack(alignment: .leading, spacing: 5) {
-                    HStack(spacing: 6) {
-                        Text(ready ? "Use Apple Intelligence" : "Apple Intelligence").font(.headline)
-                        if ready { Pill("no download", tint: .green) }
-                    }
+                    Text(ready ? "Use Apple Intelligence" : "Apple Intelligence").font(.headline)
+                    if ready { WrapPills { Pill("no download", tint: .green); Pill("private", tint: .secondary); Pill("offline", tint: .secondary) } }
                     Text(ready ? "Already on this \(LooplDesign.deviceName) — nothing to download. Private, instant, works offline."
                                : "Not available here: \(why).")
                         .font(.subheadline).foregroundStyle(ready ? .primary : .secondary).fixedSize(horizontal: false, vertical: true)
