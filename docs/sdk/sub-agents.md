@@ -42,8 +42,8 @@ use_agent {action: run | status | result | stop, system_prompt?, input?, tools?:
 | action | does |
 |---|---|
 | `run` | spawns a child. `wait` (default `true`) returns the child's final answer inline when it finishes within **45 s**; otherwise — or with `wait:false` — it returns `{pending: true, id}` at once. |
-| `status` | the envelope by `id`: status, elapsed, tool calls, result when done. |
-| `result` | the final answer by `id` (or `{pending: true}` with a note to keep going). |
+| `status` | a snapshot of the envelope by `id`: status, elapsed, tool calls, result when done. Never waits. |
+| `result` | the final answer by `id`. On a child still running it **waits up to 45 s** (measured: a 2B model polls right after `wait:false` whatever the note says — so the poll becomes the wait), then `{pending: true}`. A result delivered this way **claims the wake**: no second delivery. |
 | `stop` | cancels a running or queued child. |
 
 Tool names are validated against the parent's own tools — an unknown name is a sentence the model can read, and **`use_agent` itself is refused**: children cannot spawn (depth 1). The same applies to a name that is not in the registry: the child only ever gets what the parent could offer.

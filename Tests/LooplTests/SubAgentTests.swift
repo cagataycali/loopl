@@ -162,6 +162,29 @@ final class SubAgentTests: XCTestCase {
         XCTAssertTrue(out.contains("background done 7"))
     }
 
+    /// `result` on a running background child WAITS and, when it delivers, CLAIMS the wake (no double delivery).
+    func testResultWaitsAndClaimsTheWake() async throws {
+        let hub = SubAgentHub()
+        let model = FakeModel(turns: [.text("slow answer 9")], delayPerChunkNs: 30_000_000)
+        let gate = ModelGate()
+        let ctx = SubAgentContext(model: model, gate: gate, availableTools: [])
+        let fired = SABox<Bool>(); fired.value = false
+        await hub.setOnFinished { _ in fired.value = true }
+        let id = await hub.spawn(systemPrompt: "", input: "go", tools: [], background: true, context: ctx, sink: nil)
+        let tool = UseAgentTool(hub: hub) { ctx }
+        let out = try await tool.call(["action": "result", "id": .string(id)])
+        XCTAssertTrue(out.contains("slow answer 9") && out.contains("\"status\":\"done\""), out)
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertEqual(fired.value, false, "the inline reader claimed the result")
+        // status is a snapshot — a second background child left alone DOES wake.
+        let id2 = await hub.spawn(systemPrompt: "", input: "go", tools: [], background: true, context: ctx, sink: nil)
+        await model.appendTurns([.text("later")])
+        let snap = try await tool.call(["action": "status", "id": .string(id2)])
+        XCTAssertTrue(snap.contains("\"pending\":true") || snap.contains("done"), snap)
+        try await Task.sleep(nanoseconds: 400_000_000)
+        XCTAssertEqual(fired.value, true)
+    }
+
     // MARK: refusals
 
     func testDepthOneAndUnknownToolsAreRefusedWithASentence() async throws {

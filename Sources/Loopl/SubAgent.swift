@@ -325,7 +325,9 @@ public actor SubAgentHub {
         run.waiters.forEach { $0.resume(returning: run.envelope) }
         runs[id]?.waiters = []
         runs[id]?.agent = nil
-        if wasDetached { onFinished?(run.envelope) }
+        // Wake only when nobody is reading the result right now (wake.ts "claim": a `result` call waiting on this run
+        // delivers it to the parent inline, so a wake on top would say the same thing twice).
+        if wasDetached && run.waiters.isEmpty { onFinished?(run.envelope) }
         // A slot freed → the next queued child starts (its gate is the one every child shares).
         if let gate = lastGate { pump(gate: gate) }
     }
@@ -483,8 +485,12 @@ public struct UseAgentTool: Tool {
             guard let id = args["id"]?.stringValue, !id.isEmpty else { throw ToolError("\(action) needs id (from run)") }
             guard let env = await hub.envelope(id) else { throw ToolError("no agent \(id) — ids come from use_agent run and live for this session") }
             if action == "result", !env.status.isFinished {
+                // Measured (SubAgentLiveTests, loopl-2b): told "do not poll", the model still called `result` right after
+                // `wait:false`, three cycles in a row. So `result` WAITS (up to the inline window) instead of bouncing —
+                // the poll becomes the wait, the answer lands in one call, and the wake is claimed (no double delivery).
+                if let settled = await hub.wait(id, timeout: SubAgentHub.inlineWait), settled.status.isFinished { return settled.json.compact }
                 return JSONValue.object(["id": .string(id), "status": .string(env.status.rawValue), "pending": .bool(true),
-                                         "note": .string("still running (\(Int(env.elapsed)) s) — you will be woken with the result; answer the user meanwhile")]).compact
+                                         "note": .string("still running after \(Int(env.elapsed + SubAgentHub.inlineWait)) s — you will be woken with the result; answer the user now and do not call result again this turn")]).compact
             }
             return env.json.compact
         case "stop":
@@ -515,12 +521,12 @@ public struct UseAgentTool: Tool {
         let queuedNote = live >= SubAgentHub.maxConcurrent ? " It is queued behind \(live) running agents and starts when one finishes." : ""
         if !wait {
             return JSONValue.object(["ok": .bool(true), "pending": .bool(true), "id": .string(id),
-                                     "note": .string("Sub-agent started in the background.\(queuedNote) You will be woken with \"[use_agent \(id) finished] <result>\" — tell the user it is running and continue.")]).compact
+                                     "note": .string("Sub-agent started in the background.\(queuedNote) You will be woken with \"[use_agent \(id) finished] <result>\" — do not poll status now; tell the user it is running and finish your answer.")]).compact
         }
         guard let env = await hub.wait(id, timeout: SubAgentHub.inlineWait) else { throw ToolError("agent \(id) vanished") }
         if env.status.isFinished { return env.json.compact }
         return JSONValue.object(["ok": .bool(true), "pending": .bool(true), "id": .string(id),
-                                 "note": .string("Still working after \(Int(SubAgentHub.inlineWait)) s — moved to the background.\(queuedNote) You will be woken with \"[use_agent \(id) finished] <result>\"; tell the user it is running and continue.")]).compact
+                                 "note": .string("Still working after \(Int(SubAgentHub.inlineWait)) s — moved to the background.\(queuedNote) You will be woken with \"[use_agent \(id) finished] <result>\" — do not poll status now; tell the user it is running and finish your answer.")]).compact
     }
 }
 
