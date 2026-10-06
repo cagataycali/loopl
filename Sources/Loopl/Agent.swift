@@ -410,9 +410,9 @@ public actor Agent {
         yield(.toolStarted(toolUse))
         if let tool = before.selectedTool {
             do {
-                let content = try await tool.call(toolUse.input)
-                result = ToolResult(toolUseId: toolUse.toolUseId, name: toolUse.name, status: .success, content: content,
-                                    durationMs: Date().timeIntervalSince(t0) * 1000)
+                let out = try await tool.call(toolUse.input, images: messages.last(where: { $0.role == .user })?.images ?? [])
+                result = ToolResult(toolUseId: toolUse.toolUseId, name: toolUse.name, status: .success, content: out.text,
+                                    durationMs: Date().timeIntervalSince(t0) * 1000, images: out.images)
             } catch {
                 thrown = error
                 result = ToolResult(toolUseId: toolUse.toolUseId, name: toolUse.name, status: .error,

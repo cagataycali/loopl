@@ -23,6 +23,8 @@ let package = Package(
         .library(name: "LooplRuntimes", targets: ["LooplRuntimes"]),
         // SwiftUI showcase components: ToolCallCard, TokenMeter, AgentTranscriptView, …
         .library(name: "LooplUI", targets: ["LooplUI"]),
+        // The iPhone's own intelligence as tools: generate_image, generate_voice, read_text, describe_image, translate, transcribe, …
+        .library(name: "LooplAppleTools", targets: ["LooplAppleTools"]),
     ],
     dependencies: [
         // MLXLLM/MLXLMCommon moved out of mlx-swift-examples into mlx-swift-lm (3.x).
@@ -45,6 +47,9 @@ let package = Package(
             path: "Sources/LooplRuntimes",
             swiftSettings: [.swiftLanguageMode(.v6)]),
         .target(name: "LooplUI", dependencies: ["Loopl"], path: "Sources/LooplUI", swiftSettings: [.swiftLanguageMode(.v6)]),
+        .target(name: "LooplAppleTools", dependencies: ["Loopl"], path: "Sources/LooplAppleTools", swiftSettings: [.swiftLanguageMode(.v6)]),
+        .testTarget(name: "LooplAppleToolsTests", dependencies: ["Loopl", "LooplAppleTools"], path: "Tests/LooplAppleToolsTests",
+                    swiftSettings: [.swiftLanguageMode(.v6)]),
         .testTarget(name: "LooplTests", dependencies: ["Loopl"], path: "Tests/LooplTests",
                     resources: [.copy("Fixtures")], swiftSettings: [.swiftLanguageMode(.v6)]),
         .testTarget(name: "LooplRuntimesTests", dependencies: ["Loopl", "LooplRuntimes"], path: "Tests/LooplRuntimesTests",
