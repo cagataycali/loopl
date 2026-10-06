@@ -43,9 +43,11 @@ struct ToolsSection: View {
             }
             .contentShape(Rectangle())
             .onTapGesture { withAnimation(.snappy) { expanded.toggle() } }   // a List row's DisclosureGroup ignores XCUITest taps on its own id
+            .accessibilityElement(children: .ignore)   // one element: "Tools, 9 of 15, collapsed" (VoiceOver + XCUITest read the same thing)
             .accessibilityIdentifier("settings-tools")
+            .accessibilityLabel("Tools")
+            .accessibilityValue("\(listing.summary), \(expanded ? "expanded" : "collapsed")")
             .accessibilityAddTraits(.isButton)
-            .accessibilityValue(expanded ? "expanded" : "collapsed")
         }
         .tint(LooplDesign.accent)
     }
@@ -127,7 +129,7 @@ struct ToolToggleRow: View {
                     Text(row.defaultTag).accessibilityIdentifier("tool.\(row.name).default")
                     if let ask = row.asksFirst {
                         Text("·").accessibilityHidden(true)
-                        Label(ask, systemImage: "hand.raised").labelStyle(.titleOnly).accessibilityIdentifier("tool.\(row.name).asksFirst")
+                        Text(ask).accessibilityIdentifier("tool.\(row.name).asksFirst")
                     }
                 }
                 .font(.caption2).foregroundStyle(.tertiary)
