@@ -14,8 +14,13 @@ public final class HFSession {
 
     public init(account: HFAccount = .shared) {
         self.account = account
-        if account.isSignedIn, let d = UserDefaults.standard.data(forKey: Self.identityKey),
-           let who = try? JSONDecoder().decode(HFAccount.Identity.self, from: d) { identity = who }
+        guard account.isSignedIn else { return }
+        if let d = UserDefaults.standard.data(forKey: Self.identityKey), let who = try? JSONDecoder().decode(HFAccount.Identity.self, from: d) {
+            identity = who
+        } else {
+            // A token without a cached identity (signed in by the self-test harness, or the cache was cleared): ask once.
+            Task { await refresh() }
+        }
     }
 
     public var isSignedIn: Bool { account.isSignedIn }
@@ -174,12 +179,12 @@ struct HuggingFaceSection: View {
     private var footer: String {
         if let who = hf.identity {
             let missing = HFAccount.Scope.allCases.filter { !who.scopes.contains($0) }
-            var s = "Stored in this iPhone's Keychain, sent only to huggingface.co. "
+            var s = "Stored in this device's Keychain, sent only to huggingface.co. "
             if missing.isEmpty { s += "This token can download your private models, push conversations to your datasets and start training jobs." }
             else { s += "To " + missing.map(\.needed).joined(separator: " and ") + ", create a token with " + missing.map(\.label).joined(separator: " + ") + " access." }
             return s
         }
-        return "Optional. A token lets loopl download your private models, share conversations to a dataset you own and start training jobs on your account. It stays in this iPhone's Keychain and is only ever sent to huggingface.co."
+        return "Optional. A token lets loopl download your private models, share conversations to a dataset you own and start training jobs on your account. It stays in this device's Keychain and is only ever sent to huggingface.co."
     }
 }
 
