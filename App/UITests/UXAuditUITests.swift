@@ -49,10 +49,33 @@ final class UXAuditUITests: XCTestCase {
         // The app must answer queries within seconds afterwards (the hang made this take 30 s and fail).
         let t0 = Date()
         XCTAssertTrue(app.buttons["Send"].firstMatch.waitForExistence(timeout: 10))
-        if UIDevice.current.userInterfaceIdiom == .phone {   // the iPad shell has a sidebar, no tab bar
-            XCTAssertTrue(app.tabBars.firstMatch.waitForExistence(timeout: 10), "tab bar back after the keyboard")
-        }
+        XCTAssertTrue(app.tabBars.firstMatch.waitForExistence(timeout: 10), "tab bar back after the keyboard")
         XCTAssertLessThan(Date().timeIntervalSince(t0), 15, "layout loop: queries stalled")
+    }
+
+    /// VoiceOver audit (lane evidence, skipped without LOOPL_UX_SHOTS): every button / text field / toggle on the Chat,
+    /// Models and Settings panes with its label, identifier and hint, as `UX-A11Y` lines. Empty labels and duplicates
+    /// are what the reviewer looks for.
+    func testDumpAccessibility() throws {
+        guard let dir = ProcessInfo.processInfo.environment["LOOPL_UX_SHOTS"], !dir.isEmpty else { throw XCTSkip("captures only") }
+        var out: [String] = []
+        for (pane, args) in [("chat", ["--design-fixture", "vision", "--design-local-vision"]),
+                             ("models", ["--design-fixture", "persona", "--design-tab", "models", "--design-models", "shelf", "--design-collection", "bundled", "--design-mine"]),
+                             ("settings", ["--design-fixture", "empty", "--design-tab", "settings"])] {
+            let app = XCUIApplication()
+            app.launchArguments = ["--skip-onboarding"] + args
+            app.launch()
+            Thread.sleep(forTimeInterval: 3)
+            for type in [XCUIElement.ElementType.button, .textField, .textView, .switch, .segmentedControl, .image] {
+                for e in app.descendants(matching: type).allElementsBoundByIndex where e.isHittable || type == .image {
+                    let hint = e.value(forKey: "accessibilityHint") as? String ?? ""
+                    out.append("UX-A11Y pane=\(pane) type=\(type.rawValue) label=\"\(e.label)\" id=\"\(e.identifier)\" hint=\"\(hint)\" frame=\(Int(e.frame.minX)),\(Int(e.frame.minY)),\(Int(e.frame.width))x\(Int(e.frame.height))")
+                }
+            }
+            app.terminate()
+        }
+        try? out.joined(separator: "\n").write(toFile: dir + "/a11y.txt", atomically: true, encoding: .utf8)
+        out.forEach { print($0) }
     }
 
     func testShootComposerMatrix() throws {

@@ -60,8 +60,11 @@ public struct ImageTile: View {
                     }
                 }
             }
-            .frame(height: min(maxHeight, 320))
+            // Fit INSIDE the column: height-first sizing (`frame(height:)` then aspect) made a 1.6:1 picture 352 pt wide
+            // on a 335 pt SE column — the LazyVStack used to swallow the overrun, the plain VStack (#117) reported it and
+            // the whole chat shifted 8.5 pt left (UX-GEOM caught it). Width ≤ the proposal, height ≤ maxHeight.
             .aspectRatio(aspect, contentMode: .fit)
+            .frame(maxHeight: min(maxHeight, 320))
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.primary.opacity(0.08)))
         }
