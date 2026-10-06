@@ -20,7 +20,9 @@ The first section of the tab is the [loopl collection on Hugging Face](https://h
 
 ## First launch
 
-Three cards — **Qwen3 0.6B** (fastest), **Qwen3.5 0.8B** (small, sees pictures), **Qwen3.5 2B** (smartest of the three, about 3 GB of memory). The line under them says what the download costs on the network you are on (Wi‑Fi, cellular, offline). On iOS 26 with Apple Intelligence on, *Use Apple Intelligence instead* skips the download. Skippable; the download carries on in the background.
+The mark draws itself, then three short pages show what you are about to get — an answer with the network off, an approval card you tap yourself, a photo and a recording turning into tool calls. They are the app's real components, not pictures; swipe or tap *Continue*, or *Skip* at any point.
+
+Then three cards — **Qwen3 0.6B** (fastest), **Qwen3.5 0.8B** (small, sees pictures), **Qwen3.5 2B** (smartest of the three, about 3 GB of memory). The line under them says what the download costs on the network you are on (Wi‑Fi, cellular, offline). On iOS 26 with Apple Intelligence on, *Use Apple Intelligence instead* skips the download. While the first model downloads you can sign in to Hugging Face (optional — it unlocks your private models and *Train your own*) or tap *Later*. The download carries on in the background if you leave. *Settings › About › Show intro again* replays the whole thing.
 
 ## The catalog
 
