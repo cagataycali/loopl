@@ -15,11 +15,11 @@ Your conversations → your private dataset → one GPU job → a model that is 
 <figcaption>Nothing starts before you confirm the exact job and its cost.</figcaption>
 </figure>
 <figure markdown>
-![Running: step 14 of 24, loss, dollars spent so far, the stage ladder](../assets/app/train-running.png){ loading=lazy }
+![Running: step 14 of 24, loss, dollars spent so far, the stage ladder](../assets/app2/train-running-light.png){ loading=lazy }
 <figcaption>Live: step, loss, dollars so far, each stage with its time.</figcaption>
 </figure>
 <figure markdown>
-![Done: held-out loss before and after, tool-call accuracy, add to Models](../assets/app/train-result.png){ loading=lazy }
+![Done: held-out loss before and after, tool-call accuracy, add to Models](../assets/app2/train-done-light.png){ loading=lazy }
 <figcaption>Held-out loss before → after. One tap adds the 4-bit model.</figcaption>
 </figure>
 </div>

@@ -1,4 +1,4 @@
-/* loopl.v8.css — absolute minimalism (docs/DESIGN.md).
+/* loopl.v9.css — absolute minimalism (docs/DESIGN.md).
    One family (Inter Tight), ink on paper, one flame. Hairlines, not boxes.
    Bump the suffix on every change: Cloudflare caches assets for 4 h. */
 
@@ -321,23 +321,15 @@ html.l-js .l-stage[data-typing] .l-caret { opacity: 1; animation: l-blink 1s ste
 .l-stat b { display: block; font-size: clamp(2rem, 6vw, 3.3rem); font-weight: 500; letter-spacing: -.05em; line-height: 1; font-variant-numeric: tabular-nums; }
 .l-stat b small { font-size: .38em; letter-spacing: -.01em; color: var(--l-ink-3); font-weight: 500; margin-left: .2em; }
 .l-stat span { display: block; margin-top: .7rem; font-size: .68rem; color: var(--l-ink-2); line-height: 1.5; }
-.l-note { margin-top: 1.6rem !important; font-size: .64rem; color: var(--l-ink-3); }
+.l-note { margin-top: 1.6rem !important; font-size: .64rem; color: var(--l-ink-2); }
 
 /* app */
-.l-app { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 3rem; align-items: center; }
-.l-phone { justify-self: center; width: min(300px, 78vw); }
-.l-phone img { width: 100%; height: auto; display: block; border-radius: 34px; border: 1px solid var(--l-line); }
-.l-app ul { list-style: none; padding: 0; margin: 1.6rem 0 2rem !important; }
-.l-app li { padding: .7rem 0; border-top: 1px solid var(--l-line); font-size: .76rem; color: var(--l-ink-2); margin: 0 !important; }
-.l-app li:last-child { border-bottom: 1px solid var(--l-line); }
-.l-app li b { color: var(--l-ink); font-weight: 500; }
 
-.l-app__lead { color: var(--l-ink-2); font-size: .82rem; line-height: 1.6; max-width: 42ch !important; margin: 1rem 0 0; }
 /* end */
 .l-end { padding: clamp(5rem, 14vw, 9rem) 0 clamp(3rem, 8vw, 5rem); text-align: center; }
 .l-end h2 { font-size: clamp(1.9rem, 5.6vw, 3.4rem) !important; font-weight: 600 !important; line-height: 1.02 !important; letter-spacing: -.045em !important; margin: 0 auto 2rem !important; padding: 0 !important; border: 0 !important; max-width: 14ch; }
 .l-end .l-actions { justify-content: center; }
-.l-foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 1rem; padding: 1.4rem 0 2rem; border-top: 1px solid var(--l-line); font-size: .62rem; color: var(--l-ink-3); }
+.l-foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 1rem; padding: 1.4rem 0 2rem; border-top: 1px solid var(--l-line); font-size: .62rem; color: var(--l-ink-2); }
 .l-foot nav { display: flex; flex-wrap: wrap; gap: .4rem 1.2rem; }
 .l-foot a { color: var(--l-ink-2) !important; text-decoration: none !important; }
 .l-foot a:hover { color: var(--l-ink) !important; }
@@ -351,11 +343,10 @@ html.l-js .l-reveal.is-on { opacity: 1; transform: none; }
 
 /* ───────── responsive ───────── */
 @media (max-width: 59.9375em) {
-  .l-sec__head, .l-loop, .l-split, .l-app { grid-template-columns: minmax(0, 1fr); gap: 1.6rem; }
+  .l-sec__head, .l-loop, .l-split { grid-template-columns: minmax(0, 1fr); gap: 1.6rem; }
   .l-sec__head { align-items: start; margin-bottom: 2rem; }
   .l-tools { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .l-ring { max-width: 340px; }
-  .l-phone { order: -1; }
 }
 @media (max-width: 21em) { .l-tools { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 30em) {
@@ -383,3 +374,98 @@ html.l-js .l-reveal.is-on { opacity: 1; transform: none; }
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
   html.l-js .l-reveal, html.l-js .l-stage [data-step] { opacity: 1 !important; transform: none !important; }
 }
+
+/* ───────── landing v2: the app as the hero object ───────── */
+.l-micro { margin: .9rem 0 0 !important; font-size: .62rem; color: var(--l-ink-2); }
+.l-proofs { list-style: none; display: flex; flex-wrap: wrap; gap: .5rem 1.3rem; margin: 2.6rem 0 0 !important; padding: 0; font-size: .58rem; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; color: var(--l-ink-2); }
+.l-proofs li { margin: 0 !important; display: inline-flex; align-items: center; gap: .55em; }
+.l-proofs li::before { content: ""; width: 4px; height: 4px; border-radius: 50%; background: var(--l-ink-3); }
+.l-dot--ping { position: relative; }
+.l-dot--ping::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; border: 1px solid var(--l-fill); opacity: 0; }
+@media (prefers-reduced-motion: no-preference) { .l-dot--ping::after { animation: l-ping 2.4s var(--l-ease) infinite; } }
+@keyframes l-ping { 0% { transform: scale(.4); opacity: .7; } 70%, 100% { transform: scale(1.6); opacity: 0; } }
+
+/* the loop-flame mark (geometry = LooplMarkShape); motion mirrors LooplDesign.Motion: draw .7 s, pulse .9 s */
+.l-mark { width: 1.05em; height: 1.05em; flex: none; color: var(--l-fill); overflow: visible; }
+.l-btn .l-mark { color: var(--l-fill); }
+.l-mark--big { width: 2.6rem; height: 2.6rem; margin: 0 auto 1.4rem; display: block; }
+@media (prefers-reduced-motion: no-preference) {
+  .l-js .l-reveal .l-mark__loop, .l-js .l-hero .l-mark__loop { stroke-dasharray: 1; stroke-dashoffset: 1; }
+  .l-js .l-reveal.is-on .l-mark__loop, .l-js .l-hero .l-mark__loop { animation: l-draw .7s ease-in-out .15s forwards; }
+  .l-js .l-reveal .l-mark__flame, .l-js .l-hero .l-mark__flame { opacity: 0; }
+  .l-js .l-reveal.is-on .l-mark__flame, .l-js .l-hero .l-mark__flame { animation: l-fade .3s ease-out .75s forwards; }
+  .l-btn--tf:hover .l-mark__flame { animation: l-pulse .9s ease-in-out infinite alternate !important; }
+}
+@keyframes l-draw { to { stroke-dashoffset: 0; } }
+@keyframes l-fade { to { opacity: 1; } }
+@keyframes l-pulse { from { opacity: 1; } to { opacity: .5; } }
+
+/* iPhone frame — 16 Pro proportions, the capture is the raw screen */
+.l-phone { position: relative; width: min(100%, 300px); aspect-ratio: 393 / 852; margin: 0 auto; border-radius: 15.5%/7.15%; background: #000; isolation: isolate;
+  box-shadow: 0 0 0 1px #2a2a2f, 0 0 0 8px #0d0d10, 0 0 0 9px #30303a, 0 40px 80px -30px rgba(0,0,0,.6); }
+[data-md-color-scheme="default"] .l-phone { box-shadow: 0 0 0 1px #8e8e96, 0 0 0 8px #1d1d22, 0 0 0 9px #a3a3ab, 0 40px 80px -30px rgba(0,0,0,.35); }
+.l-phone::before { content: ""; position: absolute; left: 50%; top: 1.6%; transform: translateX(-50%); width: 27%; height: 4%; background: #000; border-radius: 999px; z-index: 3; }
+.l-phone::after { content: ""; position: absolute; inset: -30% -40% auto; height: 70%; background: radial-gradient(closest-side, color-mix(in srgb, var(--l-fill) 22%, transparent), transparent 70%); filter: blur(24px); z-index: -1; pointer-events: none; }
+.l-phone__screen { position: absolute; inset: 0; border-radius: inherit; overflow: hidden; background: #000; }
+.l-phone__screen img, .l-phone__screen video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; margin: 0; }
+.l-phone__video { opacity: 0; transition: opacity .4s var(--l-ease); }
+.l-phone__video.is-playing { opacity: 1; }
+.l-phone__screen figure, .l-phone__screen picture { margin: 0 !important; padding: 0; width: 100% !important; height: 100% !important; max-width: none !important; display: block; }
+.l-phone__screen img { max-width: none !important; }
+.l-hero--v2 .l-phone--hero { width: min(78vw, 300px); }
+@media (min-width: 68em) { .l-hero--v2 { grid-template-columns: minmax(0, 1.12fr) minmax(0, .88fr); } .l-hero--v2 .l-phone--hero { width: min(100%, 330px); } }
+@media (prefers-reduced-motion: no-preference) {
+  .l-js .l-hero--v2 .l-phone--hero { animation: l-rise-x .9s var(--l-ease) both; }
+  .l-js .l-hero--v2 .l-hero__text > * { animation: l-rise .8s var(--l-ease) both; }
+  .l-js .l-hero--v2 .l-hero__text > :nth-child(2) { animation-delay: .06s; } .l-js .l-hero--v2 .l-hero__text > :nth-child(3) { animation-delay: .12s; }
+  .l-js .l-hero--v2 .l-hero__text > :nth-child(4) { animation-delay: .18s; } .l-js .l-hero--v2 .l-hero__text > :nth-child(5) { animation-delay: .24s; } .l-js .l-hero--v2 .l-hero__text > :nth-child(6) { animation-delay: .3s; }
+}
+@keyframes l-rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes l-rise-x { from { transform: translateY(18px); } to { transform: none; } }  /* no opacity: the poster is the LCP, it must paint at once */
+
+/* scrollytelling: the phone stays, its screen follows the step in view */
+.l-story { padding: clamp(4rem, 12vw, 8rem) 0 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 2rem; }
+.l-story__pin { position: sticky; top: 2.4rem; z-index: 2; display: flex; justify-content: center; padding: .8rem 0 1.2rem; background: var(--l-bg); }
+.l-story__pin::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1.2rem; height: 1.2rem; background: linear-gradient(var(--l-bg), transparent); pointer-events: none; }
+.l-story__pin .l-phone--story { width: min(40vw, 160px); }
+.l-story__screens figure { position: absolute; inset: 0; opacity: 0; transition: opacity .5s var(--l-ease); }
+.l-story__screens figure.is-on { opacity: 1; }
+.l-story__intro { margin-bottom: 2rem; }
+.l-story__intro h2, .l-story h3 { font-weight: 600 !important; letter-spacing: -.045em !important; line-height: 1.04 !important; margin: .8rem 0 0 !important; padding: 0 !important; border: 0 !important; }
+.l-story__intro h2 { font-size: clamp(1.6rem, 4.6vw, 2.6rem) !important; max-width: 15ch; }
+.l-step { padding: 1.6rem 0; border-top: 1px solid var(--l-line); }
+.l-step h3 { font-size: clamp(1.15rem, 3vw, 1.5rem) !important; max-width: 18ch; }
+.l-step p { margin: .55rem 0 0; color: var(--l-ink-2); font-size: .82rem; line-height: 1.6; max-width: 40ch !important; }
+.l-js .l-story .l-step:not(.is-on) h3 { color: var(--l-ink-2); }
+.l-story .l-step h3 { transition: color .4s var(--l-ease); }
+.l-story .l-num { color: var(--l-ink-2); }
+.l-story .l-step.is-on .l-num { color: var(--l-flame); }
+.l-story__cta { padding-top: 2rem; border-top: 1px solid var(--l-line); display: flex; flex-wrap: wrap; align-items: center; gap: .6rem 1.4rem; }
+@media (min-width: 56em) {
+  .l-story { grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: clamp(2rem, 6vw, 5rem); align-items: start; }
+  .l-story__pin { top: 5.6rem; height: calc(100vh - 5.6rem); height: calc(100dvh - 5.6rem); align-items: center; padding: 0; background: none; }
+  .l-story__pin .l-phone--story { width: min(100%, 300px); }
+  .l-story__steps { padding: 18vh 0 10vh; }
+  .l-step { padding: 3.2rem 0; min-height: 36vh; display: flex; flex-direction: column; justify-content: center; }
+  .l-story__intro { margin-bottom: 1rem; }
+}
+/* no JS / reduced motion: every step shows its own screen, nothing is pinned */
+.l-story__step-shot { display: none; }
+@media (prefers-reduced-motion: reduce) { .l-story__pin { display: none; } .l-story__step-shot { display: block; width: min(60vw, 220px); margin: 1.2rem 0 0; }  }
+
+/* closing band */
+.l-end--v2 { text-align: center; padding: clamp(5rem, 14vw, 9rem) 0 clamp(3rem, 8vw, 5rem); }
+.l-end--v2 h2 { max-width: 22ch; margin: 0 auto !important; }
+.l-end--v2 .l-actions { justify-content: center; margin-top: 1.8rem; }
+.l-actions--center { justify-content: center; }
+
+/* docs pages: real captures in small frames + the same CTA */
+.l-actions--page { margin: 1.4rem 0 0; }
+.md-typeset .l-actions--page + .l-micro { margin-top: .7rem !important; }
+.l-shots--v2 { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2rem 1.6rem; margin: 2.6rem 0 2.8rem; }
+.l-shots--v2 .l-shot { margin: 0 !important; width: 100% !important; min-width: 0; display: block; }
+.l-shots--v2 .l-phone--mini { width: min(100%, 220px); margin: 0 auto; box-shadow: 0 0 0 1px #2a2a2f, 0 0 0 5px #0d0d10, 0 0 0 6px #30303a, 0 24px 48px -24px rgba(0,0,0,.6); }
+[data-md-color-scheme="default"] .l-shots--v2 .l-phone--mini { box-shadow: 0 0 0 1px #8e8e96, 0 0 0 5px #1d1d22, 0 0 0 6px #a3a3ab, 0 24px 48px -24px rgba(0,0,0,.3); }
+.l-shots--v2 .l-phone--mini::after { display: none; }
+.l-shots--v2 figcaption { font-style: normal; font-size: .64rem; color: var(--l-ink-2); margin: .9rem auto 0; text-align: center; max-width: 24ch; }
+@media (max-width: 44em) { .l-shots--v2 { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.6rem 1rem; } .l-shots--v2 .l-phone--mini { width: min(100%, 170px); } }

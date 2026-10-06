@@ -1,6 +1,6 @@
 ---
-title: loopl — agents that run on the device
-description: loopl is the Swift SDK for agents that run on the iPhone — a local model, the agent loop and native tools. Offline, no account, no cloud.
+title: loopl — an agent that lives on your phone
+description: loopl runs the model, the agent loop and native tools on the iPhone. Free on TestFlight, open source Swift SDK. Offline, no account, nothing collected.
 hide:
   - navigation
   - toc
@@ -11,44 +11,63 @@ hide:
 
 # loopl
 
-<section class="l-hero">
+<section class="l-hero l-hero--v2">
 <div class="l-hero__text">
-<span class="l-eyebrow"><i class="l-dot"></i>Swift SDK · iOS 18+ · open source</span>
-<h1 class="l-hero__title">Agents that run on the device<span>.</span></h1>
-<p class="l-hero__lead">loopl is a Swift SDK for building agents that live on the iPhone. <b>The model, the loop and the tools</b> all run locally — offline, with no account and no cloud.</p>
+<span class="l-eyebrow"><i class="l-dot l-dot--ping"></i>Free on iPhone · iOS 18+ · open source · no account</span>
+<h1 class="l-hero__title">An agent that lives on your phone<span>.</span></h1>
+<p class="l-hero__lead">loopl runs <b>the model, the loop and the tools</b> on the device. It talks, uses the phone, asks before it acts — and works with the network off.</p>
 <div class="l-actions">
-<a class="l-btn l-btn--ink" href="start/">Get started</a>
-<a class="l-link" href="https://github.com/cagataycali/loopl">GitHub</a>
-<a class="l-link" href="app/">The app</a>
+<a class="l-btn l-btn--ink l-btn--tf" href="https://testflight.apple.com/join/uUNjfzW9" id="testflight"><svg class="l-mark" viewBox="0 0 1024 1024" aria-hidden="true"><path class="l-mark__loop" pathLength="1" d="M 801.324 706.796 A 327.68 327.68 0 1 1 675.84 269.181" fill="none" stroke="currentColor" stroke-width="128" stroke-linecap="round"/><g class="l-mark__flame" transform="rotate(-6 675.84 191.459) translate(546.304 -2.845) scale(259.072 388.608)"><path d="M 0.66 0 C 0.86 0.22 1 0.44 1 0.64 C 1 0.86 0.78 1 0.5 1 C 0.22 1 0 0.86 0 0.64 C 0 0.34 0.42 0.3 0.66 0 Z" fill="currentColor"/></g></svg>Get it on TestFlight</a>
+<a class="l-link" href="sdk/agent/">Read the SDK docs</a>
 </div>
-<div class="l-install"><code>.package(url: "https://github.com/cagataycali/loopl", from: "0.1.0")</code><button type="button" data-copy='.package(url: "https://github.com/cagataycali/loopl", from: "0.1.0")'>Copy</button></div>
+<p class="l-micro">Public beta · nothing collected · works in airplane mode</p>
+<ul class="l-proofs" aria-label="What loopl gives you"><li>Offline</li><li>Native tools</li><li>Asks first</li><li>Your own model</li><li>Open SDK</li></ul>
 </div>
-
-<div class="l-stage" aria-label="An agent turn: the model calls two on-device tools, then answers">
-<div class="l-stage__bar"><b>Qwen3-1.7B · MLX · on device</b><button type="button" class="l-replay" aria-label="Replay">Replay</button></div>
-<div class="l-chat">
-<div class="l-msg l-msg--you" data-step="you"><span class="l-msg__who">You</span><p>It's dark in here. Torch on — and how do I say "where is the exit?" in Turkish?</p></div>
-<div class="l-calls">
-<div class="l-call" data-step="call"><span class="l-state"></span><b>flashlight</b> on<i>on</i></div>
-<div class="l-call" data-step="call"><span class="l-state"></span><b>translate</b> → tr<i>Çıkış nerede?</i></div>
+<div class="l-phone l-phone--hero" role="img" aria-label="The loopl app on an iPhone: a model answers with two on-device tool calls">
+<div class="l-phone__screen">
+<picture class="l-phone__poster"><source srcset="assets/app2/hero-dark-poster.jpg" media="(prefers-color-scheme: dark)"><img src="assets/app2/hero-light-poster.jpg" alt="" width="393" height="852" fetchpriority="high" decoding="async"></picture>
+<video class="l-phone__video" autoplay muted loop playsinline preload="metadata" data-light="assets/app2/hero-light" data-dark="assets/app2/hero-dark" width="393" height="852"><source src="assets/app2/hero-dark.webm" type="video/webm"><source src="assets/app2/hero-dark.mp4" type="video/mp4"></video>
 </div>
-<div class="l-msg l-msg--agent" data-step="answer"><span class="l-msg__who">loopl</span><p data-stream="The torch is on. In Turkish: “Çıkış nerede?”">The torch is on. In Turkish: “Çıkış nerede?”</p><span class="l-caret" aria-hidden="true"></span></div>
-</div>
-<p class="l-stage__foot">Illustration of one turn. <code>flashlight</code> and <code>translate</code> ship in LooplAppleTools; the speeds below are measured.</p>
 </div>
 </section>
 
+<section class="l-story" aria-labelledby="story-t">
+<div class="l-story__pin">
+<div class="l-phone l-phone--story" aria-hidden="true">
+<div class="l-phone__screen l-story__screens">
+<figure class="l-story__screen is-on" data-screen="models"><picture><source srcset="assets/app2/models-dark.webp" type="image/webp" media="(prefers-color-scheme: dark)"><source srcset="assets/app2/models-dark.png" media="(prefers-color-scheme: dark)"><source srcset="assets/app2/models-light.webp" type="image/webp"><img src="assets/app2/models-light.png" alt="Models tab: Browse Hugging Face, Train your own, Mine, Apple Intelligence on device, Qwen3 downloading" width="393" height="852" loading="lazy" decoding="async"></picture></figure>
+<figure class="l-story__screen" data-screen="offline"><picture><source srcset="assets/app2/offline-dark.webp" type="image/webp" media="(prefers-color-scheme: dark)"><source srcset="assets/app2/offline-dark.png" media="(prefers-color-scheme: dark)"><source srcset="assets/app2/offline-light.webp" type="image/webp"><img src="assets/app2/offline-light.png" alt="Chat in airplane mode: Qwen3-0.6B is ready, everything runs on this device" width="393" height="852" loading="lazy" decoding="async"></picture></figure>
+<figure class="l-story__screen" data-screen="tool"><picture><source srcset="assets/app2/tool-dark.webp" type="image/webp" media="(prefers-color-scheme: dark)"><source srcset="assets/app2/tool-dark.png" media="(prefers-color-scheme: dark)"><source srcset="assets/app2/tool-light.webp" type="image/webp"><img src="assets/app2/tool-light.png" alt="Two tool rows, current_time and calculator, expanded with arguments and results, then the answer" width="393" height="852" loading="lazy" decoding="async"></picture></figure>
+<figure class="l-story__screen" data-screen="approval"><picture><source srcset="assets/app2/approval-dark.webp" type="image/webp" media="(prefers-color-scheme: dark)"><source srcset="assets/app2/approval-dark.png" media="(prefers-color-scheme: dark)"><source srcset="assets/app2/approval-light.webp" type="image/webp"><img src="assets/app2/approval-light.png" alt="An approval card for a POST request with Approve, Deny and Edit buttons" width="393" height="852" loading="lazy" decoding="async"></picture></figure>
+<figure class="l-story__screen" data-screen="vision"><picture><source srcset="assets/app2/vision-dark.webp" type="image/webp" media="(prefers-color-scheme: dark)"><source srcset="assets/app2/vision-dark.png" media="(prefers-color-scheme: dark)"><source srcset="assets/app2/vision-light.webp" type="image/webp"><img src="assets/app2/vision-light.png" alt="A photo of a red circle and a blue square described by the model, then a calculator call" width="393" height="852" loading="lazy" decoding="async"></picture></figure>
+<figure class="l-story__screen" data-screen="train"><picture><source srcset="assets/app2/train-running-dark.webp" type="image/webp" media="(prefers-color-scheme: dark)"><source srcset="assets/app2/train-running-dark.png" media="(prefers-color-scheme: dark)"><source srcset="assets/app2/train-running-light.webp" type="image/webp"><img src="assets/app2/train-running-light.png" alt="Train your own: the stage ladder of a fine-tune running on Hugging Face for $0.09" width="393" height="852" loading="lazy" decoding="async"></picture></figure>
+</div>
+</div>
+</div>
+<div class="l-story__steps">
+<div class="l-story__intro l-reveal"><span class="l-num">What you get</span><h2 id="story-t">Six things the app does. All on the phone.</h2></div>
+<div class="l-step" data-screen="models"><span class="l-num">01</span><h3>Pick a model. Download once.</h3><p>Qwen, Gemma, Llama, DeepSeek — or Apple's built-in model with nothing to download. Your own private Hugging Face repos too.</p></div>
+<div class="l-step" data-screen="offline"><span class="l-num">02</span><h3>Talk to it. Even in airplane mode.</h3><p>Tokens stream on the GPU. One switch refuses every network call; the agent keeps working.</p></div>
+<div class="l-step" data-screen="tool"><span class="l-num">03</span><h3>It uses the phone.</h3><p>Torch, haptics, offline translation, speech, image generation, other apps. Every call is a row you can expand.</p></div>
+<div class="l-step" data-screen="approval"><span class="l-num">04</span><h3>It asks before it acts.</h3><p>Anything that leaves the device — a request, another app — waits for your tap. Deny, and the model is told so.</p></div>
+<div class="l-step" data-screen="vision"><span class="l-num">05</span><h3>Show it. Tell it.</h3><p>Send a photo to a vision model. Record a take and let it transcribe.</p></div>
+<div class="l-step" data-screen="train"><span class="l-num">06</span><h3>Train it on your own conversations.</h3><p>Pick chats, push them to your private dataset, start a fine-tune on Hugging Face, download the result. From the phone.</p></div>
+<div class="l-story__cta l-reveal"><a class="l-btn l-btn--ink l-btn--tf" href="https://testflight.apple.com/join/uUNjfzW9"><svg class="l-mark" viewBox="0 0 1024 1024" aria-hidden="true"><path class="l-mark__loop" pathLength="1" d="M 801.324 706.796 A 327.68 327.68 0 1 1 675.84 269.181" fill="none" stroke="currentColor" stroke-width="128" stroke-linecap="round"/><g class="l-mark__flame" transform="rotate(-6 675.84 191.459) translate(546.304 -2.845) scale(259.072 388.608)"><path d="M 0.66 0 C 0.86 0.22 1 0.44 1 0.64 C 1 0.86 0.78 1 0.5 1 C 0.22 1 0 0.86 0 0.64 C 0 0.34 0.42 0.3 0.66 0 Z" fill="currentColor"/></g></svg>Get it on TestFlight</a><a class="l-link" href="app/">About the app</a></div>
+</div>
+</section>
+
+
 <section class="l-sec" markdown>
 <div class="l-sec__head l-reveal">
-<div><span class="l-num">01 — The loop</span><h2>Model, tools, model. Until it's done.</h2></div>
-<p>That is the whole algorithm. The model streams; if it asks for tools they run, their results go back, and it is called again. There is no iteration cap — the context window and your Stop button are the only bounds.</p>
+<div><span class="l-num">01 — The SDK</span><h2>The same loop, in Swift.</h2></div>
+<p>loopl is a Swift SDK first; the app is its showcase. Model, tools, model — until it's done. That is the whole algorithm. The model streams; if it asks for tools they run, their results go back, and it is called again. There is no iteration cap — the context window and your Stop button are the only bounds.</p>
 </div>
 <div class="l-loop">
-<svg class="l-ring l-reveal" viewBox="0 0 420 340" role="img" aria-labelledby="ring-t">
+<svg class="l-ring l-reveal" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 420 340" role="img" aria-labelledby="ring-t">
 <title id="ring-t">The agent loop: the model calls tools, the results return to the model, until it answers.</title>
 <circle class="l-track" cx="210" cy="175" r="118" fill="none" stroke-width="1"/>
 <path id="ring-p" d="M210 57 A118 118 0 1 1 210 293 A118 118 0 1 1 210 57" fill="none" stroke="none"/>
-<circle class="l-spark" r="4"><animateMotion dur="3.6s" repeatCount="indefinite"><mpath href="#ring-p"/></animateMotion></circle>
+<circle class="l-spark" r="4"><animateMotion dur="3.6s" repeatCount="indefinite"><mpath xlink:href="#ring-p"/></animateMotion></circle>
 <rect class="l-node" x="160" y="40" width="100" height="34" rx="17" stroke-width="1"><animate attributeName="stroke-width" values="1;2.2;1;1" keyTimes="0;.06;.2;1" dur="3.6s" repeatCount="indefinite"/></rect>
 <text x="210" y="62" text-anchor="middle">model</text>
 <rect class="l-node" x="160" y="276" width="100" height="34" rx="17" stroke-width="1"><animate attributeName="stroke-width" values="1;2.2;1;1" keyTimes="0;.06;.2;1" dur="3.6s" begin="1.8s" repeatCount="indefinite"/></rect>
@@ -140,26 +159,14 @@ func ask(_ model: any Model) async throws -> String {
 <p class="l-note">Single runs from the app's self-test, not averages. <a href="models/">All models →</a></p>
 </section>
 
-<section class="l-sec">
-<div class="l-app">
-<div class="l-reveal">
-<span class="l-num">05 — The app</span>
-<h2>Free on iPhone. Nothing collected.</h2>
-<p class="l-app__lead">The SDK's showcase, open source. Pick a model, then talk to an agent that uses the phone — with the network off if you like.</p>
-<ul>
-<li><b>No account needed.</b> Public models, anonymous download — your own Hugging Face token is optional, for private repos.</li>
-<li><b>No analytics.</b> App Store label: Data Not Collected.</li>
-<li><b>Offline mode.</b> One switch refuses every network call.</li>
-</ul>
-<div class="l-actions"><a class="l-btn l-btn--ink" href="app/">About the app</a><a class="l-link" href="privacy/">Privacy</a></div>
-</div>
-<div class="l-phone l-reveal"><picture><source srcset="assets/app/03-tool.webp" type="image/webp"><img src="assets/app/03-tool.png" alt="The loopl app answering a question with two expanded tool rows" width="320" height="696" loading="lazy" decoding="async"></picture></div>
-</div>
-</section>
 
-<section class="l-end l-reveal">
-<h2>Build an agent that works in airplane mode.</h2>
-<div class="l-actions"><a class="l-btn l-btn--ink" href="start/">Get started</a><a class="l-link" href="sdk/agent/">Read the docs</a></div>
+
+
+<section class="l-end l-end--v2 l-reveal">
+<svg class="l-mark l-mark--big" viewBox="0 0 1024 1024" aria-hidden="true"><path class="l-mark__loop" pathLength="1" d="M 801.324 706.796 A 327.68 327.68 0 1 1 675.84 269.181" fill="none" stroke="currentColor" stroke-width="128" stroke-linecap="round"/><g class="l-mark__flame" transform="rotate(-6 675.84 191.459) translate(546.304 -2.845) scale(259.072 388.608)"><path d="M 0.66 0 C 0.86 0.22 1 0.44 1 0.64 C 1 0.86 0.78 1 0.5 1 C 0.22 1 0 0.86 0 0.64 C 0 0.34 0.42 0.3 0.66 0 Z" fill="currentColor"/></g></svg>
+<h2>Download it. Turn the network off. Ask it something.</h2>
+<div class="l-actions l-actions--center"><a class="l-btn l-btn--ink l-btn--tf" href="https://testflight.apple.com/join/uUNjfzW9">Get it on TestFlight</a><a class="l-link" href="start/">Build with the SDK</a></div>
+<p class="l-micro">Free · iOS 18+ · open source · nothing collected</p>
 </section>
 
 <footer class="l-foot">
