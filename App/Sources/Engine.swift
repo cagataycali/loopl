@@ -143,7 +143,9 @@ public final class Engine {
         self.store = store
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         self.hub = SubAgentHub(directory: base.appendingPathComponent("agents", isDirectory: true))
-        let core: [any Tool] = [CurrentTimeTool(), CalculatorTool(), DeviceInfoTool(), RememberTool(), RecallTool(), HttpTool()]
+        // The portable catalog = `allTools` (incl. manage_messages and use_agent); `hub` is set above because useAgentTool reads it.
+        let core: [any Tool] = [CurrentTimeTool(), CalculatorTool(), DeviceInfoTool(), RememberTool(), RecallTool(), HttpTool(), ManageMessagesTool(),
+                                UseAgentTool(hub: hub, context: Engine.subAgentContext(for: WeakEngine.pending))]
         registry = ToolRegistry(catalog: core, mounted: Array(settings.enabledTools), selfManaging: true)
         mountedNow = core.map(\.name).filter { settings.enabledTools.contains($0) } + [ManageToolsTool.toolName]
         // A background child's events after the parent's turn ended: fold them into the card on screen.
@@ -158,6 +160,7 @@ public final class Engine {
         Task { [weak self] in
             await hub.setOnFinished { env in Task { @MainActor in self?.childFinished(env) } }
         }
+        WeakEngine.pendingRef?.engine = self; WeakEngine.pendingRef = nil
         let ref = WeakEngine(self)
         Task { [registry] in
             // On-device tools join the catalog with their availability (unavailable ones are listed, never offered).
@@ -175,6 +178,10 @@ public final class Engine {
     private final class WeakEngine: @unchecked Sendable {
         weak var engine: Engine?
         init(_ e: Engine) { engine = e }
+        init() {}
+        /// For `init`: the catalog's use_agent is built before `self` is usable; the ref is filled right after.
+        static var pending: WeakEngine { let w = WeakEngine(); pendingRef = w; return w }
+        nonisolated(unsafe) static var pendingRef: WeakEngine?
     }
 
     /// Put every on-device tool into the catalog with its current availability and Settings state. Re-run when a
@@ -226,12 +233,14 @@ public final class Engine {
     public var allTools: [any Tool] { [CurrentTimeTool(), CalculatorTool(), DeviceInfoTool(), RememberTool(), RecallTool(), HttpTool(), ManageMessagesTool(), useAgentTool] }
     /// `use_agent`: children are built from the parent's model, gate, tools (minus use_agent — depth 1) and approval hook,
     /// read at spawn time so a model switch is honoured.
-    private var useAgentTool: UseAgentTool {
-        UseAgentTool(hub: hub) { [weak self] in
-            await MainActor.run {
-                guard let self, let model = self.model else { return nil }
-                return SubAgentContext(model: model, gate: self.gate, availableTools: self.activeTools, hooks: [self.approvalPolicy])
-            }
+    private var useAgentTool: UseAgentTool { UseAgentTool(hub: hub, context: Engine.subAgentContext(for: WeakEngine(self))) }
+    /// The child's tools are the parent's MOUNTED set, read from the registry at spawn time (Phase 6) — minus use_agent (depth 1).
+    private static func subAgentContext(for ref: WeakEngine) -> @Sendable () async -> SubAgentContext? {
+        { [ref] in
+            guard let engine = await MainActor.run(body: { ref.engine }) else { return nil }
+            let (model, gate, policy, registry) = await MainActor.run { (engine.model, engine.gate, engine.approvalPolicy, engine.registry) }
+            guard let model else { return nil }
+            return SubAgentContext(model: model, gate: gate, availableTools: await registry.mounted, hooks: [policy])
         }
     }
     /// Human-in-the-loop policy: reads Settings › Ask before on every call, so no agent rebuild is needed.
