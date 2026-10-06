@@ -9,7 +9,7 @@ DEVICE_ID="${DEVICE_ID:-$(xcrun devicectl list devices 2>/dev/null | awk '/conne
 TEAM="${DEVELOPMENT_TEAM:-K6B7JDYLLL}"
 DERIVED="${DERIVED:-/tmp/dd-loopl-device}"
 APP_ID="technology.tiny.loopl"
-[ -d App/LooplApp.xcodeproj ] || xcodegen generate -s App/project.yml
+xcodegen generate -s App/project.yml >/dev/null   # ALWAYS regenerate: a stale .xcodeproj in a long-lived worktree misses new Swift files (CI regenerates each run, so only deploys ever saw it)
 echo "▸ building for $DEVICE_ID (team $TEAM)…"
 xcodebuild -project App/LooplApp.xcodeproj -scheme loopl -destination "id=$DEVICE_ID" -configuration Debug \
   -derivedDataPath "$DERIVED" -allowProvisioningUpdates -allowProvisioningDeviceRegistration \
