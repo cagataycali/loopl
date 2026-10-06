@@ -11,6 +11,8 @@ struct ChatView: View {
     @State private var draft = ""
     @State private var attachments: [ImageBlock] = []
     @State private var showHistory = false
+    /// The user row being edited in place (hold → Edit). The composer dims while it is set.
+    @State private var editing: UUID?
     @FocusState private var focused: Bool
     @Namespace private var zoom
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -24,6 +26,12 @@ struct ChatView: View {
                     EmptyState(hint: emptyHint)
                 }
                 .onApproval { req, decision in engine.resolve(req, decision) }
+                .transcriptActions(TranscriptActions(
+                    canEdit: !engine.isGenerating && engine.loadedModel != nil,
+                    editing: $editing,
+                    onSave: { item, text in engine.edit(item.id, text: text) },
+                    onDeleteFrom: { item in engine.deleteFrom(item.id) },
+                    onRetry: { item in engine.retry(item.id) }))
                 .contentShape(Rectangle())
                 .onTapGesture { focused = false }
                 if let err = engine.lastError {
@@ -35,6 +43,15 @@ struct ChatView: View {
                          placeholder: engine.loadedModel == nil ? "Model is getting ready…" : (engine.canSeeImages ? "Message or photo" : "Message"),
                          generating: engine.isGenerating, canSend: engine.loadedModel != nil, canAttach: engine.canSeeImages,
                          send: send, stop: engine.stop)
+                // While a row is being edited the composer steps back: dimmed, inert, until Save or Cancel.
+                .opacity(editing == nil ? 1 : 0.35)
+                .disabled(editing != nil)
+                .accessibilityHidden(editing != nil)
+                .animation(LooplDesign.Motion.faded(LooplDesign.Motion.value, reduceMotion), value: editing == nil)
+            }
+            .onChange(of: engine.transcript.items.count) { _, _ in
+                // The edited row left the transcript (saved, or the thread was cut under it): no stale editor.
+                if let editing, engine.transcript.index(of: editing) == nil { self.editing = nil }
             }
             .animation(LooplDesign.Motion.faded(LooplDesign.Motion.spring, reduceMotion), value: engine.lastError)
             .navigationTitle(engine.loadedModel?.name ?? "loopl")

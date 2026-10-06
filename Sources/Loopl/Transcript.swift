@@ -29,8 +29,9 @@ public struct Transcript: Sendable, Hashable {
     public var pendingApprovals: [ApprovalRequest] {
         items.compactMap { if case .approval(let r, nil) = $0.kind { return r }; return nil }
     }
-    private var streamingIndex: Int?
-    private var reasoningIndex: Int?
+    /// Internal (not private): `TranscriptEditing` resets them when the thread is truncated.
+    var streamingIndex: Int?
+    var reasoningIndex: Int?
 
     public init() {}
 

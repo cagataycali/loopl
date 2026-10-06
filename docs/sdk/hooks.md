@@ -147,3 +147,24 @@ func drive(_ agent: Agent, _ prompt: String, into transcript: inout Transcript) 
     print(transcript.items.count, transcript.lastResult?.stopReason as Any)
 }
 ```
+
+### Editing a message after the fact
+
+"Hold a message and edit it" is a transcript operation, not an event-loop one. `truncated(before:)` /
+`truncated(through:)` cut the visible thread, `userTurn(before:)` finds the user turn an answer belongs to
+(Retry), and `messages` rebuilds the Strands-shaped history from what is kept — then a **fresh** `Agent` on that
+history streams the edited turn like any other, tools and approvals included.
+
+```swift
+// snippet: compile
+import Loopl
+
+@MainActor
+func edit(_ item: TranscriptItem, to text: String, model: any Model, transcript: inout Transcript) async throws {
+    let kept = transcript.truncated(before: item.id)          // the item and everything after it are gone
+    let agent = Agent(model: model, messages: kept.messages)  // history ends on the assistant's side
+    transcript = kept
+    transcript.user(text)
+    for try await event in agent.stream([.user(text)]) { _ = transcript.apply(event) }
+}
+```
