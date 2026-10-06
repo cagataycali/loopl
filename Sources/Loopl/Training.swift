@@ -214,6 +214,7 @@ public struct TrainingStage: Hashable, Sendable, Identifiable {
     public var elapsed: Double?
     public var detail: JSONValue?
     public var id: String { name }
+    public init(name: String, elapsed: Double? = nil, detail: JSONValue? = nil) { self.name = name; self.elapsed = elapsed; self.detail = detail }
 
     public static let order = ["discover", "render", "train", "merge", "eval", "push", "mlx", "gguf", "done"]
     public var index: Int { Self.order.firstIndex(of: name) ?? Self.order.count }

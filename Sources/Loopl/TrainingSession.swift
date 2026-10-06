@@ -127,6 +127,19 @@ public final class TrainingSession {
         }
     }
 
+    /// A session with pre-baked state and no network — design fixtures, previews, UI tests.
+    public static func preview(plan: TrainingPlan, user: String, logLines: [String], jobId: String = "6ac4711f404719ba3765bbc4",
+                               finished: Bool = false, failed: String? = nil, startedAt: Date = Date().addingTimeInterval(-317)) -> TrainingSession {
+        let s = TrainingSession(plan: plan, user: user, client: HFHubClient(token: nil), script: Data("SCRIPT_VERSION = \"1.0.2\"".utf8))
+        s.progress.ingest(logLines)
+        s.logTail = Array(logLines.suffix(60))
+        s.startedAt = startedAt
+        if let failed { s.progress.markFailed(failed); s.phase = .failed(jobId: jobId, reason: failed) }
+        else if finished, let out = s.progress.output { s.phase = .finished(jobId: jobId, output: out) }
+        else { s.phase = .running(jobId: jobId) }
+        return s
+    }
+
     /// Commits the bundled script when the repo has none or an older `SCRIPT_VERSION`.
     func ensureScript() async throws {
         let repo = plan.dataset
