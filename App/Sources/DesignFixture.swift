@@ -92,6 +92,13 @@ enum DesignFixture {
         switch scene {
         case "empty", "offline":
             break
+        case "onboarding":
+            // First-run sheet over an empty, model-less chat. `--design-onboarding-at <0…1>` freezes the ring mid-download.
+            engine.readiness = .idle
+            if let i = CommandLine.arguments.firstIndex(of: "--design-onboarding-at"), i + 1 < CommandLine.arguments.count,
+               let f = Double(CommandLine.arguments[i + 1]) {
+                onboardingFrozenAt = f
+            }
         case "downloading":
             engine.readiness = .downloading(spec, done: 162_000_000, total: spec.sizeBytes)
         case "live":
@@ -314,6 +321,21 @@ enum DesignFixture {
                                              "body": ["text": "Build is green ✓", "tags": ["ci", "loopl"]]])
 
     /// The `approval` scene has no agent behind it: script what the loop would do after the card is answered.
+    /// `onboarding` scene: Continue scripts a download (~3 s) → load → ready, no network.
+    @MainActor static var onboardingFrozenAt: Double?
+    @MainActor static func playOnboarding(_ engine: Engine, _ spec: ModelSpec) {
+        Task { @MainActor in
+            let total = max(spec.sizeBytes, 1)
+            if let f = onboardingFrozenAt { engine.readiness = .downloading(spec, done: Int64(Double(total) * f), total: total); return }
+            for step in 1...12 {
+                engine.readiness = .downloading(spec, done: total * Int64(step) / 12, total: total)
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+            for p in stride(from: 0.0, through: 1.0, by: 0.25) { engine.readiness = .loading(spec, progress: p); try? await Task.sleep(for: .milliseconds(120)) }
+            engine.readiness = .ready(spec)
+        }
+    }
+
     @MainActor static func resolve(_ engine: Engine, _ req: ApprovalRequest, _ decision: ApprovalDecision) async {
         func sleep(_ s: Double) async { try? await Task.sleep(for: .seconds(s)) }
         _ = engine.transcript.apply(.approvalResolved(id: req.id, decision))

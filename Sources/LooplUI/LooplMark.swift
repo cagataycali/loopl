@@ -179,3 +179,36 @@ public struct LooplMark: View {
         LooplMark(tone: .light).frame(width: 96)
     }.padding()
 }
+
+/// The mark as a progress ring: a faint loop track, the flame-gradient stroke drawn tail → head as `progress`
+/// goes 0 → 1, and the flame lighting when it completes. `progress == nil` = indeterminate (the loop breathes).
+/// Used by first-run onboarding while the first model downloads — the brand IS the progress indicator.
+public struct LooplProgressMark: View {
+    public var progress: Double?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var breathe = false
+    public init(progress: Double?) { self.progress = progress }
+    public var body: some View {
+        GeometryReader { g in
+            let side = min(g.size.width, g.size.height)
+            let p = max(0, min(1, progress ?? 0.18))
+            ZStack {
+                LooplLoopStroke().stroke(LooplDesign.tertiaryFill, style: StrokeStyle(lineWidth: 0.115 * side, lineCap: .round))
+                LooplLoopStroke().trim(from: 0, to: p)
+                    .stroke(LooplDesign.flame, style: StrokeStyle(lineWidth: 0.115 * side, lineCap: .round))
+                    .opacity(progress == nil && breathe ? 0.45 : 1)
+                LooplFlameShape().fill(LooplDesign.flame)
+                    .opacity(p >= 1 ? 1 : 0)
+                    .scaleEffect(p >= 1 ? 1 : 0.6, anchor: UnitPoint(x: 0.66, y: 0.9))
+            }
+            .frame(width: side, height: side)
+            .frame(width: g.size.width, height: g.size.height)
+            .animation(LooplDesign.Motion.reduced(LooplDesign.Motion.value, reduceMotion), value: p)
+        }
+        .aspectRatio(1, contentMode: .fit)
+        .onAppear { if progress == nil, !reduceMotion { withAnimation(LooplDesign.Motion.pulse) { breathe = true } } }
+        .accessibilityElement()
+        .accessibilityLabel("Download progress")
+        .accessibilityValue(progress.map { "\(Int(($0 * 100).rounded())) percent" } ?? "in progress")
+    }
+}
