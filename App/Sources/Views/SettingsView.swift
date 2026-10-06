@@ -33,8 +33,13 @@ struct SettingsView: View {
 
                 Section {
                     Toggle(isOn: $settings.offline) { Label("Offline mode", systemImage: LooplDesign.iconOffline) }
+                    Picker(selection: $settings.askBefore) {
+                        Text("Every request").tag(ApprovalPolicy.Mode.always)
+                        Text("Writes only").tag(ApprovalPolicy.Mode.mutating)
+                        Text("Never").tag(ApprovalPolicy.Mode.never)
+                    } label: { Label("Ask before", systemImage: "hand.raised") }
                 } header: { Text("Network") } footer: {
-                    Text("Refuses every network call: downloads and http_get. Models already on this device load and run normally.")
+                    Text(askBeforeFooter)
                 }
 
                 Section {
@@ -70,6 +75,15 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Settings")
+        }
+    }
+
+    private var askBeforeFooter: String {
+        let base = "Offline mode refuses every network call: downloads and the http tool. "
+        switch settings.askBefore {
+        case .always: return base + "Ask before: every http request shows an approval card first."
+        case .mutating: return base + "Ask before: GET and HEAD run; POST, PUT, PATCH and DELETE wait for your approval (2 minutes, then denied)."
+        case .never: return base + "Ask before is off — the model's http calls run without asking."
         }
     }
 
@@ -115,7 +129,7 @@ struct ToolsEditor: View {
                     }
                 }
             } footer: {
-                Text("http_get is refused while offline mode is on — the agent sees the refusal as a tool error and answers without it.")
+                Text("http is refused while offline mode is on — the agent sees the refusal as a tool error and answers without it. Writes ask for your approval first (Settings › Ask before).")
             }
         }
         .navigationTitle("Tools")

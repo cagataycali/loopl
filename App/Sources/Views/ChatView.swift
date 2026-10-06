@@ -21,6 +21,7 @@ struct ChatView: View {
                 } empty: {
                     EmptyState(hint: emptyHint)
                 }
+                .onApproval { req, decision in engine.resolve(req, decision) }
                 .contentShape(Rectangle())
                 .onTapGesture { focused = false }
                 if let err = engine.lastError {

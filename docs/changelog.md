@@ -12,6 +12,13 @@ breaking change is called out under **Changed** with the old → new symbol.
     loopl is in its first week. The SDK surface is settling around the Strands event loop; until `0.2.0`
     ships, treat the pages under *SDK* as the direction, and the changelog as the contract.
 
+## Unreleased — human in the loop & `http`
+
+- **SDK**: `Tool.requiresApproval(for:)`, `ApprovalRequest` / `ApprovalDecision`, `ApprovalPolicy` (always · mutating · never + trusted hosts). The agent suspends a flagged call inside the actor, emits `.approvalRequested`, resumes on `agent.resolve(approval:)`; timeout (120 s) and cancellation deny; other concurrent tools keep running. [Human in the loop](sdk/hitl.md).
+- **Changed**: `HttpGetTool` (`http_get`) → `HttpTool` (`http`: GET/HEAD/POST/PUT/PATCH/DELETE, headers, body, timeout, capped response). `http_get` stays one release as a deprecated alias.
+- **LooplUI**: `ApprovalCard` (Approve · Deny · Edit) rendered inline by `AgentTranscriptView.onApproval`; `HapticEvent.approvalNeeded`.
+- **App**: Settings › Network › **Ask before** (every request · writes only · never); the saved `http_get` toggle migrates to `http`.
+
 ## 0.3.0 — 2026-10-05 · docs & identity
 
 - **Docs compacted**: 25 pages → 10 (Home · Start · SDK ×4 · Models · App · Privacy · FAQ · Changelog · API). Every old URL redirects.

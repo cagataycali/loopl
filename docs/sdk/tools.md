@@ -68,7 +68,7 @@ let schema: JSONValue = [
 | `CurrentTimeTool` | time in a zone or city |
 | `CalculatorTool` | arithmetic (`Calculator`, no `eval`) |
 | `RememberTool` / `RecallTool` | on-device notes (`NotesStore`) |
-| `HttpGetTool` | GET a URL — blocked when `NetworkPolicy` is offline |
+| `HttpTool` | `http`: GET/HEAD/POST/PUT/PATCH/DELETE with headers, body, timeout; capped response; blocked when `NetworkPolicy` is offline; writes ask for approval ([HITL](hitl.md)). `HttpGetTool` (`http_get`) stays one release as a deprecated alias |
 
 ## How calls reach your code
 

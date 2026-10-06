@@ -17,15 +17,21 @@ public final class AppSettings {
     public var showPerformance: Bool { didSet { UserDefaults.standard.set(showPerformance, forKey: "loopl.perf") } }
     /// Catalog id of the model to load at launch (the last one the user picked).
     public var lastModelId: String? { didSet { UserDefaults.standard.set(lastModelId, forKey: "loopl.lastModel") } }
+    /// Settings › Ask before: which `http` calls show an approval card (SDK `ApprovalPolicy.Mode`). Read by the policy hook on every call.
+    public var askBefore: ApprovalPolicy.Mode { didSet { UserDefaults.standard.set(askBefore.rawValue, forKey: Self.askBeforeKey) } }
+    nonisolated public static let askBeforeKey = "loopl.askBefore"
 
     public static let defaultSystemPrompt = "You are loopl, a helpful assistant running fully on this iPhone. Use tools when they help; answer concisely."
-    public static let allToolNames = ["current_time", "calculator", "device_info", "remember", "recall", "http_get"]
+    public static let allToolNames = ["current_time", "calculator", "device_info", "remember", "recall", "http"]
 
     public init() {
         let d = UserDefaults.standard
         offline = d.bool(forKey: NetworkPolicy.offlineKey)
         systemPrompt = d.string(forKey: "loopl.system") ?? Self.defaultSystemPrompt
-        enabledTools = Set((d.array(forKey: "loopl.tools") as? [String]) ?? Self.allToolNames)
+        var saved = Set((d.array(forKey: "loopl.tools") as? [String]) ?? Self.allToolNames)
+        if saved.remove("http_get") != nil { saved.insert("http") }     // 0.1 → http (http_get is a deprecated SDK alias)
+        enabledTools = saved
+        askBefore = ApprovalPolicy.Mode(rawValue: d.string(forKey: Self.askBeforeKey) ?? "") ?? .mutating
         showPerformance = d.bool(forKey: "loopl.perf")
         lastModelId = d.string(forKey: "loopl.lastModel")
         // Retired keys from 0.1 (demo runtime, HF token, iteration cap) are simply ignored.
@@ -79,7 +85,19 @@ public final class Engine {
     public var loadedModel: ModelSpec? { if case .ready(let s) = readiness { return s }; return nil }
     public var loadProgress: Double? { if case .loading(_, let p) = readiness { return p }; return nil }
     public var isGenerating: Bool { transcript.isRunning }
-    public var allTools: [any Tool] { [CurrentTimeTool(), CalculatorTool(), DeviceInfoTool(), RememberTool(), RecallTool(), HttpGetTool()] }
+    public var allTools: [any Tool] { [CurrentTimeTool(), CalculatorTool(), DeviceInfoTool(), RememberTool(), RecallTool(), HttpTool()] }
+    /// Human-in-the-loop policy: reads Settings › Ask before on every call, so no agent rebuild is needed.
+    private let approvalPolicy = ApprovalPolicy(modeProvider: {
+        ApprovalPolicy.Mode(rawValue: UserDefaults.standard.string(forKey: AppSettings.askBeforeKey) ?? "") ?? .mutating
+    })
+    /// Answer an `ApprovalCard` (the transcript shows it until the agent emits `.approvalResolved`).
+    public func resolve(_ request: ApprovalRequest, _ decision: ApprovalDecision) {
+        guard let agent else {
+            if DesignFixture.requested { Task { await DesignFixture.resolve(self, request, decision) } }   // DEBUG fixture, no model
+            return
+        }
+        Task { await agent.resolve(approval: request.id, decision) }
+    }
     public var activeTools: [any Tool] { allTools.filter { settings.enabledTools.contains($0.name) } }
 
     /// The model to bring up at launch: the last used one, else the catalog default
@@ -202,7 +220,7 @@ public final class Engine {
         lastError = nil
         haptics.emit(.send)
         // Generation params are the model's own maxed defaults (spec.defaultParams, set at load): no caps here.
-        let agent = self.agent ?? Agent(model: model, tools: activeTools, systemPrompt: settings.systemPrompt)
+        let agent = self.agent ?? Agent(model: model, tools: activeTools, systemPrompt: settings.systemPrompt, hooks: [approvalPolicy])
         self.agent = agent
         transcript.user(text)
         let tools = activeTools, prompt = settings.systemPrompt
@@ -214,6 +232,7 @@ public final class Engine {
                     if self.transcript.apply(event) { self.archiveCurrent() }
                     switch event {
                     case .toolStarted: self.haptics.emit(.toolStart)
+                    case .approvalRequested: self.haptics.emit(.approvalNeeded)
                     case .toolResult(let r): self.haptics.emit(r.isError ? .error : .toolFinish)
                     default: break
                     }

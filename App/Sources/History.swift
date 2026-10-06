@@ -23,6 +23,12 @@ struct SavedConversation: Codable, Identifiable, Hashable {
             case .assistant(let s): .assistant(s)
             case .toolUse(let c, let r): .tool(name: c.name, args: c.input, result: r?.content, isError: r?.isError ?? false, ms: r?.durationMs ?? 0)
             case .note(let s): .note(s)
+            case .approval(let req, let d):
+                switch d {
+                case nil: nil                                   // still waiting — the agent will not be there on reopen
+                case .deny(let reason)?: .note("denied \(req.title)" + (reason.map { " — \($0)" } ?? ""))
+                case .approve?, .approveEdited?: .note("approved \(req.title)")
+                }
             case .reasoning: nil
             }
         }

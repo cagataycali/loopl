@@ -3,7 +3,8 @@ import Loopl
 
 /// `--design-fixture [scene]` (DEBUG only): fills the chat with a fixed
 /// transcript so screenshots and design work need no model. Scenes:
-/// `empty` · `streaming` (default) · `tool` · `offline` · `downloading` · `live` (a scripted
+/// `empty` · `streaming` (default) · `tool` · `offline` · `downloading` · `approval` (a POST waiting
+/// for the human; tapping Approve/Deny scripts the follow-up) · `live` (a scripted
 /// replay streamed over ~8 s — text chunks, two tool calls, final answer — for motion
 /// captures; `--design-loop` repeats it). Never a runtime —
 /// the SDK's FakeModel stays in Tests/.
@@ -49,6 +50,13 @@ enum DesignFixture {
             engine.transcript = t
             Task { await replayLive(engine, loop: CommandLine.arguments.contains("--design-loop")) }
             return
+        case "approval":
+            t.user("Post a note to my notes API saying the build is green.")
+            t.apply(.startEventLoop(cycle: 1))
+            t.apply(.text("I'll post it now."))
+            let use = approvalUse
+            t.apply(.modelMessage(.assistant(text: "I'll post it now.", toolUses: [use])))
+            t.apply(.approvalRequested(HttpTool().requiresApproval(for: use.input)!.with(id: use.toolUseId)))
         case "tool":
             t.user("What time is it in Istanbul, and what is 23 × 47?")
             t.apply(.startEventLoop(cycle: 1))
@@ -84,6 +92,37 @@ enum DesignFixture {
             t.apply(.metrics(m))
         }
         engine.transcript = t
+    }
+
+    static let approvalUse = ToolUse(toolUseId: "tooluse_post", name: "http",
+                                     input: ["method": "POST", "url": "https://notes.example.com/api/notes",
+                                             "headers": ["Authorization": "Bearer n0tes-secret", "Accept": "application/json"],
+                                             "body": ["text": "Build is green ✓", "tags": ["ci", "loopl"]]])
+
+    /// The `approval` scene has no agent behind it: script what the loop would do after the card is answered.
+    @MainActor static func resolve(_ engine: Engine, _ req: ApprovalRequest, _ decision: ApprovalDecision) async {
+        func sleep(_ s: Double) async { try? await Task.sleep(for: .seconds(s)) }
+        _ = engine.transcript.apply(.approvalResolved(id: req.id, decision))
+        let use = ToolUse(toolUseId: req.id, name: req.toolName, input: decision.input(default: req.input) ?? req.input)
+        await sleep(0.35)
+        if decision.isApproved {
+            _ = engine.transcript.apply(.toolStarted(use)); engine.haptics.emit(.toolStart)
+            await sleep(1.1)
+            _ = engine.transcript.apply(.toolResult(ToolResult(toolUseId: use.toolUseId, name: use.name,
+                                                               content: "HTTP 201 application/json\n{\"id\":\"n_8f21\",\"text\":\"Build is green ✓\"}", durationMs: 1086)))
+            engine.haptics.emit(.toolFinish)
+            await sleep(0.5)
+            _ = engine.transcript.apply(.startEventLoop(cycle: 2))
+            await sleep(0.3)
+            for w in "Posted — your note **n_8f21** is saved.".split(separator: " ") { _ = engine.transcript.apply(.text(String(w) + " ")); await sleep(0.04) }
+        } else {
+            _ = engine.transcript.apply(.toolResult(.error(use, "Tool call denied by the user. Do not retry it; continue without it.")))
+            await sleep(0.5)
+            _ = engine.transcript.apply(.startEventLoop(cycle: 2))
+            await sleep(0.3)
+            for w in "Okay — I won't post it. Tell me if you'd like it changed first.".split(separator: " ") { _ = engine.transcript.apply(.text(String(w) + " ")); await sleep(0.04) }
+        }
+        _ = engine.transcript.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("done"), metrics: EventLoopMetrics())))
     }
 
     /// Streams the `tool` scene over time the way a real run looks: ~30 chunks/s text, two tool
@@ -127,4 +166,8 @@ enum DesignFixture {
             await sleep(3)
         } while loop
     }
+}
+
+private extension ApprovalRequest {
+    func with(id: String) -> ApprovalRequest { var c = self; c.id = id; return c }
 }

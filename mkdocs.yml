@@ -150,6 +150,7 @@ nav:
       - Tools: sdk/tools.md
       - Models & runtimes: sdk/models.md
       - Hooks & conversation: sdk/hooks.md
+      - Human in the loop: sdk/hitl.md
   - Models: models.md
   - App: app/index.md
   - Privacy: privacy.md

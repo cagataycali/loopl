@@ -110,8 +110,8 @@ enum SelfTest {
             if offline {
                 NetworkPolicy.setOffline(true)
                 emit("offline guard ON — HubApi/URLSession paths now refuse")
-                do { _ = try await HttpGetTool().call(["url": "https://huggingface.co"]); report["offline_http_refused"] = false }
-                catch { report["offline_http_refused"] = true; emit("http_get refused: \(error.localizedDescription)") }
+                do { _ = try await HttpTool().call(["url": "https://huggingface.co"]); report["offline_http_refused"] = false }
+                catch { report["offline_http_refused"] = true; emit("http refused: \(error.localizedDescription)") }
             }
 
             // 2) load — the runtime the catalog row asks for (MLX or llama.cpp; Apple FM needs no file).
@@ -130,7 +130,7 @@ enum SelfTest {
 
             // 3) agent run with the built-in tools
             // No caps: the loop runs until the model stops. The unattended proof bounds itself by wall clock below.
-            let tools: [any Loopl.Tool] = [CurrentTimeTool(), CalculatorTool(), DeviceInfoTool(), RememberTool(), RecallTool(), HttpGetTool()]
+            let tools: [any Loopl.Tool] = [CurrentTimeTool(), CalculatorTool(), DeviceInfoTool(), RememberTool(), RecallTool(), HttpTool()]
             let agent = Agent(model: model, tools: tools, systemPrompt: AppSettings.defaultSystemPrompt)
             var toolsUsed: [[String: Any]] = []
             var toolRounds = 0

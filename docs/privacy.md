@@ -14,7 +14,7 @@ description: loopl collects no data. No account, no analytics, no servers. The o
 | Connection | When | What is sent |
 |---|---|---|
 | `https://huggingface.co` | first launch (default model) and when **you** pick a model | an anonymous request for a public repository's files — no token, no account |
-| the URL the model asks for | only if you enable the `http_get` tool and are online | the request itself; the URL is shown in the tool row |
+| the URL the model asks for | only if you enable the `http` tool and are online | the request itself; the URL is shown in the tool row, and writes wait for your approval |
 | anything else | never | — |
 
 Inference, chat, tools and the catalog run entirely on the device. **Offline mode** in Settings refuses every network call.

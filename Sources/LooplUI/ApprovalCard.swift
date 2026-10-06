@@ -44,7 +44,6 @@ public struct ApprovalCard: View {
             .presentationDragIndicator(.visible)
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(a11y)
     }
 
     // MARK: pieces
@@ -68,6 +67,8 @@ public struct ApprovalCard: View {
             Spacer(minLength: 0)
             if decision == nil { Pill(request.risk.rawValue, tint: riskTint) }
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(a11y)
     }
 
     private var headersView: some View {
