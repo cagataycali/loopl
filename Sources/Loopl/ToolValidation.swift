@@ -1,4 +1,7 @@
 import Foundation
+import os
+
+private let log = Logger(subsystem: "technology.tiny.loopl", category: "ToolValidation")
 
 // Strands `tools/_validator.py` (`validate_and_prepare_tools`) + `tools/tools.py`
 // (`validate_tool_use_name`), plus what a 0.6B model on a phone actually breaks
@@ -50,6 +53,7 @@ public enum ToolValidation {
         for use in toolUses {
             // 1. Strands: the name.
             if let problem = nameProblem(use.name) {
+                log.debug("rejected tool call \(use.name, privacy: .public) \(JSONValue.object(use.input).compact, privacy: .public): \(problem, privacy: .public)")
                 results.append(.error(use, "Error: \(problem)"))
                 continue
             }
@@ -67,6 +71,7 @@ public enum ToolValidation {
                 fixed.input = input
                 valid.append(fixed)
             case .invalid(let complaint):
+                log.debug("rejected tool call \(use.name, privacy: .public) \(JSONValue.object(use.input).compact, privacy: .public): \(complaint, privacy: .public)")
                 results.append(.error(use, "Error: \(complaint)"))
             }
         }
@@ -95,6 +100,16 @@ public enum ToolValidation {
         // `ToolCallParser` hands that over as `["_": .string(…)]` or as a lone unnamed value.
         if let lifted = liftBareString(out, properties: properties, required: required) { out = lifted }
 
+        // Keys the model spelled differently: `URL` → `url`, `uri`/`link`/`endpoint` → `url`.
+        out = renameAliases(out, properties: properties, required: required)
+
+        // A loose value next to named ones (`<method=HEAD>` then a bare URL): it is the one required
+        // parameter still missing, when exactly one is.
+        if case .string(let loose)? = out["_"], properties["_"] == nil {
+            let missing = required.filter { out[$0] == nil || out[$0] == .null }
+            if missing.count == 1 { out[missing[0]] = .string(loose); out.removeValue(forKey: "_") }
+        }
+
         // Coerce + type-check the properties the schema describes.
         for (key, value) in out {
             guard let spec = properties[key] else { continue }       // extra keys are passed through
@@ -107,12 +122,61 @@ public enum ToolValidation {
         // Required properties.
         let missing = required.filter { out[$0] == nil || out[$0] == .null }
         if !missing.isEmpty {
+            // A concrete example, not a type placeholder: a 0.8B model copies `{"url": "https://example.com"}`
+            // verbatim with the right value, but read `{"url": <string>}` as "call it with the string url".
             let shape = required.map { key -> String in
-                "\"\(key)\": <\(properties[key]?["type"]?.stringValue ?? "value")>"
+                "\"\(key)\": \(exampleValue(for: key, spec: properties[key]).compact)"
             }.joined(separator: ", ")
-            return .invalid("missing required parameter\(missing.count > 1 ? "s" : "") \(missing.sorted().map { "'\($0)'" }.joined(separator: ", ")). Call it with {\(shape)}.")
+            return .invalid("missing required parameter\(missing.count > 1 ? "s" : "") \(missing.sorted().map { "'\($0)'" }.joined(separator: ", ")). Call it with arguments like {\(shape)}.")
         }
         return .ok(out)
+    }
+
+    /// Alternative spellings a model uses for a parameter. Applied only when the schema's own key
+    /// is absent and the alias is not itself a declared property.
+    static let aliases: [String: [String]] = [
+        "url": ["uri", "link", "href", "endpoint", "address", "website", "site", "target"],
+        "method": ["http_method", "verb", "type"],
+        "body": ["data", "payload", "content", "json"],
+        "headers": ["header"],
+        "timeout": ["timeout_seconds", "timeout_s"],
+        "expression": ["expr", "input", "query"],
+        "timezone": ["tz", "time_zone", "zone"],
+    ]
+
+    static func renameAliases(_ input: [String: JSONValue], properties: [String: JSONValue], required: [String]) -> [String: JSONValue] {
+        guard !properties.isEmpty else { return input }
+        var out = input
+        for (key, value) in input where properties[key] == nil {
+            // Case-insensitive / snake-vs-camel spelling of a declared property.
+            let folded = key.lowercased().replacingOccurrences(of: "_", with: "").replacingOccurrences(of: "-", with: "")
+            if let canonical = properties.keys.first(where: { $0.lowercased().replacingOccurrences(of: "_", with: "") == folded }), out[canonical] == nil {
+                out[canonical] = value; out.removeValue(forKey: key); continue
+            }
+            // A known alias of a declared property.
+            if let canonical = properties.keys.first(where: { aliases[$0]?.contains(key.lowercased()) ?? false }), out[canonical] == nil {
+                out[canonical] = value; out.removeValue(forKey: key)
+            }
+        }
+        return out
+    }
+
+    /// Example value for the "Call it with …" complaint: the schema's own `examples`/`example`
+    /// first, then an `enum` member, then a key-aware guess (`url` → an https URL), then a type default.
+    static func exampleValue(for key: String, spec: JSONValue?) -> JSONValue {
+        if let ex = spec?["examples"]?.arrayValue?.first { return ex }
+        if let ex = spec?["example"], ex != .null { return ex }
+        if let first = spec?["enum"]?.arrayValue?.first { return first }
+        let lower = key.lowercased()
+        if lower.contains("url") || lower.contains("uri") || lower.contains("link") { return .string("https://example.com") }
+        switch spec?["type"]?.stringValue ?? "string" {
+        case "number", "integer": return .number(1)
+        case "boolean": return .bool(true)
+        case "array": return .array([])
+        case "object": return .object([:])
+        case "null": return .null
+        default: return .string("…")
+        }
     }
 
     /// `ToolCallParser` keys a non-object `arguments` under `_`; a model may also
