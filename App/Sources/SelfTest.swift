@@ -1,6 +1,7 @@
 import SwiftUI
 import Loopl
 import LooplRuntimes
+import LooplAppleTools
 #if canImport(FoundationModels)
 import FoundationModels
 #endif
@@ -52,6 +53,21 @@ enum SelfTest {
             let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             try? data.write(to: docs.appendingPathComponent("selftest.json"))
             exit(ok ? 0 : 1)
+        }
+        // --selftest-open-app <url> [--selftest-params '{json}']: the device-tools proof — no model, just the tool.
+        // Works on the Simulator (maps://, https://…): the other app comes to the front and the result line says `opened: true`.
+        if let url = arg("--selftest-open-app") {
+            var input: [String: JSONValue] = ["url": .string(url)]
+            if let p = arg("--selftest-params"), let d = p.data(using: .utf8), let v = try? JSONDecoder().decode(JSONValue.self, from: d) { input["params"] = v }
+            report["tool"] = "open_app"
+            let approval = OpenAppTool().requiresApproval(for: input).map { "\($0.title) · \($0.detail ?? "")" } ?? "none (scheme allowed)"
+            emit("approval: \(approval)"); report["approval"] = approval
+            do {
+                let out = try await OpenAppTool().call(input)
+                emit(out); report["result"] = out
+                try? await Task.sleep(for: .seconds(2))   // let the other app land before the host screenshots
+                finish(out.hasPrefix("opened: true"))
+            } catch { emit("open_app failed: \(error)"); report["error"] = "\(error)"; finish(false) }
         }
         do {
             let offline = CommandLine.arguments.contains("--selftest-offline")

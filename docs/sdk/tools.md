@@ -72,14 +72,18 @@ let schema: JSONValue = [
 
 ## On-device Apple tools
 
-`LooplAppleTools` wraps what the iPhone already does, with no account and no download: `generate_image` (Image Playground, iOS 18.4+, Apple Intelligence), `generate_voice` (AVSpeechSynthesizer, Personal Voice), `read_text` and `describe_image` (Vision OCR / classification on the user's attached picture), `translate` (installed Translate packs, iOS 26), `transcribe` (SpeechAnalyzer, iOS 26), `detect_language`, and `apple_intelligence` (Foundation Models `@Generable` summarize / extract / tag). Each conforms to `AppleTool` and reports `availability()` — the app only offers tools the device can run. Pictures come back in `ToolResult.images` (`ImageBlock`); the model reads the text.
+`LooplAppleTools` wraps what the iPhone already does — no account, no download: `generate_image` (Image Playground, iOS 18.4+), `generate_voice` (AVSpeechSynthesizer, Personal Voice), `read_text` / `describe_image` (Vision on the attached picture), `translate` and `transcribe` (iOS 26), `detect_language`, and three device tools: `flashlight` (torch `on|off|toggle`, `level` 0–1), `vibrate` (Taptic patterns `tap double success warning error heartbeat long`, `intensity`), `open_app`. Each conforms to `AppleTool` and reports `availability()`; the app only offers what the device can run (torch and haptics are device-only — the Simulator says so).
+
+`open_app` passes context to another app through a deeplink: `params` is a JSON object merged into the query string, percent-encoded (nested values as compact JSON). It leaves loopl, so it asks via [HITL](hitl.md) unless the scheme is on the user's allowlist (`OpenAppTool.allowedSchemes`); `fallback_url` opens when the app is missing.
 
 ```swift
 // snippet: compile(wrap)
 import LooplAppleTools
 let tools: [any Tool] = AppleTools.available   // what THIS device can do right now
-let a = GenerateImageTool.availability()
-print(a.available ? "ready" : a.reason)      // "Needs Apple Intelligence …"
+// Shortcuts with context → shortcuts://run-shortcut?name=Log%20Water&input=text&text=500%20ml
+_ = try OpenAppTool.parse(["url": "shortcuts://run-shortcut?name=Log%20Water", "params": ["input": "text", "text": "500 ml"]])
+// Another agent app     → tinyapp://chat?from=loopl&prompt=summarise%20my%20day
+_ = try OpenAppTool.parse(["url": "tinyapp://chat", "params": ["prompt": "summarise my day", "from": "loopl"]])
 ```
 
 ## How calls reach your code

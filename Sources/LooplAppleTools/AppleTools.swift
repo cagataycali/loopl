@@ -1,7 +1,7 @@
 import Foundation
 import Loopl
 
-// LooplAppleTools — the iPhone's own intelligence as loopl tools. Everything here
+// LooplAppleTools — the iPhone's own intelligence AND hardware as loopl tools. Everything here
 // runs on the device, needs no account and no download by loopl; each tool reports
 // `availability` honestly (Apple Intelligence off, Simulator, older iOS) and the
 // app only hands AVAILABLE tools to the model. Research + citations:
@@ -32,6 +32,9 @@ enum Unavailable {
     static let simulator = "Not on Simulator — runs on a real iPhone"
     static func ios(_ v: String) -> String { "Needs iOS \(v) or later" }
     static let sdk = "Framework not in this SDK"
+    static let noTorch = "No flashlight on this device"
+    static let noHaptics = "No Taptic Engine on this device"
+    static let noUIKit = "Needs an iPhone or iPad"
     static var isSimulator: Bool {
         #if targetEnvironment(simulator)
         true
@@ -45,7 +48,8 @@ enum Unavailable {
 public enum AppleTools {
     public static var all: [any AppleTool] {
         [GenerateImageTool(), GenerateVoiceTool(), ReadTextTool(), DescribeImageTool(),
-         TranslateTool(), TranscribeTool(), DetectLanguageTool(), AppleIntelligenceTool()]
+         TranslateTool(), TranscribeTool(), DetectLanguageTool(),
+         FlashlightTool(), VibrateTool(), OpenAppTool()]
     }
     public static var names: [String] { all.map(\.name) }
     /// Tools whose `availability()` is OK right now — what the Engine should expose to the model.

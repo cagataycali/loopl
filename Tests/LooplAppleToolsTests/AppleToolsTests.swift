@@ -24,7 +24,7 @@ final class AppleToolsTests: XCTestCase {
     func testNamesAreUniqueSnakeCaseAndStable() {
         let names = AppleTools.names
         XCTAssertEqual(Set(names).count, names.count)
-        XCTAssertEqual(names, ["generate_image", "generate_voice", "read_text", "describe_image", "translate", "transcribe", "detect_language", "apple_intelligence"])
+        XCTAssertEqual(names, ["generate_image", "generate_voice", "read_text", "describe_image", "translate", "transcribe", "detect_language", "flashlight", "vibrate", "open_app"])
         for n in names { XCTAssertTrue(n.allSatisfy { $0.isLowercase || $0 == "_" }, n) }
     }
 
@@ -60,7 +60,9 @@ final class AppleToolsTests: XCTestCase {
         await assertThrows(GenerateVoiceTool(), ["text": .string(String(repeating: "a", count: 1001))], contains: "1000")
         await assertThrows(TranslateTool(), ["text": .string("hi")], contains: "to")
         await assertThrows(TranscribeTool(), ["path": .string("/nope/none.caf")], contains: "no file")
-        await assertThrows(AppleIntelligenceTool(), ["task": .string("rewrite"), "text": .string("x")], contains: "task")
+        await assertThrows(FlashlightTool(), ["state": .string("blink")], contains: "state")
+        await assertThrows(VibrateTool(), ["pattern": .string("morse")], contains: "pattern")
+        await assertThrows(OpenAppTool(), [:], contains: "url")
         await assertThrows(DetectLanguageTool(), [:], contains: "text")
         await assertThrows(ReadTextTool(), [:], contains: "no image")
         await assertThrows(DescribeImageTool(), [:], contains: "no image")

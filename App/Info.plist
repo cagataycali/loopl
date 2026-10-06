@@ -24,6 +24,20 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>shortcuts</string>
+		<string>maps</string>
+		<string>tel</string>
+		<string>sms</string>
+		<string>mailto</string>
+		<string>music</string>
+		<string>tinyapp</string>
+		<string>x-callback-url</string>
+		<string>facetime</string>
+		<string>comgooglemaps</string>
+		<string>spotify</string>
+	</array>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>
