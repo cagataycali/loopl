@@ -82,9 +82,9 @@ local `config.json` (`LocalModelFiles.hasVisionTower`), so the composer's photo 
 
 ## loopl's own models
 
-`cagataydev/loopl-*` (and any repo tagged `loopl`, including one you trained from the app) carry `ModelSpec.persona == .loopl`.
-They were trained with `LooplPersona.systemPrompt` as their system turn, so the app sends it first and your own system prompt
-after it — the text is in Settings › System prompt, under *loopl identity (built in)*.
+`cagataydev/loopl-*` (and anything you train from the app) carry their identity in the weights — loopl-train bakes it in.
+The SDK and the app add nothing in front of your system prompt: `Agent(systemPrompt:)` sends exactly what you give it,
+to every model.
 
 ## Where the weights live
 

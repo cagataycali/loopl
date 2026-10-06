@@ -36,7 +36,7 @@ final class VisionTruthTests: XCTestCase {
 
     // MARK: the Hub listing (no config.json yet) — file list beats model_type
 
-    func testLooplRepoIsNotVisionAndCarriesThePersona() throws {
+    func testLooplRepoIsNotVisionWhenTheFilesSaySo() throws {
         let repo = try HubCatalog.parseRepo(fixture("repo-mlx-loopl-4b-4bit"))
         XCTAssertEqual(repo.modelType, "qwen3_5")
         XCTAssertEqual(repo.pipeline, "text-generation")
@@ -44,11 +44,9 @@ final class VisionTruthTests: XCTestCase {
         XCTAssertFalse(repo.files.contains { $0.path == "preprocessor_config.json" })
         XCTAssertFalse(repo.isVision, "qwen3_5 with no processor files and a text-generation tag = text-only export")
         XCTAssertEqual(repo.tags?.contains("loopl"), true)
-        XCTAssertTrue(repo.isLoopl)
         // Without config.json the spec already says text-only; with it, the same.
         let spec = try HubCatalog.spec(for: repo, config: nil)
         XCTAssertNil(spec.vision); XCTAssertFalse(spec.supportsVision)
-        XCTAssertEqual(spec.persona, .loopl); XCTAssertTrue(spec.hasLooplPersona)
         XCTAssertEqual(spec.repo, "cagataydev/loopl-4b-4bit")
         let withConfig = try HubCatalog.spec(for: repo, config: HubCatalog.parseConfig(fixture("config-mlx-loopl-4b-4bit")))
         XCTAssertFalse(withConfig.supportsVision)
@@ -126,23 +124,21 @@ final class VisionTruthTests: XCTestCase {
 
     // MARK: ModelSpec round trip
 
-    func testPersonaCodesAndOldRowsDecode() throws {
+    func testRowsWithTheOldPersonaKeyStillDecode() throws {
+        // models.json shipped `"persona": "loopl"` for one build (0.1.0 (8)); the key is gone with the built-in identity
+        // (the owner's 15:2xZ decision: identity lives in the weights, the system prompt is the user's). Old rows must still load.
         let json = """
         {"id":"loopl-4b-4bit","name":"loopl 4B","repo":"cagataydev/loopl-4b-4bit","runtime":"mlx","family":"hermes","params_b":4,"size_bytes":1,
-         "ctx_nominal":262144,"ctx_usable_8gb":8192,"min_ram_gb":6,"gated":true,"vision":false}
+         "ctx_nominal":262144,"ctx_usable_8gb":8192,"min_ram_gb":6,"gated":true,"vision":false,"persona":"loopl"}
         """
         let old = try JSONDecoder().decode(ModelSpec.self, from: Data(json.utf8))
-        XCTAssertNil(old.persona)
-        XCTAssertTrue(old.hasLooplPersona, "an older models.json row without `persona` still resolves from the repo name")
-        var spec = old; spec.persona = .loopl
-        let back = try JSONDecoder().decode(ModelSpec.self, from: JSONEncoder().encode(spec))
-        XCTAssertEqual(back.persona, .loopl)
-        let qwen = ModelSpec(id: "q", name: "Qwen", repo: "mlx-community/Qwen3-0.6B-4bit", runtime: .mlx, family: .hermes, paramsB: 0.6, sizeBytes: 1,
-                             ctxNominal: 1, ctxUsable8GB: 1, minRAMGB: 1)
-        XCTAssertFalse(qwen.hasLooplPersona)
+        XCTAssertEqual(old.repo, "cagataydev/loopl-4b-4bit"); XCTAssertFalse(old.supportsVision)
+        let back = try JSONDecoder().decode(ModelSpec.self, from: JSONEncoder().encode(old))
+        XCTAssertEqual(back.id, old.id)
+        XCTAssertFalse(String(decoding: try JSONEncoder().encode(old), as: UTF8.self).contains("persona"), "nothing re-encodes the dropped key")
     }
 
-    func testBundledLooplRowsCarryThePersonaAndVisionPerRuntime() throws {
+    func testBundledLooplRowsAreGatedWithVisionPerRuntime() throws {
         // SwiftPM: Fixtures/models.json via Bundle.module; Xcode-hosted: the app bundle's models.json.
         var url: URL?
         #if SWIFT_PACKAGE
@@ -153,13 +149,11 @@ final class VisionTruthTests: XCTestCase {
         let loopl = catalog.models.filter { $0.repo.hasPrefix("cagataydev/loopl-") }
         XCTAssertEqual(loopl.count, 6)
         for row in loopl {
-            XCTAssertEqual(row.persona, .loopl, row.id)
             XCTAssertTrue(row.gated, row.id)
             // VISION-EXPORT READY (2026-10-06 13:3xZ): the -4bit repos are mlx_vlm exports WITH the tower (vision_tower.* + processor
             // configs, revs de32efa9 / 8c2afdb4 / 413f2c66); GGUF stays text-only (the GGUF runtime has no image path).
             XCTAssertEqual(row.vision, row.runtime == .mlx, "\(row.id)")
             XCTAssertEqual(row.supportsVision, row.runtime == .mlx, row.id)
         }
-        for row in catalog.models where !row.hasLooplPersona { XCTAssertNil(row.persona, row.id) }
     }
 }
