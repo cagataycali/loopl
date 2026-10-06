@@ -1,4 +1,5 @@
 import SwiftUI
+import PhotosUI
 import Loopl
 import LooplUI
 
@@ -8,6 +9,7 @@ struct ChatView: View {
     @Bindable var store: ModelStore
     var inSplit = false
     @State private var draft = ""
+    @State private var attachments: [ImageBlock] = []
     @State private var showHistory = false
     @FocusState private var focused: Bool
     @Namespace private var zoom
@@ -29,9 +31,9 @@ struct ChatView: View {
                         .padding(.horizontal, LooplDesign.gutter).padding(.bottom, 6)
                         .transition(.opacity)
                 }
-                Composer(draft: $draft, focused: $focused,
-                         placeholder: engine.loadedModel == nil ? "Model is getting ready…" : "Message",
-                         generating: engine.isGenerating, canSend: engine.loadedModel != nil,
+                Composer(draft: $draft, attachments: $attachments, focused: $focused,
+                         placeholder: engine.loadedModel == nil ? "Model is getting ready…" : (engine.canSeeImages ? "Message or photo" : "Message"),
+                         generating: engine.isGenerating, canSend: engine.loadedModel != nil, canAttach: engine.canSeeImages,
                          send: send, stop: engine.stop)
             }
             .animation(LooplDesign.Motion.faded(LooplDesign.Motion.spring, reduceMotion), value: engine.lastError)
@@ -103,9 +105,9 @@ struct ChatView: View {
     }
 
     private func send() {
-        let t = draft
-        withAnimation(LooplDesign.Motion.reduced(LooplDesign.Motion.snappy, reduceMotion)) { draft = "" }
-        engine.send(t)   // the engine emits the .send haptic
+        let t = draft, imgs = attachments
+        withAnimation(LooplDesign.Motion.reduced(LooplDesign.Motion.snappy, reduceMotion)) { draft = ""; attachments = [] }
+        engine.send(t, images: imgs)   // the engine emits the .send haptic
     }
 }
 
@@ -141,20 +143,95 @@ struct ReadinessRow: View {
 /// Swipe down on it (or drag the transcript) to dismiss the keyboard.
 struct Composer: View {
     @Binding var draft: String
+    @Binding var attachments: [ImageBlock]
     var focused: FocusState<Bool>.Binding
     var placeholder: String
     var generating: Bool
     var canSend: Bool
+    /// The loaded model has a vision tower — show the attach button (photos / camera / paste).
+    var canAttach: Bool = false
     var send: () -> Void
     var stop: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Finger-following offset while the composer is dragged down (rubber-banded).
     @State private var drag: CGFloat = 0
+    @State private var pickerItems: [PhotosPickerItem] = []
+    @State private var showPhotos = false
+    @State private var showCamera = false
+    @State private var attachError: String?
 
-    private var sendable: Bool { canSend && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    static let maxAttachments = 4
+
+    private var sendable: Bool { canSend && (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty) }
 
     var body: some View {
+        VStack(spacing: 0) {
+            AttachmentChips(images: $attachments)
+            if let attachError {
+                Text(attachError).font(.caption).foregroundStyle(.red).padding(.horizontal, 14).padding(.top, 6)
+                    .transition(.opacity)
+            }
+            bar
+        }
+        .background(.bar)
+        .offset(y: drag)
+        .photosPicker(isPresented: $showPhotos, selection: $pickerItems, maxSelectionCount: Self.maxAttachments - attachments.count,
+                      matching: .images, photoLibrary: .shared())
+        .onChange(of: pickerItems) { _, items in
+            guard !items.isEmpty else { return }
+            Task { await ingest(items); pickerItems = [] }
+        }
+        #if os(iOS)
+        .fullScreenCover(isPresented: $showCamera) {
+            CameraPicker { data in
+                if let data { add(ImageAttachment.block(from: data)) }
+            }
+            .ignoresSafeArea()
+        }
+        #endif
+        .animation(LooplDesign.Motion.faded(LooplDesign.Motion.snappy, reduceMotion), value: attachError)
+        // Interruptible: the bar follows the finger (rubber-banded, interactive spring), and on release
+        // either the keyboard goes (distance or velocity) or the bar springs back. Reduce Motion: no offset.
+        // `simultaneousGesture`: a plain `.gesture` never fires over the TextField (UIKit's recognizers win).
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 12)
+                .onChanged { v in
+                    guard focused.wrappedValue, !reduceMotion else { return }
+                    let dy = max(0, v.translation.height)
+                    withAnimation(LooplDesign.Motion.interactive) { drag = dy / (1 + dy / 80) }
+                }
+                .onEnded { v in
+                    let dy = v.translation.height, vy = v.predictedEndTranslation.height - dy
+                    if dy > LooplDesign.Motion.dismissDistance || vy > LooplDesign.Motion.dismissVelocity { focused.wrappedValue = false }
+                    withAnimation(LooplDesign.Motion.reduced(LooplDesign.Motion.snappy, reduceMotion)) { drag = 0 }
+                }
+        )
+    }
+
+    /// Attach: Photos · Camera · Paste. Only shown for a vision model; disabled at the 4-picture cap.
+    @ViewBuilder private var attachButton: some View {
+        Menu {
+            Button { showPhotos = true } label: { Label("Photo Library", systemImage: "photo.on.rectangle") }
+            #if os(iOS)
+            if UIImagePickerController.isSourceTypeAvailable(.camera) {
+                Button { showCamera = true } label: { Label("Take Photo", systemImage: "camera") }
+            }
+            #endif
+            Button { paste() } label: { Label("Paste Image", systemImage: "doc.on.clipboard") }
+                .disabled(!ImageAttachment.pasteboardHasImage)
+        } label: {
+            Image(systemName: "plus").font(.callout.weight(.bold)).frame(width: 40, height: 40)
+                .background(Color(.secondarySystemBackground), in: Circle())
+                .foregroundStyle(attachments.count >= Self.maxAttachments ? Color.secondary : Color.primary)
+        }
+        .disabled(attachments.count >= Self.maxAttachments || generating)
+        .accessibilityLabel("Attach an image")
+        .transition(.scale.combined(with: .opacity))
+    }
+
+    private var bar: some View {
         HStack(alignment: .bottom, spacing: 10) {
+            if canAttach { attachButton }
             TextField(placeholder, text: $draft, axis: .vertical)
                 .lineLimit(1...5)
                 .textFieldStyle(.plain)
@@ -188,23 +265,25 @@ struct Composer: View {
             .animation(LooplDesign.Motion.faded(LooplDesign.Motion.value, reduceMotion), value: sendable)
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
-        .background(.bar)
-        .offset(y: drag)
-        // Interruptible: the bar follows the finger (rubber-banded, interactive spring), and on release
-        // either the keyboard goes (distance or velocity) or the bar springs back. Reduce Motion: no offset.
-        // `simultaneousGesture`: a plain `.gesture` never fires over the TextField (UIKit's recognizers win).
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 12)
-                .onChanged { v in
-                    guard focused.wrappedValue, !reduceMotion else { return }
-                    let dy = max(0, v.translation.height)
-                    withAnimation(LooplDesign.Motion.interactive) { drag = dy / (1 + dy / 80) }
-                }
-                .onEnded { v in
-                    let dy = v.translation.height, vy = v.predictedEndTranslation.height - dy
-                    if dy > LooplDesign.Motion.dismissDistance || vy > LooplDesign.Motion.dismissVelocity { focused.wrappedValue = false }
-                    withAnimation(LooplDesign.Motion.reduced(LooplDesign.Motion.snappy, reduceMotion)) { drag = 0 }
-                }
-        )
+        .animation(LooplDesign.Motion.faded(LooplDesign.Motion.snappy, reduceMotion), value: canAttach)
+    }
+
+    private func add(_ block: ImageBlock?) {
+        guard let block else { attachError = "That image could not be read."; return }
+        guard attachments.count < Self.maxAttachments else { attachError = "Up to \(Self.maxAttachments) images per message."; return }
+        attachError = nil
+        LooplDesign.haptic()
+        withAnimation(LooplDesign.Motion.reduced(LooplDesign.Motion.snappy, reduceMotion)) { attachments.append(block) }
+    }
+
+    private func ingest(_ items: [PhotosPickerItem]) async {
+        for item in items {
+            let data = try? await item.loadTransferable(type: Data.self)
+            add(data.flatMap(ImageAttachment.block(from:)))
+        }
+    }
+
+    private func paste() {
+        add(ImageAttachment.fromPasteboard())
     }
 }
