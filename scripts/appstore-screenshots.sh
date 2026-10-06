@@ -46,7 +46,7 @@ SCENES=(
   "07-share|--design-fixture history --design-share review|Your conversations → your private dataset."
   "08-storage|--design-fixture empty --design-tab settings --design-settings storage --storage-fixture $SD|Models on a USB-C drive."
   "09-edit|--design-fixture edit --design-editing|Hold a message to edit it."
-  "10-onboarding|--design-fixture onboarding --no-skip|Pick a model. Nothing leaves the phone."
+  "10-onboarding|--design-fixture onboarding --design-onboarding-step pick --design-apple-fm --no-skip|Your models. Or Apple Intelligence, no download."
 )
 # per-scene settle time (the audio scene writes a real recording first; storage copies a fake model)
 settle() { case "$1" in 05-audio|08-storage) echo 10;; 07-share|09-edit) echo 7;; *) echo 5;; esac; }

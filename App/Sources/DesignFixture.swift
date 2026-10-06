@@ -32,7 +32,9 @@ enum DesignFixture {
     /// `--design-editing` opens the last user row of the `edit` scene in the in-place editor ·
     /// `--design-share select|review` opens History in selection mode (all threads ticked) and, for `review`,
     /// the Share-to-Hugging-Face sheet on its review step · `--design-settings storage` pushes Settings › Storage ·
-    /// `--design-mine` signs the session in as @cagataydev (no network) and fills Models › Mine with the loopl v1 repos.
+    /// `--design-mine` signs the session in as @cagataydev (no network) and fills Models › Mine with the loopl v1 repos ·
+    /// onboarding: `--design-apple-fm` shows the Apple Intelligence card as available (the sim has no Apple Intelligence),
+    /// `--design-ram-gb 6` makes the fit badges judge a 6 GB phone, `--design-gated` forces the Hugging Face sign-in step.
     static func flag(_ name: String) -> Bool { requested && CommandLine.arguments.contains(name) }
     static func value(_ name: String) -> String? {
         guard requested, let i = CommandLine.arguments.firstIndex(of: name), i + 1 < CommandLine.arguments.count,
@@ -130,7 +132,8 @@ enum DesignFixture {
         case "empty", "offline":
             break
         case "onboarding":
-            // First-run sheet over an empty, model-less chat. `--design-onboarding-at <0…1>` freezes the ring mid-download.
+            // First-run flow over an empty, model-less chat. `--design-onboarding-at <0…1>` freezes the ring mid-download;
+            // `--design-mine` = signed in to Hugging Face (so a gated pick downloads straight away).
             engine.readiness = .idle
             if let i = CommandLine.arguments.firstIndex(of: "--design-onboarding-at"), i + 1 < CommandLine.arguments.count,
                let f = Double(CommandLine.arguments[i + 1]) {

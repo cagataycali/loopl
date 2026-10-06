@@ -44,13 +44,17 @@ final class OnboardingUITests: XCTestCase {
 
         let cont = el(app, "onboarding-continue")
         XCTAssertTrue(cont.waitForExistence(timeout: 10))
-        for id in ["qwen3-0.6b-4bit", "qwen3.5-0.8b-4bit", "qwen3.5-2b-4bit"] {
+        // OUR models, smallest first, 2B preselected — never the Qwen picks.
+        for id in ["loopl-0.8b-4bit", "loopl-2b-4bit", "loopl-4b-4bit"] {
             XCTAssertTrue(el(app, "onboarding-card-\(id)").exists, "card \(id)")
         }
-        XCTAssertTrue(cont.label.contains("335"), "default pick is the 335 MB model: \(cont.label)")
+        XCTAssertFalse(el(app, "onboarding-card-qwen3-0.6b-4bit").exists, "the Qwen picks are gone")
+        XCTAssertTrue(cont.label.contains("loopl 2B"), "2B is the preselected pick: \(cont.label)")
+        XCTAssertTrue(el(app, "onboarding-card-loopl-2b-4bit").label.contains("Recommended · fast + smart"), "2B carries the badge")
         XCTAssertTrue(el(app, "onboarding-network").exists)
-        el(app, "onboarding-card-qwen3.5-0.8b-4bit").tap()
-        XCTAssertTrue(cont.label.contains("Qwen3.5 0.8B"), "Continue follows the pick: \(cont.label)")
+        XCTAssertTrue(el(app, "onboarding-apple-fm").exists, "Apple Intelligence is a card under the picks (here: the not-available line)")
+        el(app, "onboarding-card-loopl-0.8b-4bit").tap()
+        XCTAssertTrue(cont.label.contains("loopl 0.8B"), "Continue follows the pick: \(cont.label)")
         cont.tap()
         let progress = el(app, "onboarding-progress")
         XCTAssertTrue(progress.waitForExistence(timeout: 5))
@@ -61,6 +65,58 @@ final class OnboardingUITests: XCTestCase {
         // Scripted ~4 s download + load → "Ready" → the flow closes on its own.
         XCTAssertTrue(progress.waitForNonExistence(timeout: 15), "closes itself once the model is ready")
         XCTAssertFalse(cont.exists)
+    }
+
+    /// A private pick with nobody signed in never dead-ends: Download → the sign-in step (Hugging Face / Apple
+    /// Intelligence / pick another), Back returns to the cards. `--design-gated` forces the step whatever models.json says.
+    func testGatedPickAsksForSignIn() {
+        let app = launch(["--design-onboarding-step", "pick", "--design-gated", "--design-apple-fm"])
+        let cont = el(app, "onboarding-continue")
+        XCTAssertTrue(cont.waitForExistence(timeout: 10))
+        cont.tap()
+        XCTAssertTrue(el(app, "onboarding-signin").waitForExistence(timeout: 5), "the sign-in step replaces the cards")
+        XCTAssertTrue(el(app, "onboarding-signin-go").exists)
+        XCTAssertTrue(el(app, "onboarding-signin-apple").exists, "Apple Intelligence is the no-account way out")
+        XCTAssertFalse(cont.exists, "no Download button under the sign-in step")
+        el(app, "onboarding-signin-go").tap()
+        XCTAssertTrue(el(app, "onboarding-hf-token").waitForExistence(timeout: 5), "the token sheet opens")
+        app.buttons["Later"].firstMatch.tap()
+        XCTAssertTrue(el(app, "onboarding-signin").waitForExistence(timeout: 5))
+        el(app, "onboarding-signin-back").tap()
+        XCTAssertTrue(cont.waitForExistence(timeout: 5), "Pick another model returns to the cards")
+        XCTAssertTrue(el(app, "onboarding-card-loopl-2b-4bit").exists)
+    }
+
+    /// Signed in (`--design-mine`), the same gated pick downloads straight away — the step never shows.
+    func testGatedPickDownloadsWhenSignedIn() {
+        let app = launch(["--design-onboarding-step", "pick", "--design-gated", "--design-mine"])
+        let cont = el(app, "onboarding-continue")
+        XCTAssertTrue(cont.waitForExistence(timeout: 10))
+        cont.tap()
+        XCTAssertTrue(el(app, "onboarding-progress").waitForExistence(timeout: 5), "download starts")
+        XCTAssertFalse(el(app, "onboarding-signin").exists)
+        XCTAssertFalse(el(app, "onboarding-hf").exists, "no account question — already signed in")
+    }
+
+    /// Apple Intelligence is a full-width card: available → tapping it finishes with no download.
+    func testAppleIntelligenceCardStarts() {
+        let app = launch(["--design-onboarding-step", "pick", "--design-apple-fm"])
+        let card = el(app, "onboarding-apple-fm")
+        XCTAssertTrue(card.waitForExistence(timeout: 10))
+        XCTAssertTrue(card.label.contains("no download"), card.label)
+        app.swipeUp()
+        card.tap()
+        XCTAssertTrue(el(app, "onboarding-progress").waitForExistence(timeout: 5))
+        XCTAssertTrue(el(app, "onboarding-progress").waitForNonExistence(timeout: 15), "Apple Intelligence is ready at once; the flow closes")
+    }
+
+    /// On a 6 GB phone the 4B card says so (fit badge + one line) and 2B stays the pick.
+    func testFitBadgeOnSmallPhone() {
+        let app = launch(["--design-onboarding-step", "pick", "--design-ram-gb", "6"])
+        XCTAssertTrue(el(app, "onboarding-continue").waitForExistence(timeout: 10))
+        XCTAssertTrue(el(app, "onboarding-fit-loopl-4b-4bit").exists, "4B explains why it is tight/too big")
+        XCTAssertFalse(el(app, "onboarding-fit-loopl-2b-4bit").exists, "2B fits")
+        XCTAssertTrue(el(app, "onboarding-continue").label.contains("loopl 2B"))
     }
 
     /// The intro advances by itself (≤ 2.5 s) when nobody taps.
@@ -124,7 +180,7 @@ final class OnboardingUITests: XCTestCase {
         Thread.sleep(forTimeInterval: 6.5)
         el(app, "onboarding-next").tap()
         Thread.sleep(forTimeInterval: 1.4)
-        el(app, "onboarding-card-qwen3.5-0.8b-4bit").tap()
+        el(app, "onboarding-card-loopl-0.8b-4bit").tap()
         Thread.sleep(forTimeInterval: 1.0)
         el(app, "onboarding-continue").tap()
         Thread.sleep(forTimeInterval: 2.2)
