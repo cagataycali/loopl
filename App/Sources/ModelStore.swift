@@ -77,6 +77,12 @@ public final class ModelStore {
     }
     public private(set) var states: [String: State] = [:]
     public private(set) var diskUsed: Int64 = 0
+    /// Test/fixture seam (`--design-models`): pretend `id` is in `state` — survives every `refresh()`, never persisted.
+    /// Lets a simulator with no weights show "On this iPhone" rows, a download in flight, a model on a drive.
+    private var fixtureStates: [String: State] = [:]
+    public func overrideState(_ id: String, _ state: State?) {
+        if let state { fixtureStates[id] = state; states[id] = state } else { fixtureStates.removeValue(forKey: id) }
+    }
     private var tasks: [String: Task<Void, Never>] = [:]
 
     public static let root: URL = {
@@ -216,6 +222,10 @@ public final class ModelStore {
             else if partial > 0 { states[spec.id] = .paused(done: partial, total: spec.sizeBytes) }
             else if case .failed? = states[spec.id] { /* keep the message */ }
             else { states[spec.id] = .notDownloaded }
+        }
+        for (id, st) in fixtureStates {
+            states[id] = st
+            if case .downloaded(let b) = st, catalog.models.contains(where: { $0.id == id }) { used += b }
         }
         diskUsed = used
     }

@@ -867,9 +867,12 @@ public struct ModelPickerRow: View {
     /// When given, the bolt + highlight share a geometry across rows: switching models slides
     /// the "loaded" state from the old row to the new one instead of blinking.
     public var loadedMark: Namespace.ID?
+    /// 0…1 while the weights are arriving: the trailing glyph becomes a ring instead of the download arrow,
+    /// so a row shows ONE state at a time (in use ⚡ · on this device ✓ · downloading ○ · tap to download ↓).
+    public var downloading: Double?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    public init(spec: ModelSpec, loaded: Bool = false, downloaded: Bool = false, loadedMark: Namespace.ID? = nil) {
-        self.spec = spec; self.loaded = loaded; self.downloaded = downloaded; self.loadedMark = loadedMark
+    public init(spec: ModelSpec, loaded: Bool = false, downloaded: Bool = false, loadedMark: Namespace.ID? = nil, downloading: Double? = nil) {
+        self.spec = spec; self.loaded = loaded; self.downloaded = downloaded; self.loadedMark = loadedMark; self.downloading = downloading
     }
     public var body: some View {
         HStack(spacing: 12) {
@@ -898,6 +901,10 @@ public struct ModelPickerRow: View {
                 if let loadedMark, !reduceMotion { bolt.matchedGeometryEffect(id: "loaded.bolt", in: loadedMark) } else { bolt.transition(.opacity) }
             }
             else if downloaded || !spec.isDownloadable { Image(systemName: "checkmark").foregroundStyle(.secondary).font(.footnote.weight(.semibold)).accessibilityLabel("on this device").transition(.opacity) }
+            else if let downloading {
+                ProgressView(value: min(max(downloading, 0), 1)).progressViewStyle(.circular).controlSize(.small).tint(LooplDesign.accent)
+                    .frame(width: 18, height: 18).accessibilityLabel("downloading").transition(.opacity)
+            }
             else { Image(systemName: LooplDesign.iconDownload).foregroundStyle(.tertiary).accessibilityLabel("not downloaded").transition(.opacity) }
         }
         .padding(.horizontal, 8).padding(.vertical, 6)

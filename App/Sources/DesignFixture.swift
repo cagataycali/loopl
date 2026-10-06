@@ -49,6 +49,9 @@ enum DesignFixture {
     /// `--design-focus-composer`: focuses the Message field on appear so a screenshot shows the composer with the
     /// keyboard up (the seam the owner looked at when he asked for the field's fill to go).
     static var focusComposer: Bool { flag("--design-focus-composer") }
+    /// `--design-models shelf|empty`: Models › "On this iPhone" with weights that are not on the simulator — `shelf` = loopl 2B in use,
+    /// Qwen3 0.6B downloaded, loopl 0.8B 40 % downloaded (one glyph per row); `empty` = nothing here, no model loaded (the calm empty state).
+    static var models: String? { value("--design-models") }
 
     /// `--design-mine`: the Hub rows of cagataydev/loopl-* as `/api/models?author=` returned them on 2026-10-06 (no network).
     static var mineHits: [HubCatalog.Hit] {
@@ -122,12 +125,18 @@ enum DesignFixture {
         // `loopl`: a loopl model is loaded (its identity is in the weights, nothing in Settings). The row says vision (v1 mlx_vlm export) but the
         // files on this phone are the OLD text-only download (the owner's 07:5xZ situation): config.json without vision_config wins,
         // so the composer has no photo button. `--design-local-vision` keeps the files = row (button shown).
-        let specId = switch scene { case "vision": "qwen3.5-0.8b-4bit"; case "loopl": "loopl-0.8b-4bit"; default: "qwen3-0.6b-4bit" }
+        let specId = switch scene { case "vision": "qwen3.5-0.8b-4bit"; case "loopl": "loopl-0.8b-4bit"; default: models == "shelf" ? "loopl-2b-4bit" : "qwen3-0.6b-4bit" }
         if scene == "loopl", !CommandLine.arguments.contains("--design-local-vision") { engine.store.overrideLocalVision(specId, false) }
         let spec = engine.store.catalog.models.first { $0.id == specId } ?? engine.store.catalog.models.first!
-        engine.readiness = .ready(spec)
+        engine.readiness = models == "empty" ? .idle : .ready(spec)
         #if DEBUG
         if mine { engine.hf.designIdentity(name: "cagataydev", fullname: "Cagatay Cali") }
+        if models == "shelf" {
+            engine.store.overrideState("loopl-2b-4bit", .downloaded(bytes: 1_722_271_227))
+            engine.store.overrideState("qwen3-0.6b-4bit", .downloaded(bytes: 403_000_000))
+            engine.store.overrideState("loopl-0.8b-4bit", .downloading(done: 250_000_000, total: 625_228_929, filesDone: 2, files: 6))
+            engine.store.refresh()
+        }
         #endif
         settings.showPerformance = CommandLine.arguments.contains("--design-perf")
         settings.offline = scene == "offline"
