@@ -251,3 +251,20 @@ public struct PulsingMark: View {
             .accessibilityLabel("in progress")
     }
 }
+
+public extension LooplDesign {
+    /// Follow-generation slack: the reader counts as "at the bottom" while the last `followSlack` points of the
+    /// document are inside the visible band.
+    static let followSlack: CGFloat = 80
+
+    /// Reader is at the bottom of a scroll view when the last `followSlack` pt of content are inside the
+    /// visible band — or the document is shorter than the band. The band is the container minus its content
+    /// insets: `contentOffset.y` rests at `-insetTop` under a navigation bar, so inset-blind math
+    /// (`offset + container >= content`) declared the reader scrolled away the moment the document reached the
+    /// fold, and the transcript stopped following generation.
+    static func isAtBottom(offset: CGFloat, content: CGFloat, container: CGFloat, insetTop: CGFloat, insetBottom: CGFloat) -> Bool {
+        let band = container - insetTop - insetBottom
+        let visibleBottom = offset + container - insetBottom
+        return content <= band + 1 || visibleBottom >= content - followSlack
+    }
+}
