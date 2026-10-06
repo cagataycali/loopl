@@ -108,6 +108,38 @@ Trimming starts early (token counts are estimates): large tool results shrink to
 
 This is what bounds a session instead of an iteration counter.
 
+### The agent edits its own context — `manage_messages`
+
+The manager above is the floor. Above it, the agent can tidy its own history on purpose: `ManageMessagesTool`
+gives the model one tool whose actions are `compact` (strip old tool calls and results, keep every message's
+text — by default all turns but the last 3), `drop` (whole old turns by number), `drop_tools` (single calls by
+id or every call to a name), `clear` (keep only the current turn), and the read-only `list`, `list_tools`,
+`stats`. Four rules never bend, and `HistoryEditor` (pure, unit-tested) enforces them before anything is
+replaced: the **active turn** — the one running this very call — is never edited; a call left without its
+result gets a **synthetic result** rather than an orphan; reasoning stays whole or goes with the tool blocks
+it accompanied; and the structure is validated first — a request that would break the history is refused
+with an error the model reads.
+
+```swift
+// snippet: compile
+import Loopl
+
+func selfManaging(_ model: any Model) -> Agent {
+    Agent(model: model, tools: [CalculatorTool(), ManageMessagesTool()],
+          systemPrompt: "When the context is long, call manage_messages with action compact before you continue.")
+}
+```
+
+The edit is **effective for the next model call of the same turn**: the tool reaches the live agent through
+`ToolContext` (a task-local the agent sets around every tool call) and `Agent.editHistory` replaces the
+working history, so the prompt the model gets right after the tool result is already the shorter one.
+
+What shrinks is the agent's *working context*, not the user's record. A `Transcript` is built from events,
+so every row stays; the agent announces each edit as `AgentEvent.historyEdited` carrying a `HistoryEdit`,
+and the transcript folds it into one quiet note — *"3 turns compacted by the agent · your history is
+unchanged"*. Reopening a saved conversation already starts the model on a fresh context, so nothing else
+changes for the host.
+
 ## Transcript
 
 `Transcript` folds events into rows — text, reasoning, tool rows with timing, metrics — that `LooplUI` draws.
