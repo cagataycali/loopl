@@ -82,6 +82,7 @@ public struct HFHubClient: Sendable {
         public var role: String?                 // auth.accessToken.role: "read" | "write" | "fineGrained"
         public var tokenName: String?            // auth.accessToken.displayName
         public var fineGrainedScopes: [String]   // flattened permissions of a fine-grained token (empty for classic tokens)
+        public var avatarURL: URL?               // absolute (whoami may return a relative /avatars/… path)
 
         /// Classic `write` tokens may do everything; fine-grained ones need the explicit permission.
         public var canWriteRepos: Bool {
@@ -103,8 +104,8 @@ public struct HFHubClient: Sendable {
             return [role ?? "read"]
         }
 
-        public init(name: String, fullname: String? = nil, type: String? = nil, role: String? = nil, tokenName: String? = nil, fineGrainedScopes: [String] = []) {
-            self.name = name; self.fullname = fullname; self.type = type; self.role = role; self.tokenName = tokenName; self.fineGrainedScopes = fineGrainedScopes
+        public init(name: String, fullname: String? = nil, type: String? = nil, role: String? = nil, tokenName: String? = nil, fineGrainedScopes: [String] = [], avatarURL: URL? = nil) {
+            self.name = name; self.fullname = fullname; self.type = type; self.role = role; self.tokenName = tokenName; self.fineGrainedScopes = fineGrainedScopes; self.avatarURL = avatarURL
         }
 
         public init(from decoder: any Decoder) throws {
@@ -112,6 +113,7 @@ public struct HFHubClient: Sendable {
             name = try c.decode(String.self, forKey: AnyKey("name"))
             fullname = try c.decodeIfPresent(String.self, forKey: AnyKey("fullname"))
             type = try c.decodeIfPresent(String.self, forKey: AnyKey("type"))
+            avatarURL = (try? c.decodeIfPresent(String.self, forKey: AnyKey("avatarUrl"))).flatMap { URL(string: $0.hasPrefix("/") ? "https://huggingface.co" + $0 : $0) }
             var role: String? = nil, tokenName: String? = nil, scopes: [String] = []
             if let auth = try? c.nestedContainer(keyedBy: AnyKey.self, forKey: AnyKey("auth")),
                let tok = try? auth.nestedContainer(keyedBy: AnyKey.self, forKey: AnyKey("accessToken")) {

@@ -6,7 +6,8 @@ import LooplUI
 /// renders offline), verifying state, last error. One instance per app (`Engine.hf`).
 @MainActor @Observable
 public final class HFSession {
-    public private(set) var identity: HFAccount.Identity?
+    public typealias Identity = HFHubClient.WhoAmI
+    public private(set) var identity: Identity?
     public private(set) var verifying = false
     public private(set) var error: String?
     private let account: HFAccount
@@ -15,7 +16,7 @@ public final class HFSession {
     public init(account: HFAccount = .shared) {
         self.account = account
         guard account.isSignedIn else { return }
-        if let d = UserDefaults.standard.data(forKey: Self.identityKey), let who = try? JSONDecoder().decode(HFAccount.Identity.self, from: d) {
+        if let who = account.whoami ?? Self.cachedIdentity() {
             identity = who
         } else {
             // A token without a cached identity (signed in by the self-test harness, or the cache was cleared): ask once.
@@ -37,7 +38,7 @@ public final class HFSession {
         do {
             let who = try await account.signIn(raw)
             identity = who
-            UserDefaults.standard.set(try? JSONEncoder().encode(who), forKey: Self.identityKey)
+            Self.cache(who)
             return true
         } catch {
             self.error = error.localizedDescription
@@ -47,12 +48,12 @@ public final class HFSession {
 
     /// Re-check the stored token (e.g. revoked on huggingface.co). Network errors keep the cached identity.
     public func refresh() async {
-        guard let t = account.token else { return }
+        guard account.isSignedIn else { return }
         do {
-            let who = try await account.whoami(t)
+            let who = try await account.verify()
             identity = who
-            UserDefaults.standard.set(try? JSONEncoder().encode(who), forKey: Self.identityKey)
-        } catch let e as HFAccount.AccountError where e == .invalidToken {
+            Self.cache(who)
+        } catch let e as HFHubError where e == .unauthorized {
             error = e.localizedDescription
         } catch {}
     }
@@ -61,6 +62,27 @@ public final class HFSession {
         account.signOut()
         identity = nil; error = nil
         UserDefaults.standard.removeObject(forKey: Self.identityKey)
+    }
+
+    // MARK: identity cache (so the row renders offline; `WhoAmI` is Decodable only)
+
+    private struct Cached: Codable {
+        var name: String; var fullname: String?; var type: String?; var role: String?; var tokenName: String?
+        var fineGrainedScopes: [String]; var avatarURL: URL?
+        init(_ w: Identity) {
+            name = w.name; fullname = w.fullname; type = w.type; role = w.role; tokenName = w.tokenName
+            fineGrainedScopes = w.fineGrainedScopes; avatarURL = w.avatarURL
+        }
+        var identity: Identity {
+            Identity(name: name, fullname: fullname, type: type, role: role, tokenName: tokenName, fineGrainedScopes: fineGrainedScopes, avatarURL: avatarURL)
+        }
+    }
+    private static func cache(_ who: Identity) {
+        UserDefaults.standard.set(try? JSONEncoder().encode(Cached(who)), forKey: identityKey)
+    }
+    private static func cachedIdentity() -> Identity? {
+        guard let d = UserDefaults.standard.data(forKey: identityKey) else { return nil }
+        return (try? JSONDecoder().decode(Cached.self, from: d))?.identity
     }
 }
 
@@ -138,7 +160,7 @@ struct HuggingFaceSection: View {
 
     // MARK: signed in
 
-    @ViewBuilder private func signedIn(_ who: HFAccount.Identity) -> some View {
+    @ViewBuilder private func signedIn(_ who: HFSession.Identity) -> some View {
         HStack(spacing: 12) {
             avatar(who)
             VStack(alignment: .leading, spacing: 3) {
@@ -165,7 +187,7 @@ struct HuggingFaceSection: View {
         .accessibilityIdentifier("hf-remove")
     }
 
-    @ViewBuilder private func avatar(_ who: HFAccount.Identity) -> some View {
+    @ViewBuilder private func avatar(_ who: HFSession.Identity) -> some View {
         AsyncImage(url: who.avatarURL) { phase in
             if let img = phase.image { img.resizable().scaledToFill() }
             else { Image(systemName: "person.crop.circle.fill").resizable().foregroundStyle(.secondary) }

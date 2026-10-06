@@ -199,12 +199,12 @@ final class HFAuthLiveTests: XCTestCase {
 }
 
 final class HFAccountTests: XCTestCase {
-    func testTokenStoreRoundTripAndProvider() {
-        let acct = HFAccount(store: MemoryTokenStore())
+    func testTokenStoreRoundTripAndProvider() throws {
+        let acct = HFAccount(store: HFMemoryTokenStore())
         XCTAssertNil(acct.token); XCTAssertFalse(acct.isSignedIn)
         XCTAssertNil(HFDownloader(token: acct.provider).request(URL(string: "https://huggingface.co/api/models/a/b")!).value(forHTTPHeaderField: "Authorization"))
-        // A token already in the store (previous launch) is picked up lazily.
-        let acct2 = HFAccount(store: MemoryTokenStore("hf_abcdefghijklmnopqrstuvwxyz"))
+        // A token already in the store (previous launch) is picked up.
+        let acct2 = HFAccount(store: HFMemoryTokenStore("hf_abcdefghijklmnopqrstuvwxyz"))
         XCTAssertEqual(acct2.token, "hf_abcdefghijklmnopqrstuvwxyz")
         XCTAssertEqual(HubCatalog(token: acct2.provider).request(URL(string: "https://huggingface.co/api/models?author=x")!).value(forHTTPHeaderField: "Authorization"), "Bearer hf_abcdefghijklmnopqrstuvwxyz")
         acct2.signOut()
@@ -213,19 +213,35 @@ final class HFAccountTests: XCTestCase {
     }
 
     func testSignInRejectsNonTokensBeforeAnyNetwork() async {
-        let acct = HFAccount(store: MemoryTokenStore())
+        let acct = HFAccount(store: HFMemoryTokenStore())
         for bad in ["", "hello", "hf_short", "hf_ with space in it long enough"] {
-            do { try await acct.signIn(bad); XCTFail(bad) }
-            catch let e as HFAccount.AccountError { XCTAssertEqual(e, .notAToken, bad) }
+            do { try await acct.signIn(bad, transport: FailingTransport()); XCTFail(bad) }
+            catch let e as HFAccount.SignInError { XCTAssertEqual(e, .notAToken, bad) }
             catch { XCTFail("\(error)") }
         }
         XCTAssertNil(acct.token)
         XCTAssertTrue(HFAccount.looksLikeToken("hf_abcdefghijklmnopqrstuvwxyz"))
     }
 
+    /// A token the Hub rejects never stays in the store; one it accepts does, with whoami cached on the account.
+    func testSignInKeepsOnlyVerifiedTokens() async throws {
+        let acct = HFAccount(store: HFMemoryTokenStore())
+        do { try await acct.signIn("hf_abcdefghijklmnopqrstuvwxyz", transport: StatusTransport(401)); XCTFail() }
+        catch let e as HFHubError { XCTAssertEqual(e, .unauthorized) }
+        XCTAssertNil(acct.token, "rejected token is not kept")
+        let body = Data(#"{"type":"user","name":"cagataydev","fullname":"Cagatay Cali","avatarUrl":"/avatars/abc.svg","auth":{"accessToken":{"displayName":"mac-mini","role":"write"}}}"#.utf8)
+        let who = try await acct.signIn("  hf_abcdefghijklmnopqrstuvwxyz\n", transport: StatusTransport(200, body))
+        XCTAssertEqual(acct.token, "hf_abcdefghijklmnopqrstuvwxyz", "trimmed before storing")
+        XCTAssertEqual(acct.whoami, who); XCTAssertEqual(acct.username, "cagataydev")
+        XCTAssertEqual(who.scopes, [.read, .write, .jobs])
+        // a later bad paste keeps the good token
+        do { try await acct.signIn("hf_zzzzzzzzzzzzzzzzzzzzzzzzzzzz", transport: StatusTransport(403)); XCTFail() } catch {}
+        XCTAssertEqual(acct.token, "hf_abcdefghijklmnopqrstuvwxyz")
+    }
+
     func testWhoamiClassicWriteToken() throws {
         let data = Data(#"{"type":"user","id":"6498ef778fadf0ae7639b982","name":"cagataydev","fullname":"Cagatay Cali","avatarUrl":"https://cdn-avatars.huggingface.co/v1/production/uploads/x/y.jpeg","auth":{"type":"access_token","accessToken":{"displayName":"mac-mini","role":"write","createdAt":"2026-03-02T02:23:02.604Z"}}}"#.utf8)
-        let who = try HFAccount.parseWhoami(data)
+        let who = try HFHubClient.parseWhoAmI(data)
         XCTAssertEqual(who.name, "cagataydev")
         XCTAssertEqual(who.fullname, "Cagatay Cali")
         XCTAssertEqual(who.avatarURL?.host, "cdn-avatars.huggingface.co")
@@ -236,32 +252,44 @@ final class HFAccountTests: XCTestCase {
     }
 
     func testWhoamiReadTokenAndFineGrained() throws {
-        let read = try HFAccount.parseWhoami(Data(#"{"type":"user","name":"u","auth":{"accessToken":{"displayName":"phone","role":"read"}}}"#.utf8))
+        let read = try HFHubClient.parseWhoAmI(Data(#"{"type":"user","name":"u","auth":{"accessToken":{"displayName":"phone","role":"read"}}}"#.utf8))
         XCTAssertEqual(read.scopes, [.read])
-        let fg = try HFAccount.parseWhoami(Data(#"{"type":"user","name":"u","avatarUrl":"/avatars/abc.svg","auth":{"accessToken":{"displayName":"fg","role":"fineGrained","fineGrained":{"global":["inference.serverless.write","jobs.write"],"scoped":[{"entity":{"type":"user","name":"u"},"permissions":["repo.content.read","repo.write"]}]}}}}"#.utf8))
+        let fg = try HFHubClient.parseWhoAmI(Data(#"{"type":"user","name":"u","avatarUrl":"/avatars/abc.svg","auth":{"accessToken":{"displayName":"fg","role":"fineGrained","fineGrained":{"global":["inference.serverless.write","jobs.write"],"scoped":[{"entity":{"type":"user","name":"u"},"permissions":["repo.content.read","repo.write"]}]}}}}"#.utf8))
         XCTAssertEqual(fg.scopes, [.read, .write, .jobs])
         XCTAssertEqual(fg.avatarURL?.absoluteString, "https://huggingface.co/avatars/abc.svg", "relative avatar paths are made absolute")
-        let fgRead = try HFAccount.parseWhoami(Data(#"{"type":"user","name":"u","auth":{"accessToken":{"role":"fineGrained","fineGrained":{"global":[],"scoped":[{"permissions":["repo.content.read"]}]}}}}"#.utf8))
+        let fgRead = try HFHubClient.parseWhoAmI(Data(#"{"type":"user","name":"u","auth":{"accessToken":{"role":"fineGrained","fineGrained":{"global":[],"scoped":[{"permissions":["repo.content.read"]}]}}}}"#.utf8))
         XCTAssertEqual(fgRead.scopes, [.read])
         XCTAssertEqual(Array(fg.scopes).sorted(), [.read, .write, .jobs])
     }
 
     func testWhoamiBadJSON() {
-        XCTAssertThrowsError(try HFAccount.parseWhoami(Data("{}".utf8)))
-        XCTAssertThrowsError(try HFAccount.parseWhoami(Data("nope".utf8)))
+        XCTAssertThrowsError(try HFHubClient.parseWhoAmI(Data("{}".utf8)))
+        XCTAssertThrowsError(try HFHubClient.parseWhoAmI(Data("nope".utf8)))
     }
+}
+
+/// Replays one status (+ body) for every request; `FailingTransport` asserts no request is made at all.
+private struct StatusTransport: HFTransport {
+    let code: Int; let body: Data
+    init(_ code: Int, _ body: Data = Data("{}".utf8)) { self.code = code; self.body = body }
+    func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        (body, HTTPURLResponse(url: request.url!, statusCode: code, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!)
+    }
+}
+private struct FailingTransport: HFTransport {
+    func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) { XCTFail("network must not be touched for \(request.url!)"); throw HFHubError.offline }
 }
 
 extension HFAuthLiveTests {
     func testLiveWhoami() async throws {
         guard let token = HFAuthLiveTests.token else { throw XCTSkip("LOOPL_HF_LIVE=1") }
-        let acct = HFAccount(store: MemoryTokenStore())
+        let acct = HFAccount(store: HFMemoryTokenStore())
         let who = try await acct.signIn(token)
         XCTAssertFalse(who.name.isEmpty)
         XCTAssertTrue(who.scopes.contains(.read))
         XCTAssertEqual(acct.token, token)
         print("LIVE whoami name=\(who.name) role=\(who.role ?? "-") scopes=\(who.scopes.sorted().map(\.rawValue)) token=\(who.tokenName ?? "-")")
-        do { _ = try await acct.whoami("hf_definitelynotavalidtoken000000"); XCTFail() }
-        catch let e as HFAccount.AccountError { XCTAssertEqual(e, .invalidToken) }
+        do { _ = try await HFHubClient(token: "hf_definitelynotavalidtoken000000").whoami(); XCTFail() }
+        catch let e as HFHubError { XCTAssertEqual(e, .unauthorized) }
     }
 }
