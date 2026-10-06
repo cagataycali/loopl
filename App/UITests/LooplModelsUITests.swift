@@ -65,6 +65,8 @@ final class LooplModelsUITests: XCTestCase {
             XCTAssertTrue(list.waitForExistence(timeout: 10))
         }
         let hit4b = app.descendants(matching: .any).matching(identifier: "mine-hit-cagataydev/loopl-4b-4bit").firstMatch
+        // Mine is the last section (owner's order): scroll it into the lazy List, then give the network its time.
+        for _ in 0..<6 where !hit4b.exists { list.swipeUp(); _ = hit4b.waitForExistence(timeout: 3) }
         XCTAssertTrue(hit4b.waitForExistence(timeout: 40), "no Mine row for loopl-4b-4bit — whoami/listing failed or the token is not seen")
         for _ in 0..<6 where !hit4b.isHittable { list.swipeUp() }
         let label = hit4b.label

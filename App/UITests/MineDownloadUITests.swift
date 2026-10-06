@@ -22,6 +22,8 @@ final class MineDownloadUITests: XCTestCase {
             XCTAssertTrue(list.waitForExistence(timeout: 10))
         }
         let hit = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'mine-hit-'")).firstMatch
+        // Mine is the last section now (owner's order) — scroll it into the lazy List before waiting on the network.
+        for _ in 0..<6 where !hit.exists { app.swipeUp(); _ = hit.waitForExistence(timeout: 3) }
         XCTAssertTrue(hit.waitForExistence(timeout: 40), "no Mine row — whoami/listing failed or the token is not seen")
         let repo = hit.identifier.replacingOccurrences(of: "mine-hit-", with: "")
         Thread.sleep(forTimeInterval: 2.0)   // let the list's insert animation settle before presenting the zoom sheet

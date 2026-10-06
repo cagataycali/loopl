@@ -67,6 +67,8 @@ final class HuggingFaceUITests: XCTestCase {
         }
         let signedOutRow = app.staticTexts["Your Hugging Face models"].firstMatch
         let header = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Mine · @'")).firstMatch
+        // Mine is the LAST section (owner's order: On this iPhone → Browse → Train → loopl models → Mine): scroll down to it.
+        for _ in 0..<6 where !(header.exists || signedOutRow.exists) { app.swipeUp() }
         XCTAssertTrue(header.waitForExistence(timeout: 20) || signedOutRow.waitForExistence(timeout: 5), "Mine section missing")
         let signedIn = header.exists
         if signedIn {

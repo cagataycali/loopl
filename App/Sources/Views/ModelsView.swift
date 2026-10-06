@@ -71,6 +71,7 @@ struct ModelsView: View {
                                     .font(here.isEmpty ? .caption : .footnote).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                             }
                         } icon: { Image(systemName: "arrow.down.circle").foregroundStyle(LooplDesign.accent) }
+                        .accessibilityElement(children: .combine)
                         .accessibilityIdentifier("models-empty")
                     }
                     if settings.offline {
