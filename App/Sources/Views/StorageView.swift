@@ -196,7 +196,8 @@ struct VolumeRow: View {
                 }
                 Text(detail).font(.caption).foregroundStyle(.secondary)
                 if connected {
-                    Text("\(ByteSize.label(used)) loopl · \(ByteSize.label(free)) free").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                    Text(used > 0 ? "\(ByteSize.label(free)) free · \(ByteSize.label(used)) used by loopl" : "\(ByteSize.label(free)) free")
+                        .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                 }
             }
             Spacer(minLength: 0)
@@ -231,7 +232,7 @@ struct FolderPicker: UIViewControllerRepresentable {
 /// Simulator / UITest stand-in for a USB-C drive: `--storage-fixture <folder>`
 /// grants `<folder>` as a drive named "SanDisk" holding a fake Qwen3.5-0.8B,
 /// and adds a second drive "Old stick" whose folder is gone (= not connected)
-/// holding Qwen3-0.6B. DEBUG only.
+/// holding Qwen3-1.7B. DEBUG only.
 enum StorageFixture {
     static var folder: URL? {
         #if DEBUG
@@ -257,7 +258,7 @@ enum StorageFixture {
         let gone = fm.temporaryDirectory.appendingPathComponent("loopl-gone-\(UUID().uuidString)", isDirectory: true)
         try? fm.createDirectory(at: gone, withIntermediateDirectories: true)
         if let old = try? store.storage.add(folder: gone, name: "Old stick"),
-           let small = store.catalog.models.first(where: { $0.id == "qwen3-0.6b-4bit" }) {
+           let small = store.catalog.models.first(where: { $0.id == "qwen3-1.7b-4bit" }) {
             store.storage.set(location: .external(volumeId: old.id, relativePath: "loopl/x"), for: small.id)
             store.storage.downloadTarget = drive.id
         }
