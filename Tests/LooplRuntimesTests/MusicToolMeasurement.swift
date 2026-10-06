@@ -32,8 +32,10 @@ final class MusicToolMeasurement: XCTestCase {
         let only = e["LOOPL_AUDIT_ONLY"].map { Set($0.split(separator: ",").map(String.init)) }
         // LOOPL_AUDIT_DEFAULT_ONLY=1 → the tool list a FRESH INSTALL has (default-on Apple tools only); otherwise every available one.
         let defaultOnly = e["LOOPL_AUDIT_DEFAULT_ONLY"] == "1"
-        let appleTools = AppleTools.available.filter { !defaultOnly || type(of: $0).defaultOn }
-        print("MUSIC TOOLSET \(name): \(defaultOnly ? "default-on" : "all available") → \(appleTools.map(\.name))")
+        // Availability is read per run, AFTER the fixture is installed — on macOS `music` is only available through the fixture.
+        func appleTools() -> [any AppleTool] { AppleTools.available.filter { !defaultOnly || type(of: $0).defaultOn } }
+        MusicStore.use(FixtureMusicSource())
+        print("MUSIC TOOLSET \(name): \(defaultOnly ? "default-on" : "all available") → \(appleTools().map(\.name))")
         let model = MLXModel()
         try await model.load(spec, from: url) { _ in }
         defer { Task { await model.unload() } }
@@ -48,7 +50,7 @@ final class MusicToolMeasurement: XCTestCase {
                 let src = FixtureMusicSource(); MusicStore.use(src)
                 let rec = ToolCallAuditTests.Recorder(); await model.setTrace { rec.trace($0) }
                 let tools: [any Tool] = [CurrentTimeTool(), CalculatorTool(), MemoryToolsAuditTests.DeviceInfoStandIn(), RememberTool(), RecallTool(), HttpTool()]
-                    + appleTools.map { $0 as any Tool }
+                    + appleTools().map { $0 as any Tool }
                 let agent = Agent(model: model, tools: tools, systemPrompt: MemoryToolsAuditTests.systemPrompt,
                                   hooks: [ApprovalPolicy(mode: .mutating), ToolCallAuditTests.CycleCap(maxCycles: 5)], retryStrategy: nil)
                 var answer = "", status = "none"
