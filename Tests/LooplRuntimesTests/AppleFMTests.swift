@@ -242,6 +242,30 @@ final class AppleFMTests: XCTestCase {
         XCTAssertTrue(ToolCallRepeatGuard().isEmpty)
     }
 
+    // MARK: - the real model, when this machine has one
+
+    /// End-to-end against the REAL Apple Intelligence model: one question, one
+    /// tool, one execution, one answer. Skipped wherever Apple Intelligence is
+    /// not available (CI, the simulator, an ineligible Mac) — which is exactly
+    /// why the scripted seam above exists.
+    func testLiveFoundationModelsRunsTheToolOnceAndAnswers() async throws {
+        let availability = AppleFoundationModel.availability()
+        try XCTSkipUnless(availability.available, "Apple Intelligence unavailable: \(availability.reason)")
+
+        let tool = CountingTool()
+        let agent = Agent(model: AppleFoundationModel(), tools: [tool],
+                          systemPrompt: "Be brief.", retryStrategy: nil)
+        let result = try await agent("what time is it in Istanbul?")
+
+        XCTAssertEqual(tool.calls, 1, "the real model made the tool run \(tool.calls)x")
+        XCTAssertEqual(result.stopReason, .endTurn)
+        let answers = (await agent.messages).filter { $0.role == .assistant && !$0.text.isEmpty }
+        XCTAssertEqual(answers.count, 1, "answers: \(answers.map(\.text))")
+        XCTAssertFalse(result.text.contains("\"name\""), "the answer must not be JSON: \(result.text)")
+        XCTAssertTrue(result.text.contains("03:29") || result.text.lowercased().contains("october"),
+                      "answer should use the tool result: \(result.text)")
+    }
+
     /// Default gate behaviour (MLX, GGUF) is untouched: no suppression without a closure.
     func testGateWithoutSuppressionKeepsEveryCall() {
         var gate = ToolCallStreamGate(family: .generic)
