@@ -13,8 +13,10 @@ import XCTest
 /// which reproduces the pre-fix geometry — that is how the before/after pairs in
 /// the lane's shots/ were captured from one build.
 final class InsetsUITests: XCTestCase {
-    /// Pre-fix capture mode: measure and screenshot, never fail.
-    private var before: Bool { ProcessInfo.processInfo.environment["INSETS_BEFORE"] == "1" }
+    /// Pre-fix capture mode: measure and screenshot, never fail. Set by the two
+    /// `*WithoutClearance` capture tests (not by an environment variable, so a
+    /// plain `-only-testing:` run is enough to reproduce either geometry).
+    private var before = false
     private var tag: String { before ? "before" : "after" }
 
     override func setUp() { continueAfterFailure = false }
@@ -36,16 +38,26 @@ final class InsetsUITests: XCTestCase {
         return bar.waitForExistence(timeout: 10) ? bar : nil
     }
 
-    private func scrollToEnd(_ app: XCUIApplication, times: Int = 16) -> XCUIElement {
-        let scroll = app.collectionViews.firstMatch
+    /// The pane's own list. On iPad the app is a NavigationSplitView, so the
+    /// pane has to be picked from the sidebar first — and `collectionViews.firstMatch`
+    /// would otherwise be the sidebar, not the pane.
+    private func pane(_ app: XCUIApplication, _ identifier: String, sidebar: String) -> XCUIElement {
+        let list = app.collectionViews[identifier]
+        if list.waitForExistence(timeout: 8) { return list }
+        let item = app.buttons[sidebar].firstMatch
+        if item.waitForExistence(timeout: 5) { item.tap() }
+        XCTAssertTrue(list.waitForExistence(timeout: 10), "pane \(identifier) never appeared")
+        return list
+    }
+
+    private func scrollToEnd(_ scroll: XCUIElement, times: Int = 16) {
         XCTAssertTrue(scroll.waitForExistence(timeout: 15), "no list in this pane")
         for _ in 0..<times { scroll.swipeUp(velocity: .fast) }
         Thread.sleep(forTimeInterval: 1.0)   // let the scroll settle so frames are final
-        return scroll
     }
 
-    private func lastRow(_ app: XCUIApplication) -> XCUIElement {
-        let cells = app.collectionViews.firstMatch.cells
+    private func lastRow(_ scroll: XCUIElement) -> XCUIElement {
+        let cells = scroll.cells
         XCTAssertGreaterThan(cells.count, 0, "empty list")
         return cells.element(boundBy: cells.count - 1)
     }
@@ -78,53 +90,82 @@ final class InsetsUITests: XCTestCase {
 
     func testSettingsBottomClearsTabBar() {
         let app = launch(tab: "settings")
-        _ = scrollToEnd(app)
-        check(lastRow(app), app, "settings-last-row")
+        let list = pane(app, "pane-settings", sidebar: "Settings")
+        scrollToEnd(list)
+        check(lastRow(list), app, "settings-last-row")
     }
 
     func testSettingsDeleteHistoryButtonIsHittable() {
         let app = launch(tab: "settings")
-        _ = scrollToEnd(app)
+        let list = pane(app, "pane-settings", sidebar: "Settings")
+        scrollToEnd(list)
         check(app.buttons["Delete conversation history"], app, "settings-delete-history")
     }
 
     func testSettingsBottomClearsTabBarAtAccessibilityXL() {
         let app = launch(tab: "settings", dynamicTypeXL: true)
-        _ = scrollToEnd(app, times: 30)
-        check(lastRow(app), app, "settings-last-row-axXL")
+        let list = pane(app, "pane-settings", sidebar: "Settings")
+        scrollToEnd(list, times: 30)
+        check(lastRow(list), app, "settings-last-row-axXL")
     }
 
     // MARK: - Models
 
     func testModelsBottomClearsTabBar() {
         let app = launch(tab: "models")
-        _ = scrollToEnd(app, times: 22)
-        check(lastRow(app), app, "models-last-row")
+        let list = pane(app, "pane-models", sidebar: "Models")
+        scrollToEnd(list, times: 22)
+        check(lastRow(list), app, "models-last-row")
     }
 
     func testModelsBottomClearsTabBarAtAccessibilityXL() {
         let app = launch(tab: "models", dynamicTypeXL: true)
-        _ = scrollToEnd(app, times: 40)
-        check(lastRow(app), app, "models-last-row-axXL")
+        let list = pane(app, "pane-models", sidebar: "Models")
+        scrollToEnd(list, times: 40)
+        check(lastRow(list), app, "models-last-row-axXL")
+    }
+
+    // MARK: - Before/after captures (same build, `--design-no-clearance` = the old geometry)
+
+    /// Documents the bug: with the clearance suppressed the last row ends flush
+    /// against the tab bar (gap 0) — or under it, on a system that floats the bar.
+    func testSettingsBottomWithoutClearance() {
+        before = true
+        let app = launch(tab: "settings")
+        let list = pane(app, "pane-settings", sidebar: "Settings")
+        scrollToEnd(list)
+        check(lastRow(list), app, "settings-last-row")
+    }
+
+    func testModelsBottomWithoutClearance() {
+        before = true
+        let app = launch(tab: "models")
+        let list = pane(app, "pane-models", sidebar: "Models")
+        scrollToEnd(list, times: 22)
+        check(lastRow(list), app, "models-last-row")
     }
 
     // MARK: - Pushed panes inside a tab (same bar behind them)
 
     func testToolsEditorBottomClearsTabBar() {
         let app = launch(tab: "settings")
+        _ = pane(app, "pane-settings", sidebar: "Settings")   // iPad: pick the pane from the sidebar first
         let tools = app.buttons["Tools"].firstMatch
         XCTAssertTrue(tools.waitForExistence(timeout: 10))
         tools.tap()
-        _ = scrollToEnd(app, times: 20)
-        check(lastRow(app), app, "tools-last-row")
+        let list = app.collectionViews.firstMatch
+        scrollToEnd(list, times: 20)
+        check(lastRow(list), app, "tools-last-row")
     }
 
     func testHubBrowseBottomClearsTabBar() {
         let app = launch(tab: "models")
+        _ = pane(app, "pane-models", sidebar: "Models")
         let browse = app.descendants(matching: .any)["models-browse-hub"].firstMatch
         XCTAssertTrue(browse.waitForExistence(timeout: 10))
         browse.tap()
-        _ = scrollToEnd(app, times: 10)
-        check(lastRow(app), app, "hub-browse-last-row")
+        let list = app.collectionViews.firstMatch
+        scrollToEnd(list, times: 10)
+        check(lastRow(list), app, "hub-browse-last-row")
     }
 }

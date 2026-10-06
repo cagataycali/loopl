@@ -77,6 +77,7 @@ struct SettingsView: View {
                 }
             }
             .looplScrollClearance()
+            .accessibilityIdentifier("pane-settings")
             .navigationTitle("Settings")
         }
     }
