@@ -154,6 +154,20 @@ enum DesignFixture {
             if CommandLine.arguments.contains("--design-signed-out") { try? HFAccount.shared.clear() }
             seedHistory(engine, spec: spec)
             if !engine.transcript.items.isEmpty { return }   // --design-history-images opened a thread: keep it
+        case "answeredby":
+            // #21 "answered by X": a thread saved under ANOTHER model, written to the archive and reopened through
+            // the real decoder — so the chat title carries the subtitle without any test-only state.
+            let other = engine.store.catalog.models.first { $0.id != spec.id && $0.name != spec.name }?.name ?? "Qwen3.5 2B (4-bit)"
+            let saved = SavedConversation(id: UUID(uuidString: "8A6C0A1E-0021-4D8B-9B3C-5E0D2F7A2100")!,
+                                          title: "Explain what an agent loop is, in three short points",
+                                          updated: Date().addingTimeInterval(-3 * 3600), modelName: other,
+                                          items: [.user("Explain what an agent loop is, in three short points"),
+                                                  .assistant("1. **Ask** — the model reads the conversation and either answers or asks for a tool.\n2. **Act** — the app runs the tool and appends the result.\n3. **Repeat** — until the model answers plainly.")],
+                                          modelId: other, tools: [CurrentTimeTool().toolSpec])
+            engine.archive.upsert(saved)
+            seedHistory(engine, spec: spec)
+            if let reread = engine.archive.conversations.first(where: { $0.id == saved.id }) { engine.open(reread) }
+            return
         case "approval":
             t.user("Post a note to my notes API saying the build is green.")
             t.apply(.startEventLoop(cycle: 1))
