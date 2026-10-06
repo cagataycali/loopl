@@ -91,6 +91,15 @@ struct ChatView: View {
                             .matchedTransitionSource(id: "history", in: zoom)
                     }
                 }
+                if let current = shareable {
+                    // #20: the open conversation as a Markdown file or a picture of the transcript. Its own item — inside the
+                    // HStack below, XCUI (and VoiceOver hit-testing) resolved the menu to the whole group's frame.
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Menu { ConversationShareItems(conversation: current) } label: { Image(systemName: "square.and.arrow.up") }
+                            .accessibilityLabel("Share conversation")
+                            .accessibilityIdentifier("chat-share")
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     HStack(spacing: 14) {
                         if settings.offline {
@@ -125,6 +134,12 @@ struct ChatView: View {
                 .navigationTransition(.zoom(sourceID: "history", in: zoom))
             }
         }
+    }
+
+    /// The open thread as History would save it — nil while empty or while an answer is still streaming.
+    private var shareable: SavedConversation? {
+        guard !engine.isGenerating else { return nil }
+        return SavedConversation.from(engine.transcript, id: engine.currentId, modelName: engine.loadedModel?.name)
     }
 
     /// What the field says before you type — honest about the state: a failed load is not "getting ready".

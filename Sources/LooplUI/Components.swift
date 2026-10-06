@@ -194,9 +194,10 @@ public struct MarkdownTable: View {
     public var header: [String]
     public var rows: [[String]]
     @State private var overflows = false
+    @Environment(\.looplStaticRender) private var staticRender
     public init(header: [String], rows: [[String]]) { self.header = header; self.rows = rows }
     public var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
+        LooplHScroll(enabled: !staticRender) {
             Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 0) {
                 GridRow {
                     ForEach(Array(header.enumerated()), id: \.offset) { _, h in
@@ -236,6 +237,7 @@ public struct CodeCard: View {
     @State private var overflowsRight = false
     @State private var overflowsLeft = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.looplStaticRender) private var staticRender
     public init(code: String, language: String = "") { self.code = code; self.language = language }
 
     /// Lines of code — the header shows the count when there is no language to name.
@@ -264,7 +266,7 @@ public struct CodeCard: View {
                 .accessibilityLabel(copied ? "Copied" : "Copy code")
             }
             .padding(.horizontal, 12).padding(.top, 8)
-            ScrollView(.horizontal, showsIndicators: false) {
+            LooplHScroll(enabled: !staticRender) {
                 Text(code).font(.callout.monospaced()).textSelection(.enabled).padding(12)
             }
             .onScrollGeometryChange(for: Edges.self) { g in
@@ -289,6 +291,19 @@ public struct CodeCard: View {
             .frame(width: 28)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
+    }
+}
+
+/// `ImageRenderer` draws a ScrollView as nothing, so a picture of the transcript (Share as image) sets
+/// `.looplStaticRender(true)` and tables / code cards lay out in place (wrapping) instead of scrolling.
+public extension EnvironmentValues { @Entry var looplStaticRender: Bool = false }
+
+/// A horizontal ScrollView — or, when `enabled` is false, the content laid out in place.
+struct LooplHScroll<Content: View>: View {
+    var enabled: Bool
+    @ViewBuilder var content: Content
+    var body: some View {
+        if enabled { ScrollView(.horizontal, showsIndicators: false) { content } } else { content.frame(maxWidth: .infinity, alignment: .leading) }
     }
 }
 
