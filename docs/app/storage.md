@@ -17,7 +17,7 @@ Each volume shows free space as iOS reports it for an important write (`volumeAv
 
 ## Where downloads go
 
-**Download new models to** picks the default. When that drive is away or full, the download falls back to the iPhone; when the iPhone cannot hold the model, to any connected drive that can. Downloads write straight to the target volume (resumable `.part` files included), so a model larger than the phone's free space is fine as long as the drive has room.
+**Download new models to** picks the default. When that drive is away or full, the download falls back to the iPhone; when the iPhone cannot hold the model, to any connected drive that can. Downloads write straight to the target volume (resumable `.part` files included), so a model larger than the phone's free space is fine as long as the drive has room. A `.part` left behind by an interrupted download is cleaned up the next time the folder is listed, so a half file never looks like a model.
 
 ## Moving a model
 
