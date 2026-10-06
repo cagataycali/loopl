@@ -107,7 +107,8 @@ body { font-family: var(--l-sans); -webkit-font-smoothing: antialiased; text-ren
 .md-typeset .highlight, .md-typeset pre { border-radius: var(--l-r); }
 .md-typeset .highlight { border: 1px solid var(--l-line); background: var(--l-raise); }
 .md-typeset .highlight pre, .md-typeset .highlight code { background: transparent; }
-.md-clipboard { color: var(--l-ink-3); }
+.md-clipboard { color: var(--l-ink-3); background: transparent !important; border-radius: 6px; }
+.md-clipboard::after { background-color: currentColor; }
 .md-clipboard:hover { color: var(--l-ink); }
 
 /* tables — hairlines only */
@@ -295,7 +296,7 @@ html.l-js .l-stage[data-typing] .l-caret { opacity: 1; animation: l-blink 1s ste
 .l-tools__more { grid-column: 1 / -1; padding: 1.1rem; border-right: 1px solid var(--l-line); border-bottom: 1px solid var(--l-line); font-size: .72rem; color: var(--l-ink-2); }
 
 /* code split */
-.l-split { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); gap: 3rem; align-items: start; }
+.l-split { display: grid; grid-template-columns: minmax(0, .72fr) minmax(0, 1.28fr); gap: 3rem; align-items: start; }
 .l-split .highlight { margin: 0; }
 .l-split ul { list-style: none; padding: 0; margin: 0 !important; }
 .l-split li { margin: 0 !important; padding: .8rem 0; border-top: 1px solid var(--l-line); font-size: .76rem; color: var(--l-ink-2); }
@@ -320,9 +321,10 @@ html.l-js .l-stage[data-typing] .l-caret { opacity: 1; animation: l-blink 1s ste
 .l-app li:last-child { border-bottom: 1px solid var(--l-line); }
 .l-app li b { color: var(--l-ink); font-weight: 500; }
 
+.l-app__lead { color: var(--l-ink-2); font-size: .82rem; line-height: 1.6; max-width: 42ch !important; margin: 1rem 0 0; }
 /* end */
 .l-end { padding: clamp(5rem, 14vw, 9rem) 0 clamp(3rem, 8vw, 5rem); text-align: center; }
-.l-end h2 { margin: 0 auto 1.6rem !important; max-width: 16ch; }
+.l-end h2 { font-size: clamp(1.9rem, 5.6vw, 3.4rem) !important; font-weight: 600 !important; line-height: 1.02 !important; letter-spacing: -.045em !important; margin: 0 auto 2rem !important; padding: 0 !important; border: 0 !important; max-width: 14ch; }
 .l-end .l-actions { justify-content: center; }
 .l-foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 1rem; padding: 1.4rem 0 2rem; border-top: 1px solid var(--l-line); font-size: .62rem; color: var(--l-ink-3); }
 .l-foot nav { display: flex; flex-wrap: wrap; gap: .4rem 1.2rem; }

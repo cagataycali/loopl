@@ -109,14 +109,18 @@ import Loopl
 
 struct Battery: Tool {
     let name = "battery_level"
-    let description = "The phone's battery level, in percent."
+    let description = "Battery level, in percent."
     let parameters = ToolSchema.object([:])
-    func call(_ args: [String: JSONValue]) async throws -> String { "87 %" }
+
+    func call(_ args: [String: JSONValue]) async throws -> String {
+        "87 %"
+    }
 }
 
 func ask(_ model: any Model) async throws -> String {
-    let agent = Agent(model: model, tools: [Battery(), CurrentTimeTool()])
-    return try await agent("Should I charge before my 9 pm call?").text
+    let agent = Agent(model: model, tools: [Battery()])
+    let result = try await agent("Do I need to charge?")
+    return result.text
 }
 ```
 
