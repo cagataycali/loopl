@@ -111,7 +111,8 @@ final class DynamicToolsTests: XCTestCase {
     func testManageToolsTextContract() async throws {
         let store = DynamicToolStore(directory: tempDir())
         let tool = ManageToolsFallbackTool(store: store)
-        XCTAssertTrue(tool.description.contains("write Swift") && tool.description.contains("struct ReverseString: Tool"), "description should explain the tool: \(tool.description)")
+        let expectedWord = DynamicToolLanguage.preferredHere == .swift ? "write Swift" : "write JavaScript"   // the DEVICE decides (iOS sim → JavaScript)
+        XCTAssertTrue(tool.description.contains(expectedWord) && tool.description.contains(DynamicToolShape.text(for: .preferredHere).prefix(30)), "description should explain the tool: \(tool.description)")
         let l0 = try await tool.call(["action": "list"]); XCTAssertTrue(l0.contains("no agent-written tools"))
         let created = try await tool.call(["action": "create", "source": .string(Self.reverseJS), "language": "javascript"])
         XCTAssertTrue(created.contains("reverse_string") && created.contains("NEXT STEP"), created)
