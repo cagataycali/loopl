@@ -11,3 +11,7 @@ undocumented=$(comm -13 /tmp/loopl-doc-types.txt /tmp/loopl-src-types.txt | tr '
 echo "public types not mentioned anywhere in docs/: $undocumented"
 if [[ -n "$missing" ]]; then echo "✗ documented but NOT in Sources/ (rename? typo? add to $allowed if external):"; echo "$missing" | tr '\n' ' '; echo; exit 1; fi
 echo "✓ every documented type exists in Sources/"
+# Copy rule (owner, 2026-10-06): the docs speak of "the agent loop" on its own terms — no "Strands".
+if grep -rIniq strands docs README.md mkdocs.yml --exclude=check_symbols.sh; then
+  echo "✗ 'Strands' appears in the docs — describe the agent loop on its own terms:"; grep -rIni strands docs README.md mkdocs.yml --exclude=check_symbols.sh; exit 1
+fi
