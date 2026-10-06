@@ -21,7 +21,8 @@ struct HubBrowseView: View {
     @State private var pastedRepo: String?
     @State private var searchTask: Task<Void, Never>?
     @Namespace private var zoom
-    private let hub = HubCatalog()
+    /// Authenticated when a token is in the Keychain → private repos resolve; anonymous otherwise, exactly as before.
+    private let hub = HubCatalog(token: HFAccount.shared.provider)
 
     /// "mlx-community/Qwen3-1.7B-4bit" or a full huggingface.co URL pasted into the search field.
     private var typedRepoId: String? {
@@ -223,7 +224,7 @@ struct HubRepoSheet: View {
     @State private var showAllFiles = false
     /// Finger-following offset of the whole sheet while its header is dragged (interactive spring).
     @State private var drag: CGFloat = 0
-    private let hub = HubCatalog()
+    private let hub = HubCatalog(token: HFAccount.shared.provider)
 
     private var spec: ModelSpec? {
         guard let repo else { return nil }
@@ -379,7 +380,7 @@ struct HubRepoSheet: View {
         error = nil
         do {
             let r = try await hub.repo(repoId)
-            if r.gated { throw HubCatalog.HubError.signInRequired(repoId) }
+            if r.gated, HFAccount.shared.token == nil { throw HubCatalog.HubError.signInRequired(repoId) }
             let c: HubCatalog.Config? = r.kind == .mlx || r.files.contains(where: { $0.path == "config.json" }) ? try await hub.config(repoId) : nil
             withAnimation(LooplDesign.Motion.faded(LooplDesign.Motion.spring, reduceMotion)) {
                 repo = r; config = c

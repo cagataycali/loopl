@@ -9,7 +9,7 @@ import FoundationModels
 /// Headless device proof. Launch with
 ///   xcrun devicectl device process launch --console --terminate-existing --device <udid> technology.tiny.loopl -- --selftest
 /// Options: --selftest-vision (bundled vision-test.png → "what's in the image" + a tool call; default model
-/// qwen3.5-0.8b-4bit unless --selftest-model/--selftest-hub says otherwise), --selftest-model <catalog id> (default qwen3-1.7b-4bit), --selftest-hub <owner/repo> (resolve ANY public
+/// qwen3.5-0.8b-4bit unless --selftest-model/--selftest-hub says otherwise), --selftest-model <catalog id> (default qwen3-1.7b-4bit), --selftest-hf-token <token|file> (sign in to Hugging Face first; private repos then work), --selftest-hub <owner/repo> (resolve ANY public
 /// Hugging Face repo through HubCatalog instead of the catalog — the "any model" proof), --selftest-offline (flip the
 /// offline guard before loading: proves inference needs no network), --selftest-prompt "<text>",
 /// --selftest-turns <n> (n user turns on ONE agent — the per-runtime context-budget proof: each turn
@@ -85,12 +85,23 @@ enum SelfTest {
                 images = [ImageBlock(data: data, mime: "image/png", width: 640, height: 400, alt: "test card")]
                 report["image_bytes"] = data.count
             }
+            // --selftest-hf-token <token | path to a file holding it>: sign in exactly as Settings does (whoami first, then Keychain),
+            // so a PRIVATE --selftest-hub repo resolves and downloads with the Bearer. Never logged, never in the report.
+            if let tokenArg = arg("--selftest-hf-token") {
+                NetworkPolicy.setOffline(false)
+                let raw = (try? String(contentsOfFile: tokenArg, encoding: .utf8)) ?? tokenArg
+                let who = try await HFAccount.shared.signIn(raw)
+                report["hf_user"] = who.name; report["hf_scopes"] = who.scopes.sorted().map(\.rawValue)
+                let mine = try await HubCatalog(token: HFAccount.shared.provider).mine(author: who.name)
+                report["hf_mine"] = mine.map { "\($0.id)\($0.isPrivate ? " (private)" : "")" }
+                emit("hf: signed in as \(who.name) · scopes \(who.scopes.sorted().map(\.rawValue).joined(separator: "/")) · Mine: \(mine.count) runnable repos (\(mine.filter(\.isPrivate).count) private)")
+            }
             let spec: ModelSpec
             if let hubRepo = arg("--selftest-hub") {
                 // The "any model from Hugging Face" path: search-free resolve (repo ?blobs=true + config.json) → ModelSpec → store.add.
                 NetworkPolicy.setOffline(false)
                 let t0 = Date()
-                let resolved = try await HubCatalog().resolve(hubRepo)
+                let resolved = try await HubCatalog(token: HFAccount.shared.provider).resolve(hubRepo)
                 spec = store.add(resolved)
                 report["model"] = spec.id; report["hub_repo"] = hubRepo; report["hub_resolve_s"] = Date().timeIntervalSince(t0)
                 report["hub_family"] = spec.family.rawValue; report["hub_tools_unverified"] = spec.toolsUnverified ?? false
