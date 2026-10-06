@@ -117,5 +117,6 @@ func restore(_ model: any Model, from url: URL) throws -> Agent {
 | `ModelThrottledException` · `ContextWindowOverflowException` · `MaxTokensReachedException` | `ModelThrottledError` · `ContextWindowOverflowError` · `MaxTokensReachedError` |
 | `StopReason` strings | `StopReason` enum (+ `.cancelled`) |
 | `TypedEvent` classes | `AgentEvent` cases |
+| — (no built-in HITL; `BeforeToolCallEvent` cancel + interrupts) | `Tool.requiresApproval` → `.approvalRequested` suspends the call, `agent.resolve(approval:)` resumes, `ApprovalPolicy` hook decides ([Human in the loop](hitl.md)) |
 
 Deliberate differences: `maxTokens` throws after recovering the message; cancellation keeps partial text; roles are `user` / `assistant` only.

@@ -6,6 +6,9 @@ public protocol Tool: Sendable {
     var description: String { get }
     var parameters: JSONValue { get }
     func call(_ args: [String: JSONValue]) async throws -> String
+    /// Human-in-the-loop: return a request when this input should be shown to a
+    /// person before running (default `nil` — see `Approval.swift`).
+    func requiresApproval(for input: [String: JSONValue]) -> ApprovalRequest?
 }
 
 public struct ToolError: LocalizedError, Sendable {

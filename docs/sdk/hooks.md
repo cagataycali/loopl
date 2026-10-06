@@ -15,7 +15,7 @@ import Loopl
 
 func observe(_ agent: Agent) async {
     await agent.hooks.addCallback(BeforeToolCallEvent.self) { event in
-        if event.toolUse.name == "http_get" {
+        if event.toolUse.name == "http" {
             event.cancelTool = "Network tools are disabled in this session."   // the model reads this as the tool result
         }
     }

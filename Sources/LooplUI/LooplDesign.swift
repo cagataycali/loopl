@@ -132,9 +132,10 @@ public struct Pill: View {
 
 /// What the app wants the hand to feel. Mapped to `SensoryFeedback` in `HapticBus`.
 public enum HapticEvent: Hashable, Sendable {
-    case send, toolStart, toolFinish, modelLoaded, downloadFinished, error, tap
+    case send, toolStart, toolFinish, modelLoaded, downloadFinished, error, tap, approvalNeeded
     var feedback: SensoryFeedback {
         switch self {
+        case .approvalNeeded: .warning
         case .send: .impact(flexibility: .soft)
         case .toolStart: .selection
         case .toolFinish: .impact(weight: .light)

@@ -8,6 +8,8 @@ public struct TranscriptItem: Identifiable, Sendable, Hashable {
         case assistant(String)
         case reasoning(String)
         case toolUse(ToolUse, result: ToolResult?)
+        /// A tool call waiting for the human (`decision == nil`) or already answered.
+        case approval(ApprovalRequest, decision: ApprovalDecision?)
         case note(String)
     }
     public var id = UUID()
@@ -21,6 +23,10 @@ public struct Transcript: Sendable, Hashable {
     public var cycle = 0
     public var isRunning = false
     public var lastResult: AgentResult?
+    /// Approval cards still waiting for an answer.
+    public var pendingApprovals: [ApprovalRequest] {
+        items.compactMap { if case .approval(let r, nil) = $0.kind { return r }; return nil }
+    }
     private var streamingIndex: Int?
     private var reasoningIndex: Int?
 
@@ -62,6 +68,15 @@ public struct Transcript: Sendable, Hashable {
             }
             reasoningIndex = nil
         case .throttle(let d): items.append(.init(kind: .note("model busy — retrying in \(Int(d)) s")))
+        case .approvalRequested(let req):
+            if !items.contains(where: { if case .approval(let r, _) = $0.kind { return r.id == req.id }; return false }) {
+                items.append(.init(kind: .approval(req, decision: nil)))
+            }
+        case .approvalResolved(let id, let decision):
+            if let idx = items.lastIndex(where: { if case .approval(let r, _) = $0.kind { return r.id == id }; return false }),
+               case .approval(let r, _) = items[idx].kind {
+                items[idx].kind = .approval(r, decision: decision)
+            }
         case .toolStarted(let use):
             if !items.contains(where: { if case .toolUse(let u, _) = $0.kind { return u.toolUseId == use.toolUseId }; return false }) {
                 items.append(.init(kind: .toolUse(use, result: nil)))
