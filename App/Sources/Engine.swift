@@ -118,6 +118,67 @@ public final class Engine {
     public init(settings: AppSettings, store: ModelStore) {
         self.settings = settings
         self.store = store
+        Engine.current = self
+        wireCreatedTools()
+    }
+
+    // MARK: Agent-written tools (Phase 6 D)
+
+    /// Tools the model wrote with `manage_tools create`, live on this device (`DynamicToolStore`). Published so Settings ›
+    /// Tools › "Created by the agent" redraws when one is created, removed or fails to load at launch.
+    public private(set) var createdTools: [DynamicToolRecord] = []
+    private var createdLive: [any Tool] = []
+
+    /// `DynamicToolStore.shared` is the seam: it appends to `activeTools`, and every create/remove/reload hands the running
+    /// Agent its new tool list — so a tool the model just created is offered on its NEXT model call of the same turn.
+    /// (P6-A's ToolRegistry replaces `setTools` with `register(tool, source: .created)`; the store becomes its `ToolCreator`.)
+    private func wireCreatedTools() {
+        let store = DynamicToolStore.shared
+        // `loopl.call(name, args)` from a JavaScript tool reaches whatever this Engine offers — including other created tools.
+        JSToolRuntime.bridge = JSToolBridge(call: { name, args in
+            let sem = DispatchSemaphore(value: 0)
+            let box = Locked<Result<String, Error>>(.failure(ToolError("no tool named \"\(name)\"")))
+            Task { @MainActor in
+                defer { sem.signal() }
+                guard let tool = Engine.current?.activeTools.first(where: { $0.name == name }) else { return }
+                guard tool.name != "manage_tools" else { box.value = .failure(ToolError("a tool may not manage tools")); return }
+                do { box.value = .success(try await tool.call(args)) } catch { box.value = .failure(error) }
+            }
+            guard sem.wait(timeout: .now() + 30) == .success else { throw ToolError("loopl.call(\(name)) timed out") }
+            return try box.value.get()
+        })
+        Task { @MainActor [weak self] in
+            await store.setReserved(AppSettings.allToolNames + AppleTools.all.map(\.name) + ["manage_tools", "manage_messages", "use_agent"])
+            await store.onChange { tools in
+                Task { @MainActor in
+                    guard let engine = Engine.current else { return }
+                    engine.createdLive = tools
+                    engine.createdTools = await store.records
+                    if let agent = engine.agent { await agent.setTools(engine.activeTools) }   // effective on the next model call
+                }
+            }
+            #if DEBUG
+            // `--design-created-tools`: a live JavaScript tool + a Swift one saved for the Mac, for Settings shots and UITests.
+            if CommandLine.arguments.contains("--design-created-tools") {
+                _ = try? await store.create(name: nil, source: DynamicToolShape.javascript, language: .javascript)
+                _ = try? await store.create(name: "word_count", source: DynamicToolShape.swift
+                    .replacingOccurrences(of: "ReverseString", with: "WordCount").replacingOccurrences(of: "reverse_string", with: "word_count")
+                    .replacingOccurrences(of: "Reverses the given text.", with: "Counts the words in a text.")
+                    .replacingOccurrences(of: "String(text.reversed())", with: "String(text.split(separator: \" \").count)"), language: .swift)
+            }
+            #endif
+            let records = await store.reload()
+            self?.createdTools = records
+        }
+    }
+    /// The running Engine, for the JS bridge (one Engine per process).
+    nonisolated(unsafe) static weak var current: Engine?
+
+    /// The source of a created tool, for Settings' source view.
+    public func createdToolSource(_ name: String) async -> String? { await DynamicToolStore.shared.source(of: name) }
+    /// Settings › Tools › Created by the agent › Delete.
+    public func deleteCreatedTool(_ name: String) async {
+        do { _ = try await DynamicToolStore.shared.remove(name: name) as String } catch { lastError = "\(error)" }
     }
 
     public var loadedModel: ModelSpec? { if case .ready(let s) = readiness { return s }; return nil }
@@ -143,7 +204,11 @@ public final class Engine {
         }
         Task { await agent.resolve(approval: request.id, decision) }
     }
-    public var activeTools: [any Tool] { allTools.filter { settings.enabledTools.contains($0.name) } + AppleToolPrefs.shared.active }
+    public var activeTools: [any Tool] {
+        let base = allTools.filter { settings.enabledTools.contains($0.name) } + AppleToolPrefs.shared.active
+        // The model can grow this list itself: `manage_tools create` (fallback until the registry-backed one lands) + what it created.
+        return base + (base.contains { $0.name == "manage_tools" } ? [] : [ManageToolsFallbackTool()]) + createdLive
+    }
     /// Settings' one-line answer to "how many tools does the model get?" — the portable tools AND the
     /// on-device Apple ones that are switched on and runnable here (`ToolCountSummary`). Counting only
     /// `allTools` is what made build 10 say "6 of 6" above eight Apple toggles that were all on.

@@ -35,6 +35,7 @@ struct ToolsSection: View {
         DisclosureGroup(isExpanded: $expanded) {
             group("On", listing.on, empty: "Nothing — the model answers from what it knows.")
             group("Off", listing.off, empty: "Everything is on.")
+            createdGroup
         } label: {
             LabeledContent {
                 Text(listing.summary).foregroundStyle(.secondary).accessibilityIdentifier("settings-tools-summary")
@@ -92,6 +93,34 @@ struct ToolsSection: View {
         }
     }
 
+    /// Tools the model wrote itself (`manage_tools create`): name, language, status, one line of its description; tap for
+    /// the source, swipe (or the row's Delete) to remove it — the model loses it on its next call.
+    @ViewBuilder private var createdGroup: some View {
+        let created = engine.createdTools
+        HStack {
+            Text("CREATED BY THE AGENT").font(.caption.weight(.semibold)).foregroundStyle(.secondary).tracking(0.6)
+            Spacer()
+            Text("\(created.count)").font(.caption.monospacedDigit()).foregroundStyle(.tertiary)
+        }
+        .padding(.top, 2)
+        .accessibilityIdentifier("settings-tools-group-created")
+        .accessibilityElement(children: .combine)
+        if created.isEmpty {
+            Text(CreatedToolRow.emptyCopy).font(.footnote).foregroundStyle(.tertiary).accessibilityIdentifier("settings-tools-created-empty")
+        }
+        ForEach(created) { record in
+            NavigationLink {
+                CreatedToolSourceView(record: record, engine: engine)
+            } label: {
+                CreatedToolRow(record: record)
+            }
+            .accessibilityIdentifier("createdTool.\(record.name)")
+            .swipeActions(edge: .trailing) {
+                Button("Delete", role: .destructive) { Task { await engine.deleteCreatedTool(record.name) } }
+            }
+        }
+    }
+
     private func binding(_ name: String) -> Binding<Bool> {
         if engine.allTools.contains(where: { $0.name == name }) {
             return Binding(get: { settings.enabledTools.contains(name) },
@@ -144,5 +173,77 @@ struct ToolToggleRow: View {
         if reason.hasPrefix("No ") { return "not on this device" }
         if reason.hasPrefix("Needs iOS") { return String(reason.dropFirst(6)).components(separatedBy: " or").first.map { "iOS \($0)".replacingOccurrences(of: "iOS iOS", with: "iOS") } ?? "unavailable" }
         return "unavailable"
+    }
+}
+
+/// One agent-written tool in Settings › Tools.
+struct CreatedToolRow: View {
+    let record: DynamicToolRecord
+    static var emptyCopy: String {
+        #if os(macOS)
+        "None yet. When the model needs a tool it does not have, it writes one in Swift and loads it here."
+        #else
+        "None yet. When the model needs a tool it does not have, it writes one in JavaScript and loads it here — Swift it writes is kept for your Mac."
+        #endif
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 6) {
+                Text(record.name).font(.body.monospaced())
+                Text(record.language == .swift ? "Swift" : "JavaScript").font(.caption2.weight(.medium)).padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(.quaternary, in: Capsule()).foregroundStyle(.secondary)
+                if !record.status.isActive {
+                    Text(record.status.label).font(.caption2.weight(.medium)).padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(record.status.label == "failed" ? AnyShapeStyle(.red.opacity(0.15)) : AnyShapeStyle(.quaternary), in: Capsule())
+                        .foregroundStyle(record.status.label == "failed" ? .red : .secondary)
+                }
+            }
+            Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+            Text(record.createdAt.formatted(.relative(presentation: .named))).font(.caption2).foregroundStyle(.tertiary)
+        }
+        .accessibilityElement(children: .combine)
+    }
+    var subtitle: String {
+        switch record.status {
+        case .active: return record.description.isEmpty ? "Live — the model can call it." : record.description
+        case .saved(let why): return why
+        case .failed(let err): return "Failed to load: " + (err.split(separator: "\n").first.map(String.init) ?? err)
+        }
+    }
+}
+
+/// The source the model wrote, read-only, with Delete.
+struct CreatedToolSourceView: View {
+    let record: DynamicToolRecord
+    let engine: Engine
+    @State private var source: String?
+    @State private var confirmDelete = false
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                CreatedToolRow(record: record)
+                if case .failed(let err) = record.status {
+                    Text(err).font(.caption.monospaced()).foregroundStyle(.red).textSelection(.enabled)
+                }
+                Text(source ?? "Loading…").font(.caption.monospaced()).textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12).background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 12))
+                    .accessibilityIdentifier("createdTool-source")
+                Text(record.language == .swift
+                     ? "Compiled on a Mac with swiftc and loaded as a library after a sandboxed check. Each call crosses a small C ABI as JSON."
+                     : "Runs in JavaScriptCore on this device: a fresh context per call, no eval, a 30 s limit. `loopl.call` reaches the other tools you have on.")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+            .padding()
+        }
+        .navigationTitle(record.name)
+        .toolbar {
+            Button("Delete", role: .destructive) { confirmDelete = true }.accessibilityIdentifier("createdTool-delete")
+        }
+        .confirmationDialog("Delete \(record.name)?", isPresented: $confirmDelete, titleVisibility: .visible) {
+            Button("Delete tool", role: .destructive) { Task { await engine.deleteCreatedTool(record.name); dismiss() } }
+        } message: { Text("The model loses this tool on its next call. Its source is removed from this device.") }
+        .task { source = await engine.createdToolSource(record.name) }
     }
 }

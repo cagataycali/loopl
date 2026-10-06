@@ -1,9 +1,10 @@
 import Foundation
 
 /// `manage_tools` — the model grows its own toolset: `create` (write Swift on a Mac, JavaScript on an iPhone/iPad, load it,
-/// use it on the very next call), `remove`, `list`. P6-A's registry version adds `mount/unmount/describe`; its `create`
-/// and `remove` cases call `ManageToolsCreate.handle` below — one handler, whichever tool owns the name.
-public struct ManageToolsTool: Tool {
+/// use it on the very next call), `remove`, `list`. FALLBACK until P6-A's registry-backed `ManageToolsTool` (mount/unmount/
+/// describe/create/remove) is on main — then the Engine offers that one and `DynamicToolStore` plugs in as its `ToolCreator`
+/// (see `DynamicToolStore.create(name:source:language:)`); this struct is only used when no other `manage_tools` is offered.
+public struct ManageToolsFallbackTool: Tool {
     public let name = "manage_tools"
     public let store: DynamicToolStore
     public init(store: DynamicToolStore = .shared) { self.store = store }

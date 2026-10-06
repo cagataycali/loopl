@@ -52,6 +52,36 @@ public actor DynamicToolStore {
     }
     public func record(named name: String) -> DynamicToolRecord? { records.first { $0.name == name } }
 
+    // MARK: - P6-A `ToolCreator` shape (string languages) — `extension DynamicToolStore: ToolCreator {}` once A's registry is on main.
+
+    /// Languages this device can load — `["swift", "javascript"]` on a Mac, `["javascript"]` on iPhone/iPad.
+    public nonisolated var languages: [String] { DynamicToolLanguage.runnableHere.map(\.rawValue) }
+
+    /// Validate + build + persist; returns the live tool for the registry to register. Throws `ToolError` with the
+    /// compiler's/validator's words. A language this device cannot run throws too — the registry refuses earlier,
+    /// `manage_tools create` (fallback) saves it honestly instead.
+    public func create(name: String, source: String, language: String) async throws -> any Tool {
+        guard let lang = DynamicToolLanguage(rawValue: language.lowercased()) else { throw ToolError("language must be swift or javascript") }
+        let result: CreateResult
+        do { result = try await create(name: name.isEmpty ? nil : name, source: source, language: lang) }
+        catch let e as CreateError { throw ToolError(e.message) }
+        catch let e as JSToolError { throw ToolError("JavaScript: \(e.message)") }
+        catch {
+            #if os(macOS)
+            if let e = error as? SwiftToolCompiler.Failure { throw ToolError("Swift \(e.stage.rawValue) error:\n\(e.message)") }
+            #endif
+            throw error
+        }
+        guard result.live, let tool = live[result.record.name] else { throw ToolError(result.message) }
+        return tool
+    }
+
+    /// `ToolCreator.remove`: delete the persisted source (the registry unregisters first).
+    public func remove(name: String) async throws { _ = try remove(name: name) as String }
+
+    /// Created tools saved on this device, restored at launch by the host.
+    public func saved() async -> [(name: String, language: String)] { records.map { ($0.name, $0.language.rawValue) } }
+
     // MARK: - create / remove / reload
 
     /// `manage_tools create`. Validates, saves, loads (when this device can), tells the model what happened.

@@ -147,6 +147,7 @@ nav:
   - SDK:
       - Agent: sdk/agent.md
       - Tools: sdk/tools.md
+      - Agent-written tools: sdk/agent-written-tools.md
       - Runtimes: sdk/models.md
       - Hooks & conversation: sdk/hooks.md
       - Human in the loop: sdk/hitl.md

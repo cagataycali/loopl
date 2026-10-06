@@ -227,15 +227,15 @@ public enum JSToolRuntime {
     }
 }
 
-/// A tiny lock box (the JS thread and the waiting task share a few flags).
-final class Locked<T>: @unchecked Sendable {
+/// A tiny lock box (the JS thread and the waiting task share a few flags; the app's bridge uses it too).
+public final class Locked<T>: @unchecked Sendable {
     private var v: T
     private let lock = NSLock()
-    init(_ v: T) { self.v = v }
-    var value: T {
+    public init(_ v: T) { self.v = v }
+    public var value: T {
         get { lock.lock(); defer { lock.unlock() }; return v }
         set { lock.lock(); v = newValue; lock.unlock() }
     }
-    func mutate(_ f: (inout T) -> Void) { lock.lock(); f(&v); lock.unlock() }
-    @discardableResult func swap(_ new: T) -> T { lock.lock(); defer { lock.unlock() }; let old = v; v = new; return old }
+    public func mutate(_ f: (inout T) -> Void) { lock.lock(); f(&v); lock.unlock() }
+    @discardableResult public func swap(_ new: T) -> T { lock.lock(); defer { lock.unlock() }; let old = v; v = new; return old }
 }

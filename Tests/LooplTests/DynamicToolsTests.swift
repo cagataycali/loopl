@@ -110,7 +110,7 @@ final class DynamicToolsTests: XCTestCase {
 
     func testManageToolsTextContract() async throws {
         let store = DynamicToolStore(directory: tempDir())
-        let tool = ManageToolsTool(store: store)
+        let tool = ManageToolsFallbackTool(store: store)
         XCTAssertTrue(tool.description.contains("write Swift") && tool.description.contains("struct ReverseString: Tool"), "description should explain the tool: \(tool.description)")
         let l0 = try await tool.call(["action": "list"]); XCTAssertTrue(l0.contains("no agent-written tools"))
         let created = try await tool.call(["action": "create", "source": .string(Self.reverseJS), "language": "javascript"])
@@ -163,7 +163,7 @@ final class DynamicToolsTests: XCTestCase {
         }
         await assertRejected(try await store.create(name: nil, source: "let x = 1", language: .swift), contains: "struct <Name>: Tool")
         // Through manage_tools the model reads "create rejected — Swift compile error:\n<swiftc output>".
-        do { _ = try await ManageToolsTool(store: store).call(["action": "create", "source": .string(bad)]); XCTFail() }
+        do { _ = try await ManageToolsFallbackTool(store: store).call(["action": "create", "source": .string(bad)]); XCTFail() }
         catch { XCTAssertTrue("\(error)".contains("Swift compile error"), "\(error)") }
     }
     #endif
