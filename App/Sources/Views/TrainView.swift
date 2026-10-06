@@ -20,6 +20,8 @@ struct TrainView: View {
     @State private var dataset: HFHubClient.DatasetSummary?
     @State private var shardBytes: Int64 = 0
     @State private var conversations = 0
+    @State private var inspecting = false
+    @State private var inspectError: String?
     @State private var base: TrainingBase = .b0_8
     @State private var method: TrainingMethod = .lora
     @State private var flavor: TrainingFlavor = .a10gSmall
@@ -98,7 +100,9 @@ struct TrainView: View {
                     }
                     .accessibilityIdentifier("train-dataset")
                     if dataset != nil {
-                        LabeledContent("Rows", value: conversations > 0 ? "≈ \(conversations) conversations · \(ByteSize.label(shardBytes))" : "reading…")
+                        LabeledContent("Rows", value: inspecting ? "reading…" : conversations > 0 ? "≈ \(conversations) conversations · \(ByteSize.label(shardBytes))" : "no .jsonl shards found")
+                            .accessibilityIdentifier("train-rows")
+                        if let e = inspectError { Text(e).font(.footnote).foregroundStyle(.orange) }
                     }
                 }
             } header: { Text("Dataset") } footer: {
@@ -126,7 +130,7 @@ struct TrainView: View {
                     Spacer()
                     Text(TrainingEstimate.duration(hoursCap * 3600)).foregroundStyle(.secondary).monospacedDigit()
                 }
-                Slider(value: $hoursCap, in: 0.5...8, step: 0.5).accessibilityIdentifier("train-cap")
+                Slider(value: $hoursCap, in: 0.25...8, step: 0.25).accessibilityIdentifier("train-cap")
                 TextField("Model name", text: $outputName, prompt: Text(plan.map(\.outputName) ?? "loopl-mine-0-8b"))
                     .textInputAutocapitalization(.never).autocorrectionDisabled()
                     .accessibilityIdentifier("train-name")
@@ -320,25 +324,32 @@ struct TrainView: View {
         } catch { datasetsError = error.localizedDescription }
     }
 
-    /// Count the shards: `ConversationExport` writes one JSON object per line, ~4 KB each → an honest "≈ N conversations".
+    /// Count the shards the script will read (every `*.jsonl` in the repo: lane C's `data/`, older `conversations/`, or the root):
+    /// one JSON object per line → an exact count for small sets (one download), ≈ bytes / 4 KB for big ones.
     private func inspect(_ d: HFHubClient.DatasetSummary?) async {
-        conversations = 0; shardBytes = 0
+        conversations = 0; shardBytes = 0; inspectError = nil
         guard let d else { return }
+        inspecting = true; defer { inspecting = false }
         do {
-            let entries = try await account.client().tree(repo: d.id, type: .dataset, path: "data")
-            let shards = entries.filter { $0.isFile && $0.path.hasSuffix(".jsonl") }
+            let client = account.client()
+            var shards: [HFHubClient.TreeEntry] = []
+            let root = try await client.tree(repo: d.id, type: .dataset)
+            shards += root.filter { $0.isFile && $0.path.hasSuffix(".jsonl") }
+            for dir in root.filter({ !$0.isFile && $0.path != "train" && !$0.path.hasPrefix(".") }) {
+                let sub = try await client.tree(repo: d.id, type: .dataset, path: dir.path)
+                shards += sub.filter { $0.isFile && $0.path.hasSuffix(".jsonl") }
+            }
             let bytes = shards.reduce(Int64(0)) { $0 + ($1.size ?? 0) }
-            // small datasets: count lines exactly (one download), big ones: estimate
             var n = Int(bytes / 4096)
-            if shards.count <= 2, bytes < 3_000_000 {
+            if shards.count <= 3, bytes < 3_000_000 {
                 var exact = 0
-                for s in shards { if let data = try? await account.client().fileData(repo: d.id, type: .dataset, path: s.path) { exact += data.split(separator: UInt8(ascii: "\n")).count } }
+                for s in shards { if let data = try? await client.fileData(repo: d.id, type: .dataset, path: s.path) { exact += data.split(separator: UInt8(ascii: "\n")).count } }
                 if exact > 0 { n = exact }
             }
             guard dataset?.id == d.id else { return }
-            shardBytes = bytes; conversations = max(n, shards.isEmpty ? 0 : 1)
+            shardBytes = bytes; conversations = shards.isEmpty ? 0 : max(n, 1)
             base = TrainingBase.recommended(forConversations: conversations)
-        } catch { datasetsError = error.localizedDescription }
+        } catch { inspectError = error.localizedDescription }
     }
 
     private func launch(_ plan: TrainingPlan) {

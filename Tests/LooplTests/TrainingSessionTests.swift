@@ -49,7 +49,7 @@ final class TrainingSessionTests: XCTestCase {
         XCTAssertTrue(body.contains("\"flavor\":\"a10g-small\""), body)
         XCTAssertTrue(body.contains("resolve/main/train/loopl_sft.py"), body)
         XCTAssertTrue(body.contains("\"HF_TOKEN\":\"hf_test_token"), body)
-        XCTAssertTrue(body.contains("\"timeout\":3600"), body)
+        XCTAssertTrue(body.contains("\"timeoutSeconds\":3600"), body)
         // polling runs on its own; wait for the terminal phase
         for _ in 0..<200 { if !s.phase.isActive { break }; try await Task.sleep(for: .milliseconds(10)) }
         guard case .finished(_, let out) = s.phase else { return XCTFail("phase \(s.phase)") }

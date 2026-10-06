@@ -210,7 +210,8 @@ final class HFHubClientTests: XCTestCase {
         XCTAssertEqual(body["flavor"]?.stringValue, "a10g-small")
         XCTAssertEqual(body["secrets"]?["HF_TOKEN"]?.stringValue, "hf_secret")
         XCTAssertEqual(body["environment"]?["LOOPL"]?.stringValue, "1")
-        XCTAssertEqual(body["timeout"]?.doubleValue, 7200)
+        XCTAssertEqual(body["timeoutSeconds"]?.doubleValue, 7200, "the API key is timeoutSeconds — `timeout` is ignored and the job runs uncapped")
+        XCTAssertNil(body["timeout"])
         XCTAssertEqual(body["arguments"]?.arrayValue?.count, 0)
     }
 

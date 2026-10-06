@@ -130,7 +130,7 @@ public struct TrainingPlan: Hashable, Sendable, Codable {
         return a
     }
 
-    public var timeoutSeconds: Int { max(600, Int(hoursCap * 3600)) }
+    public var timeoutSeconds: Int { max(900, Int(hoursCap * 3600)) }   // HF minimum we allow: 15 min
 
     public var estimate: TrainingEstimate { TrainingEstimate(plan: self) }
 }
