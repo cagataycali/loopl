@@ -895,6 +895,7 @@ public struct ModelPickerRow: View {
     /// so a row shows ONE state at a time (in use ⚡ · on this device ✓ · downloading ○ · tap to download ↓).
     public var downloading: Double?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var typeSize
     public init(spec: ModelSpec, loaded: Bool = false, downloaded: Bool = false, loadedMark: Namespace.ID? = nil, downloading: Double? = nil) {
         self.spec = spec; self.loaded = loaded; self.downloaded = downloaded; self.loadedMark = loadedMark; self.downloading = downloading
     }
@@ -902,8 +903,15 @@ public struct ModelPickerRow: View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(spec.name).font(.body.weight(loaded ? .semibold : .regular))
-                // ONE Text so the facts stay on one line: on an SE or at AX sizes they shrink a little instead of wrapping "ctx / 12,288".
-                metaRow.lineLimit(1).minimumScaleFactor(0.72).accessibilityLabel(metaAccessibility)
+                    .fixedSize(horizontal: false, vertical: true)
+                // ONE Text so the facts stay on one line: on an SE they shrink a little instead of wrapping "ctx / 12,288".
+                // At accessibility sizes even 0.72× lost the tail ("1.75 GB · 2B · ctx 12,2…" on an SE at AX-XL) — there the
+                // facts wrap as they need to; the accessibility label reads them in full either way.
+                if typeSize.isAccessibilitySize {
+                    metaRow.fixedSize(horizontal: false, vertical: true).accessibilityLabel(metaAccessibility)
+                } else {
+                    metaRow.lineLimit(1).minimumScaleFactor(0.72).accessibilityLabel(metaAccessibility)
+                }
             }
             Spacer()
             glyph
