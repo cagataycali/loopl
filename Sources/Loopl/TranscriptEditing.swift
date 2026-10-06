@@ -83,8 +83,8 @@ public extension Transcript {
             case .toolUse(let use, let result):
                 guard let result else { continue }   // never completed → cannot be paired, drop it
                 pendingUses.append(use); pendingResults.append(result)
-            case .reasoning, .note, .approval:
-                continue
+            case .reasoning, .note, .approval, .agent:
+                continue        // a child's rows belong to the child; the parent's history keeps the use_agent tool pair
             }
         }
         flushText()
