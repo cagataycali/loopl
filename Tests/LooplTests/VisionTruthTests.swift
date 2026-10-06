@@ -142,7 +142,7 @@ final class VisionTruthTests: XCTestCase {
         XCTAssertFalse(qwen.hasLooplPersona)
     }
 
-    func testBundledLooplRowsCarryThePersonaAndStayTextOnly() throws {
+    func testBundledLooplRowsCarryThePersonaAndVisionPerRuntime() throws {
         // SwiftPM: Fixtures/models.json via Bundle.module; Xcode-hosted: the app bundle's models.json.
         var url: URL?
         #if SWIFT_PACKAGE
@@ -155,8 +155,10 @@ final class VisionTruthTests: XCTestCase {
         for row in loopl {
             XCTAssertEqual(row.persona, .loopl, row.id)
             XCTAssertTrue(row.gated, row.id)
-            // Flip to true only when VISION-EXPORT lands a tower in the -4bit repos (COORDINATION.md "VISION-EXPORT READY").
-            XCTAssertEqual(row.vision, false, "\(row.id): v1 weights have no vision tower")
+            // VISION-EXPORT READY (2026-10-06 13:3xZ): the -4bit repos are mlx_vlm exports WITH the tower (vision_tower.* + processor
+            // configs, revs de32efa9 / 8c2afdb4 / 413f2c66); GGUF stays text-only (the GGUF runtime has no image path).
+            XCTAssertEqual(row.vision, row.runtime == .mlx, "\(row.id)")
+            XCTAssertEqual(row.supportsVision, row.runtime == .mlx, row.id)
         }
         for row in catalog.models where !row.hasLooplPersona { XCTAssertNil(row.persona, row.id) }
     }

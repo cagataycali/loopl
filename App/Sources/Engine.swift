@@ -358,8 +358,8 @@ public final class Engine {
     /// True when the loaded model carries the built-in loopl identity (Settings shows "loopl identity (built in)").
     public var usesLooplPersona: Bool { loadedModel?.hasLooplPersona == true }
 
-    nonisolated public static func systemPrompt(for spec: ModelSpec?, settings: AppSettings) -> String {
-        let user = MainActor.assumeIsolated { settings.systemPrompt }
+    public static func systemPrompt(for spec: ModelSpec?, settings: AppSettings) -> String {
+        let user = settings.systemPrompt
         guard let spec, spec.hasLooplPersona else { return user }
         return LooplPersona.combined(with: user, appDefault: AppSettings.defaultSystemPrompt)
     }

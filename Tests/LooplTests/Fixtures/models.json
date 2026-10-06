@@ -372,17 +372,17 @@
       "runtime": "mlx",
       "family": "hermes",
       "params_b": 0.8,
-      "size_bytes": 444091186,
+      "size_bytes": 625228929,
       "ctx_nominal": 262144,
       "ctx_usable_8gb": 16384,
       "min_ram_gb": 2,
       "gated": true,
-      "vision": false,
+      "vision": true,
       "persona": "loopl",
       "chat_template_kwargs": {
         "enable_thinking": false
       },
-      "notes": "loopl v1 — Qwen3.5-0.8B post-tuned by Cagatay Cali on cagataydev/loopl-train (agent loop, tools, robots, identity). Text-only (vision tower not merged). Private: needs the user's HF token."
+      "notes": "loopl v1 — Qwen3.5-0.8B post-tuned by Cagatay Cali on cagataydev/loopl-train (agent loop, tools, robots, identity). Vision kept (mlx_vlm export: vision_tower + preprocessor_config, same layout as the mlx-community base). Private: needs the user's HF token."
     },
     {
       "id": "loopl-0.8b-q4_k_m",
@@ -411,17 +411,17 @@
       "runtime": "mlx",
       "family": "hermes",
       "params_b": 2.0,
-      "size_bytes": 1079469343,
+      "size_bytes": 1722271227,
       "ctx_nominal": 262144,
       "ctx_usable_8gb": 12288,
       "min_ram_gb": 3,
       "gated": true,
-      "vision": false,
+      "vision": true,
       "persona": "loopl",
       "chat_template_kwargs": {
         "enable_thinking": false
       },
-      "notes": "loopl v1 — Qwen3.5-2B post-tuned by Cagatay Cali on cagataydev/loopl-train (agent loop, tools, robots, identity). Text-only (vision tower not merged). Private: needs the user's HF token."
+      "notes": "loopl v1 — Qwen3.5-2B post-tuned by Cagatay Cali on cagataydev/loopl-train (agent loop, tools, robots, identity). Vision kept (mlx_vlm export: vision_tower + preprocessor_config, same layout as the mlx-community base). Private: needs the user's HF token."
     },
     {
       "id": "loopl-2b-q4_k_m",
@@ -450,17 +450,17 @@
       "runtime": "mlx",
       "family": "hermes",
       "params_b": 4.0,
-      "size_bytes": 2367237149,
+      "size_bytes": 3034299183,
       "ctx_nominal": 262144,
       "ctx_usable_8gb": 8192,
       "min_ram_gb": 6,
       "gated": true,
-      "vision": false,
+      "vision": true,
       "persona": "loopl",
       "chat_template_kwargs": {
         "enable_thinking": false
       },
-      "notes": "loopl v1 — Qwen3.5-4B LoRA r64 (merged) post-tuned by Cagatay Cali on cagataydev/loopl-train (agent loop, tools, robots, identity). Text-only (vision tower not merged). Private: needs the user's HF token."
+      "notes": "loopl v1 — Qwen3.5-4B LoRA r64 post-tuned by Cagatay Cali on cagataydev/loopl-train. Vision kept (mlx_vlm export: vision_tower + preprocessor_config, same layout as the mlx-community base). Private: needs the user's HF token."
     },
     {
       "id": "loopl-4b-q4_k_m",

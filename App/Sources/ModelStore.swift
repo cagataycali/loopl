@@ -58,6 +58,11 @@ public final class ModelStore {
         return s
     }
 
+    /// Test/fixture seam: pretend `<dir>/config.json` said `vision` for `id` (nil forgets). Not persisted.
+    public func overrideLocalVision(_ id: String, _ vision: Bool?) {
+        if let vision { localVision[id] = vision } else { localVision.removeValue(forKey: id) }
+    }
+
     /// Read `config.json` of a complete MLX download and remember whether it has a vision tower
     /// (`LocalModelFiles.hasVisionTower`). Called from `refresh()` for every downloaded model — a few KB per read.
     private func noteLocalVision(_ spec: ModelSpec, directory: URL) {

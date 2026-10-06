@@ -7,15 +7,17 @@ hide:
 
 # Models
 
-The app's built-in catalog. Every entry is a public Hugging Face repo — nothing gated, no token — and any other public MLX or GGUF repo loads the same way. *Usable on 8 GB* is the context that fits beside the weights on an iPhone 16 Pro; it is the app's default.
+The app's built-in catalog. Every entry is a public Hugging Face repo — no token — except the **loopl** rows (`gated: yes`), which are Cagatay's private post-tuned models and download with your own token (Settings › Hugging Face); any other public MLX or GGUF repo loads the same way. *Usable on 8 GB* is the context that fits beside the weights on an iPhone 16 Pro; it is the app's default.
 
 <div class="loopl-models-table" markdown>
 
 | Model | Runtime | Params | 4-bit size | ctx max | usable on 8 GB | min RAM | gated | tool calls |
 |---|---|---|---|---:|---:|---|---|:-:|
 | [Qwen3.5 0.8B](https://huggingface.co/mlx-community/Qwen3.5-0.8B-4bit) | MLX | 0.8B | 652 MB | 262,144 | 16,384 | 2 GB | no | ✓ |
+| [loopl 0.8B](https://huggingface.co/cagataydev/loopl-0.8b-4bit) | MLX | 0.8B | 625 MB | 262,144 | 16,384 | 2 GB | yes | ✓ |
 | [Qwen3-VL 2B](https://huggingface.co/mlx-community/Qwen3-VL-2B-Instruct-4bit) | MLX | 2.0B | 1.80 GB | 262,144 | 12,288 | 3 GB | no | ✓ |
 | [Qwen3.5 2B](https://huggingface.co/mlx-community/Qwen3.5-2B-4bit) | MLX | 2.0B | 1.75 GB | 262,144 | 12,288 | 3 GB | no | ✓ |
+| [loopl 2B](https://huggingface.co/cagataydev/loopl-2b-4bit) | MLX | 2.0B | 1.72 GB | 262,144 | 12,288 | 3 GB | yes | ✓ |
 | [DeepSeek-R1-Distill-Qwen-1.5B (4-bit)](https://huggingface.co/mlx-community/DeepSeek-R1-Distill-Qwen-1.5B-4bit) | MLX | 1.8B | 1000 MB | 131,072 | 8,192 | 6 GB | no | — |
 | [Llama-3.2-1B Instruct (4-bit)](https://huggingface.co/mlx-community/Llama-3.2-1B-Instruct-4bit) | MLX | 1.2B | 695 MB | 131,072 | 8,192 | 6 GB | no | ✓ |
 | [Llama-3.2-3B Instruct (4-bit)](https://huggingface.co/mlx-community/Llama-3.2-3B-Instruct-4bit) | MLX | 3.2B | 1.81 GB | 131,072 | 8,192 | 8 GB | no | ✓ |
@@ -27,6 +29,7 @@ The app's built-in catalog. Every entry is a public Hugging Face repo — nothin
 | [SmolLM3-3B (4-bit)](https://huggingface.co/mlx-community/SmolLM3-3B-4bit) | MLX | 3.1B | 1.73 GB | 65,536 | 8,192 | 8 GB | no | ✓ |
 | [gemma-3-1b IT (4-bit)](https://huggingface.co/mlx-community/gemma-3-1b-it-4bit) | MLX | 1.0B | 733 MB | 32,768 | 8,192 | 6 GB | no | — |
 | [gemma-3-1b IT-qat (4-bit)](https://huggingface.co/mlx-community/gemma-3-1b-it-qat-4bit) | MLX | 1.0B | 733 MB | 32,768 | 8,192 | 6 GB | no | — |
+| [loopl 4B](https://huggingface.co/cagataydev/loopl-4b-4bit) | MLX | 4.0B | 3.03 GB | 262,144 | 8,192 | 6 GB | yes | ✓ |
 | [gemma-3-4b IT-qat (4-bit)](https://huggingface.co/mlx-community/gemma-3-4b-it-qat-4bit) | MLX | 4.3B | 3.00 GB | 131,072 | 6,838 | 8 GB | no | — |
 | [gemma-3-4b IT (4-bit)](https://huggingface.co/mlx-community/gemma-3-4b-it-4bit) | MLX | 4.3B | 3.40 GB | 131,072 | 5,383 | 12 GB | no | — |
 | [Gemma 3 1B IT · Q4_K_M (llama.cpp)](https://huggingface.co/unsloth/gemma-3-1b-it-GGUF) | GGUF | 1.0B | 806 MB | 32,768 | 8,192 | 6 GB | no | — |
@@ -35,6 +38,9 @@ The app's built-in catalog. Every entry is a public Hugging Face repo — nothin
 | [Qwen3 1.7B · Q4_K_M (llama.cpp)](https://huggingface.co/unsloth/Qwen3-1.7B-GGUF) | GGUF | 1.7B | 1.11 GB | 40,960 | 8,192 | 6 GB | no | ✓ |
 | [Qwen3 4B · Q4_K_M (llama.cpp)](https://huggingface.co/unsloth/Qwen3-4B-GGUF) | GGUF | 4.0B | 2.50 GB | 40,960 | 8,192 | 8 GB | no | ✓ |
 | [SmolLM2 1.7B Instruct · Q4_K_M (llama.cpp)](https://huggingface.co/bartowski/SmolLM2-1.7B-Instruct-GGUF) | GGUF | 1.7B | 1.06 GB | 8,192 | 8,192 | 6 GB | no | — |
+| [loopl 0.8B · Q4_K_M (llama.cpp)](https://huggingface.co/cagataydev/loopl-0.8b-GGUF) | GGUF | 0.8B | 529 MB | 262,144 | 8,192 | 3 GB | yes | ✓ |
+| [loopl 2B · Q4_K_M (llama.cpp)](https://huggingface.co/cagataydev/loopl-2b-GGUF) | GGUF | 2.0B | 1.27 GB | 262,144 | 8,192 | 4 GB | yes | ✓ |
+| [loopl 4B · Q4_K_M (llama.cpp)](https://huggingface.co/cagataydev/loopl-4b-GGUF) | GGUF | 4.0B | 2.71 GB | 262,144 | 4,096 | 6 GB | yes | ✓ |
 | Apple Intelligence (on-device) | appleFM | 3.0B | — | 4,096 | 4,096 | — | no | — |
 
 </div>
@@ -64,6 +70,12 @@ The app's built-in catalog. Every entry is a public Hugging Face repo — nothin
 - **Llama 3.2 3B Instruct · Q4_K_M (llama.cpp)** — Public mirror (no licence gate).
 - **Gemma 3 1B IT · Q4_K_M (llama.cpp)** — No tool template — manual JSON prompting.
 - **SmolLM2 1.7B Instruct · Q4_K_M (llama.cpp)** — Small and fast; manual JSON prompting.
+- **loopl 0.8B** — loopl v1 — Qwen3.5-0.8B post-tuned by Cagatay Cali on cagataydev/loopl-train (agent loop, tools, robots, identity). Vision kept (mlx_vlm export: vision_tower + preprocessor_config, same layout as the mlx-community base). Private: needs the user's HF token.
+- **loopl 0.8B · Q4_K_M (llama.cpp)** — loopl v1 GGUF (llama.cpp b11401, --no-mtp). Private: needs the user's HF token.
+- **loopl 2B** — loopl v1 — Qwen3.5-2B post-tuned by Cagatay Cali on cagataydev/loopl-train (agent loop, tools, robots, identity). Vision kept (mlx_vlm export: vision_tower + preprocessor_config, same layout as the mlx-community base). Private: needs the user's HF token.
+- **loopl 2B · Q4_K_M (llama.cpp)** — loopl v1 GGUF (llama.cpp b11401, --no-mtp). Private: needs the user's HF token.
+- **loopl 4B** — loopl v1 — Qwen3.5-4B LoRA r64 post-tuned by Cagatay Cali on cagataydev/loopl-train. Vision kept (mlx_vlm export: vision_tower + preprocessor_config, same layout as the mlx-community base). Private: needs the user's HF token.
+- **loopl 4B · Q4_K_M (llama.cpp)** — loopl v1 GGUF (llama.cpp b11401, --no-mtp). Private: needs the user's HF token.
 
 ## Picking one
 

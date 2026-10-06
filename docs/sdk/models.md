@@ -60,6 +60,17 @@ let spec = try await hub.resolve(hits[0].id)                 // runtime, size, c
 
 A repo exported with transformers 5 names a `tokenizer_class` the Swift tokenizer has never heard of (`Qwen3_5Tokenizer`). The MLX runtime loads it anyway — the BPE in `tokenizer.json` is the same — and when a load still fails on those files, `HFDownloader.repairSmallFiles` refreshes only the small files whose git blob hash differs from the Hub's; the weights stay. `TokenizerFiles.audit(dir)` tells you beforehand.
 
+**Vision is read from the files, not the name.** `HubCatalog.isVision` trusts the Hub's `image-text-to-text` tag, then the
+repo's file list (an image-processor config means a tower; a vision `model_type` without one is a text-only export), and
+`spec(for:config:)` lets `config.json`'s `vision_config` decide once it has been read. After a download the app re-reads the
+local `config.json` (`LocalModelFiles.hasVisionTower`), so the composer's photo button follows the weights on the device.
+
+## loopl's own models
+
+`cagataydev/loopl-*` (and any repo tagged `loopl`, including one you trained from the app) carry `ModelSpec.persona == .loopl`.
+They were trained with `LooplPersona.systemPrompt` as their system turn, so the app sends it first and your own system prompt
+after it — the text is in Settings › System prompt, under *loopl identity (built in)*.
+
 ## Speed
 
 | Device | Model | tok/s |
