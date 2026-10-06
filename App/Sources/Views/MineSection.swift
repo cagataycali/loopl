@@ -91,6 +91,9 @@ struct MineSection: View {
                                     Text("Moving to \(to) · \(ByteSize.label(done)) of \(ByteSize.label(total))").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                                 case .needsDrive(let drive):
                                     Label("Needs \(drive) — plug it in to use", systemImage: "externaldrive.badge.xmark").font(.caption).foregroundStyle(.orange)
+                                case .driveUnreadable(let drive, _):
+                                    Label("\(drive) is connected but loopl can't read it — re-grant its folder in Settings › Storage", systemImage: "externaldrive.badge.exclamationmark")
+                                        .font(.caption).foregroundStyle(.orange)
                                 case .downloaded, .notDownloaded: EmptyView()
                                 }
                             }
