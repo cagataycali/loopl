@@ -73,6 +73,15 @@ struct ChatView: View {
                 // The edited row left the transcript (saved, or the thread was cut under it): no stale editor.
                 if let editing, engine.transcript.index(of: editing) == nil { self.editing = nil }
             }
+            .onAppear {
+                #if DEBUG
+                // Screenshot fixtures: the in-place editor on the last user row / History (+ share) already open.
+                if DesignFixture.editing, editing == nil {
+                    editing = engine.transcript.items.last { if case .user = $0.kind { return true }; return false }?.id
+                }
+                if DesignFixture.share != nil { showHistory = true }
+                #endif
+            }
             .animation(LooplDesign.Motion.faded(LooplDesign.Motion.spring, reduceMotion), value: engine.lastError)
             .navigationTitle(engine.loadedModel?.name ?? "loopl")
             .navigationBarTitleDisplayMode(.inline)

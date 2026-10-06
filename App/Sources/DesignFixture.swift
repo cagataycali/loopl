@@ -28,6 +28,33 @@ enum DesignFixture {
     /// The `tool` scene opens its tool rows so a screenshot shows the args/result card.
     static var expandTools: Bool { requested && scene == "tool" }
 
+    /// Screenshot-only switches (App Store / landing captures; all DEBUG, all no-ops in Release):
+    /// `--design-editing` opens the last user row of the `edit` scene in the in-place editor ·
+    /// `--design-share select|review` opens History in selection mode (all threads ticked) and, for `review`,
+    /// the Share-to-Hugging-Face sheet on its review step · `--design-settings storage` pushes Settings › Storage ·
+    /// `--design-mine` signs the session in as @cagataydev (no network) and fills Models › Mine with the loopl v1 repos.
+    static func flag(_ name: String) -> Bool { requested && CommandLine.arguments.contains(name) }
+    static func value(_ name: String) -> String? {
+        guard requested, let i = CommandLine.arguments.firstIndex(of: name), i + 1 < CommandLine.arguments.count,
+              !CommandLine.arguments[i + 1].hasPrefix("-") else { return nil }
+        return CommandLine.arguments[i + 1]
+    }
+    static var editing: Bool { flag("--design-editing") && scene == "edit" }
+    static var share: String? { value("--design-share") }
+    static var settingsPane: String? { value("--design-settings") }
+    static var mine: Bool { flag("--design-mine") }
+
+    /// `--design-mine`: the Hub rows of cagataydev/loopl-* as `/api/models?author=` returned them on 2026-10-06 (no network).
+    static var mineHits: [HubCatalog.Hit] {
+        let json = """
+        [{"id":"cagataydev/loopl-4b-4bit","kind":"mlx","downloads":12,"likes":3,"gated":false,"pipeline":"image-text-to-text","modelType":"qwen3_5","bits":4,"sizeBytes":3034299183,"paramsB":4.0,"lastModified":"2026-10-06T12:40:00.000Z","isPrivate":true,"files":["config.json","model.safetensors","preprocessor_config.json","tokenizer.json"]},
+         {"id":"cagataydev/loopl-2b-4bit","kind":"mlx","downloads":9,"likes":2,"gated":false,"pipeline":"image-text-to-text","modelType":"qwen3_5","bits":4,"sizeBytes":1722271227,"paramsB":2.0,"lastModified":"2026-10-06T12:31:00.000Z","isPrivate":true,"files":["config.json","model.safetensors","preprocessor_config.json","tokenizer.json"]},
+         {"id":"cagataydev/loopl-0.8b-4bit","kind":"mlx","downloads":21,"likes":4,"gated":false,"pipeline":"image-text-to-text","modelType":"qwen3_5","bits":4,"sizeBytes":625228929,"paramsB":0.8,"lastModified":"2026-10-06T12:24:00.000Z","isPrivate":true,"files":["config.json","model.safetensors","preprocessor_config.json","tokenizer.json"]},
+         {"id":"cagataydev/loopl-app-smoke-4bit","kind":"mlx","downloads":2,"likes":0,"gated":false,"pipeline":"text-generation","modelType":"qwen3_5","bits":4,"sizeBytes":444091186,"paramsB":0.8,"lastModified":"2026-10-06T05:10:00.000Z","isPrivate":true,"files":["config.json","model.safetensors","tokenizer.json"]}]
+        """
+        return (try? JSONDecoder().decode([HubCatalog.Hit].self, from: Data(json.utf8))) ?? []
+    }
+
     /// `--design-train form|running|done|failed` opens Models › Train your own on a pre-baked session (no network, no token).
     static var trainScene: String? {
         #if DEBUG
@@ -86,6 +113,7 @@ enum DesignFixture {
         if scene == "loopl", !CommandLine.arguments.contains("--design-local-vision") { engine.store.overrideLocalVision(specId, false) }
         let spec = engine.store.catalog.models.first { $0.id == specId } ?? engine.store.catalog.models.first!
         engine.readiness = .ready(spec)
+        if mine { engine.hf.designIdentity(name: "cagataydev", fullname: "Cagatay Cali") }
         settings.showPerformance = CommandLine.arguments.contains("--design-perf")
         settings.offline = scene == "offline"
         var t = Transcript()
