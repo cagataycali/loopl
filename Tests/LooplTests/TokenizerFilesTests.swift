@@ -1,5 +1,6 @@
 import XCTest
 import Network
+import CryptoKit
 @testable import Loopl
 
 /// The small-file story behind "Qwen3_5Tokenizer is not supported" (2026-10-06): what the audit sees, how a load
@@ -59,11 +60,22 @@ final class TokenizerFilesTests: XCTestCase {
         XCTAssertNil(TokenizerFiles.gitBlobSHA1(contentsOf: URL(fileURLWithPath: "/nonexistent")))
     }
 
-    func testRemoteFileDecodesTheTreeOid() throws {
+    func testRemoteFileDecodesTheTreeOidAndLFS() throws {
         let json = #"[{"type":"file","oid":"c6c5184301c694c20fa3b3b4a08a8516f419aade","size":6771,"path":"tokenizer_config.json"},{"type":"file","oid":"abc","size":444000000,"path":"model.safetensors","lfs":{"oid":"deadbeef","size":444000000}}]"#
         let files = try JSONDecoder().decode([HFDownloader.RemoteFile].self, from: Data(json.utf8))
         XCTAssertEqual(files[0].oid, "c6c5184301c694c20fa3b3b4a08a8516f419aade")
+        XCTAssertNil(files[0].lfs)
+        XCTAssertEqual(files[1].lfs?.oid, "deadbeef")
         XCTAssertEqual(files[1].path, "model.safetensors")
+        // matches(): git blob hash for plain files, SHA-256 for LFS, size when the API gave no hash
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("rf-\(UUID().uuidString)")
+        try Data("hello\n".utf8).write(to: tmp)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        XCTAssertTrue(HFDownloader.RemoteFile(path: "x", size: 6, type: "file", oid: "ce013625030ba8dba906f756967f9e9ca394464a").matches(tmp))
+        XCTAssertFalse(HFDownloader.RemoteFile(path: "x", size: 6, type: "file", oid: "0000").matches(tmp))
+        XCTAssertTrue(HFDownloader.RemoteFile(path: "x", size: 6, type: "file", oid: "pointer", lfs: .init(oid: "5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03")).matches(tmp))
+        XCTAssertTrue(HFDownloader.RemoteFile(path: "x", size: 6, type: "file").matches(tmp))
+        XCTAssertFalse(HFDownloader.RemoteFile(path: "x", size: 7, type: "file").matches(tmp))
         XCTAssertTrue(TokenizerFiles.names.contains(files[0].path))
         XCTAssertFalse(TokenizerFiles.names.contains(files[1].path), "weights are never part of a repair")
     }
@@ -97,8 +109,13 @@ final class RepairSmallFilesTests: XCTestCase {
 
         let remote: [String: Data] = ["tokenizer_config.json": newConfig, "tokenizer.json": tokenizer, "chat_template.jinja": template,
                                       "model.safetensors": weights, "README.md": Data("x".utf8)]
+        // tokenizer.json is LFS-stored on the real Hub (≥10 MB): its tree `oid` is the POINTER's blob hash, the content hash lives in `lfs.oid`.
         let tree = try JSONSerialization.data(withJSONObject: remote.map { name, data -> [String: Any] in
-            ["type": "file", "path": name, "size": data.count, "oid": TokenizerFiles.gitBlobSHA1(data)]
+            if name == "tokenizer.json" || name == "model.safetensors" {
+                let sha256 = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+                return ["type": "file", "path": name, "size": data.count, "oid": "pointer-blob-sha1-not-the-content", "lfs": ["oid": sha256, "size": data.count]]
+            }
+            return ["type": "file", "path": name, "size": data.count, "oid": TokenizerFiles.gitBlobSHA1(data)]
         })
         let requested = Requested()
         let server = try LocalHTTP { path in

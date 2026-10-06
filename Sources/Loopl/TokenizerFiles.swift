@@ -81,12 +81,19 @@ public enum TokenizerFiles {
         guard let data = try? Data(contentsOf: url) else { return nil }
         return gitBlobSHA1(data)
     }
+
+    /// SHA-256 of a file's content — what the Hub reports as `lfs.oid` for LFS-stored files (tokenizer.json is one once it
+    /// passes ~10 MB; its tree `oid` is then the hash of the pointer, not of the content).
+    public static func sha256(contentsOf url: URL) -> String? {
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
 }
 
 extension HFDownloader {
     /// Refresh the small files of an already-downloaded model from the Hub: every file in `TokenizerFiles.names` whose
-    /// local git blob hash differs from the Hub's `oid` (or is missing locally) is downloaded again; weights (`*.safetensors`,
-    /// `*.gguf`) are never touched. Returns the names that changed. Offline → `DLError.offline` before any request.
+    /// content hash differs from the Hub's (`oid` git blob SHA-1, or `lfs.oid` SHA-256 for LFS-stored ones like a big
+    /// tokenizer.json) or is missing locally is downloaded again; weights (`*.safetensors`, `*.gguf`) are never touched. Returns the names that changed. Offline → `DLError.offline` before any request.
     @discardableResult
     public func repairSmallFiles(repo: String, revision: String = "main", in directory: URL) async throws -> [String] {
         let remote = try await listFiles(repo: repo, revision: revision, filter: false)
@@ -95,8 +102,7 @@ extension HFDownloader {
         let fm = FileManager.default
         for file in remote {
             let dest = directory.appendingPathComponent(file.path)
-            if let oid = file.oid, let local = TokenizerFiles.gitBlobSHA1(contentsOf: dest), local == oid { continue }
-            if file.oid == nil, let attrs = try? fm.attributesOfItem(atPath: dest.path), (attrs[.size] as? Int64) == file.size { continue }
+            if file.matches(dest) { continue }
             try? fm.removeItem(at: dest)
             try? fm.removeItem(at: dest.appendingPathExtension("part"))
             try await download(repo: repo, revision: revision, file: file, to: dest) { _ in }
