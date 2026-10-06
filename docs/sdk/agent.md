@@ -90,7 +90,7 @@ For SwiftUI, `Transcript` folds events into rows — `LooplUI` renders it.
 
 ## Persist
 
-`Message` is `Codable`; the history is the whole state.
+`Message` is `Codable`; the history is the whole state. For metrics, the system prompt and what a run was suspended on, snapshot the lot — [Checkpoints](checkpoints.md).
 
 ```swift
 // snippet: compile
@@ -118,5 +118,8 @@ func restore(_ model: any Model, from url: URL) throws -> Agent {
 | `StopReason` strings | `StopReason` enum (+ `.cancelled`) |
 | `TypedEvent` classes | `AgentEvent` cases |
 | — (no built-in HITL; `BeforeToolCallEvent` cancel + interrupts) | `Tool.requiresApproval` → `.approvalRequested` suspends the call, `agent.resolve(approval:)` resumes, `ApprovalPolicy` hook decides ([Human in the loop](hitl.md)) |
+| `structured_output_model=…` (Pydantic + forced `tool_choice`) | `agent.structured(As:prompt:)` — schema from `Decodable`, forced pass with that tool only ([Structured output](structured-output.md)) |
+| `SessionManager` / `SnapshotSessionManager` | `AgentCheckpoint` + `CheckpointStore` ([Checkpoints](checkpoints.md)) |
+| `telemetry/tracer.py` (OTel SDK) | `Tracer` — `gen_ai.*` spans from hooks, no dependency ([Tracing](tracing.md)) |
 
 Deliberate differences: `maxTokens` throws after recovering the message; cancellation keeps partial text; roles are `user` / `assistant` only.
