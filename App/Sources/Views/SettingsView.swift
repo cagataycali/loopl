@@ -25,7 +25,8 @@ struct SettingsView: View {
                     NavigationLink {
                         ToolsEditor(engine: engine, settings: settings)
                     } label: {
-                        LabeledContent("Tools", value: settings.enabledTools.isEmpty ? "off" : "\(settings.enabledTools.count) of \(engine.allTools.count)")
+                        LabeledContent("Tools", value: engine.toolSummary)
+                            .accessibilityIdentifier("settings-tools-summary")
                     }
                     .accessibilityIdentifier("settings-tools")
                 } header: { Text("Agent") } footer: {
