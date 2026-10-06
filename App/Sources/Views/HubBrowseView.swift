@@ -379,7 +379,7 @@ struct HubRepoSheet: View {
         error = nil
         do {
             let r = try await hub.repo(repoId)
-            if r.gated { throw HubCatalog.HubError.gated(repoId) }
+            if r.gated { throw HubCatalog.HubError.signInRequired(repoId) }
             let c: HubCatalog.Config? = r.kind == .mlx || r.files.contains(where: { $0.path == "config.json" }) ? try await hub.config(repoId) : nil
             withAnimation(LooplDesign.Motion.faded(LooplDesign.Motion.spring, reduceMotion)) {
                 repo = r; config = c

@@ -1,13 +1,21 @@
 import Foundation
 
+/// Supplies the user's Hugging Face token at request time, or `nil` for an anonymous call.
+/// A closure (not a value) so the Keychain stays the single source of truth: paste or Remove in
+/// Settings takes effect on the very next request, and a token is never copied into a long-lived struct.
+public typealias HFTokenProvider = @Sendable () -> String?
+
 /// Hugging Face repo download with resume, per-byte progress and a hard
-/// offline gate. ANONYMOUS by design: loopl only lists public repos, so there
-/// is no token, no account and nothing to store. Written by hand (not
-/// `HubApi`) so every byte that leaves the device goes through
+/// offline gate. ANONYMOUS by default: `HFDownloader()` sends no credential, exactly as
+/// the public catalog needs. Pass `token:` to read PRIVATE repos — the only thing the token
+/// is used for is an `Authorization: Bearer` header on requests to `host`, nothing else.
+/// Written by hand (not `HubApi`) so every byte that leaves the device goes through
 /// `NetworkPolicy.session` and the offline rule is one `guard` per request.
 public struct HFDownloader: Sendable {
     public var host = "https://huggingface.co"
-    public init() {}
+    /// `nil` → anonymous. Consulted per request (see `HFTokenProvider`).
+    public var token: HFTokenProvider?
+    public init(token: HFTokenProvider? = nil) { self.token = token }
 
     public struct RemoteFile: Sendable, Hashable, Decodable {
         public var path: String
@@ -16,17 +24,32 @@ public struct HFDownloader: Sendable {
         public init(path: String, size: Int64, type: String) { self.path = path; self.size = size; self.type = type }
     }
 
-    public enum DLError: LocalizedError {
-        case offline, http(Int, String), gated(String), io(String)
+    public enum DLError: LocalizedError, Equatable {
+        case offline, http(Int, String), io(String)
+        /// 401/403 with NO token: the repo is private or gated — a token would help.
+        case signInRequired(String)
+        /// 401/403 WITH a token: this account cannot read the repo (not yours, gated terms not accepted, or the token is read-less).
+        case noAccess(String)
+        /// Kept for callers that matched on it; new code sees `signInRequired` / `noAccess`.
+        @available(*, deprecated, renamed: "signInRequired")
+        public static func gated(_ repo: String) -> DLError { .signInRequired(repo) }
         public var errorDescription: String? {
             switch self {
             case .offline: "offline mode is on — downloads are refused"
             case .http(let c, let p): "HTTP \(c) for \(p)"
-            case .gated(let repo): "\(repo) is gated on huggingface.co — loopl downloads public models only; pick another model"
+            case .signInRequired(let repo): "\(repo) is private or gated — sign in to Hugging Face in Settings to download it"
+            case .noAccess(let repo): "your Hugging Face account can't read \(repo) — it is private or gated; check access on huggingface.co"
             case .io(let s): s
             }
         }
     }
+
+    /// 401/403 → the error that tells the user what to do next.
+    func denied(_ repo: String) -> DLError { Self.denied(repo, hasToken: bearer != nil) }
+    public static func denied(_ repo: String, hasToken: Bool) -> DLError { hasToken ? .noAccess(repo) : .signInRequired(repo) }
+
+    /// The token for this request, or nil (empty strings count as no token).
+    var bearer: String? { token?().flatMap { $0.isEmpty ? nil : $0 } }
 
     /// Files an MLX model needs. Weights + tokenizer + configs; nothing else (no README, no pytorch bins).
     public static func wanted(_ f: RemoteFile) -> Bool {
@@ -41,10 +64,18 @@ public struct HFDownloader: Sendable {
         return names.contains(p)
     }
 
-    func request(_ url: URL) -> URLRequest {
+    /// Every request the downloader makes. The bearer is attached ONLY to URLs on `host`
+    /// (never to a redirect target or a CDN — URLSession drops Authorization across hosts on its own,
+    /// this guard makes the intent explicit and testable).
+    public func request(_ url: URL) -> URLRequest {
         var r = URLRequest(url: url, timeoutInterval: 60)
         r.setValue("loopl/0.2 (iOS)", forHTTPHeaderField: "User-Agent")
+        if let t = bearer, Self.sameHost(url, host) { r.setValue("Bearer \(t)", forHTTPHeaderField: "Authorization") }
         return r
+    }
+
+    static func sameHost(_ url: URL, _ host: String) -> Bool {
+        url.host?.lowercased() == URL(string: host)?.host?.lowercased()
     }
 
     /// What to download for a catalog entry: every MLX file, or the one GGUF file.
@@ -64,7 +95,7 @@ public struct HFDownloader: Sendable {
         let url = URL(string: "\(host)/api/models/\(repo)/tree/\(revision)?recursive=false")!
         let (data, resp) = try await NetworkPolicy.session.data(for: request(url))
         let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
-        if code == 401 || code == 403 { throw DLError.gated(repo) }
+        if code == 401 || code == 403 { throw denied(repo) }
         guard code == 200 else { throw DLError.http(code, url.path) }
         let files = try JSONDecoder().decode([RemoteFile].self, from: data).filter { $0.type == "file" }
         return filter ? files.filter(Self.wanted) : files
@@ -92,10 +123,12 @@ public struct HFDownloader: Sendable {
         var req = request(url)
         if have > 0 { req.setValue("bytes=\(have)-", forHTTPHeaderField: "Range") }
 
-        let (bytes, resp) = try await NetworkPolicy.session.bytes(for: req)
+        // `resolve/` answers 302 to a CDN (cas-bridge / cdn-lfs) with a pre-signed URL; a Bearer riding
+        // along would be a second credential (S3 answers 400) and would leak the token off huggingface.co.
+        let (bytes, resp) = try await NetworkPolicy.session.bytes(for: req, delegate: bearer == nil ? nil : RedirectScrubber(host: host))
         let http = resp as? HTTPURLResponse
         let code = http?.statusCode ?? 0
-        if code == 401 || code == 403 { throw DLError.gated(repo) }
+        if code == 401 || code == 403 { throw denied(repo) }
         if code == 416 { try? fm.removeItem(at: part); throw DLError.io("range mismatch for \(file.path); retry") }
         guard code == 200 || code == 206 else { throw DLError.http(code, file.path) }
         if code == 200, have > 0 {           // server ignored Range → start over
@@ -125,5 +158,22 @@ public struct HFDownloader: Sendable {
         guard final == file.size else { throw DLError.io("\(file.path): got \(final) of \(file.size) bytes") }
         if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
         try fm.moveItem(at: part, to: dest)
+    }
+}
+
+/// Drops `Authorization` when a redirect leaves `host`. Per-task delegate (iOS 15+), so the shared
+/// `NetworkPolicy.session` stays untouched for every other caller.
+final class RedirectScrubber: NSObject, URLSessionTaskDelegate, Sendable {
+    let host: String
+    init(host: String) { self.host = host }
+    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest, completionHandler: @escaping @Sendable (URLRequest?) -> Void) {
+        completionHandler(Self.scrub(request, host: host))
+    }
+    static func scrub(_ request: URLRequest, host: String) -> URLRequest {
+        guard let url = request.url, !HFDownloader.sameHost(url, host) else { return request }
+        var r = request
+        r.setValue(nil, forHTTPHeaderField: "Authorization")
+        return r
     }
 }

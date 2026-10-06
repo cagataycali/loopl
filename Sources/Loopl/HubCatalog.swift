@@ -1,8 +1,10 @@
 import Foundation
 
-/// Any public model on Hugging Face, turned into a `ModelSpec` at runtime.
+/// Any model on Hugging Face, turned into a `ModelSpec` at runtime.
 ///
-/// Anonymous Hub API only (no token, no account): `GET /api/models?search=…`
+/// Anonymous by default (no token, no account); pass `token:` and the same calls also see the
+/// user's PRIVATE repos (`mine(author:)`, private `repo`/`config`) — the token is only ever an
+/// `Authorization: Bearer` header to `host`. `GET /api/models?search=…`
 /// for MLX (`author=mlx-community`) and GGUF (`filter=gguf`), `GET /api/models/<repo>?blobs=true`
 /// for the file list with sizes, and the repo's `config.json` for the context
 /// window + quantization. Everything the UI shows is derived here, in pure
@@ -13,7 +15,10 @@ import Foundation
 public struct HubCatalog: Sendable {
     public var host = "https://huggingface.co"
     public var cache: HubCache? = HubCache()
-    public init() {}
+    /// `nil` → anonymous. Consulted per request (see `HFTokenProvider`).
+    public var token: HFTokenProvider?
+    public init(token: HFTokenProvider? = nil) { self.token = token }
+    var bearer: String? { token?().flatMap { $0.isEmpty ? nil : $0 } }
 
     // MARK: - Types
 
@@ -38,6 +43,8 @@ public struct HubCatalog: Sendable {
         public var sizeBytes: Int64?          // gguf.total, or estimated from safetensors param count + bits
         public var paramsB: Double?
         public var lastModified: String?
+        /// Only the owner's token sees these (`expand[]=private`); anonymous search never returns one.
+        public var isPrivate: Bool = false
 
         public var author: String { id.split(separator: "/").first.map(String.init) ?? "" }
         public var name: String { id.split(separator: "/").last.map(String.init) ?? id }
@@ -94,10 +101,12 @@ public struct HubCatalog: Sendable {
         public var ggufContext: Int?
         public var paramsB: Double?           // from safetensors param count
         public var lastModified: String?
+        public var isPrivate: Bool = false
         public init(id: String, sha: String?, gated: Bool, downloads: Int, likes: Int, pipeline: String?, files: [File],
-                    modelType: String?, ggufContext: Int?, paramsB: Double?, lastModified: String?) {
+                    modelType: String?, ggufContext: Int?, paramsB: Double?, lastModified: String?, isPrivate: Bool = false) {
             self.id = id; self.sha = sha; self.gated = gated; self.downloads = downloads; self.likes = likes; self.pipeline = pipeline
             self.files = files; self.modelType = modelType; self.ggufContext = ggufContext; self.paramsB = paramsB; self.lastModified = lastModified
+            self.isPrivate = isPrivate
         }
 
         public var kind: Kind { files.contains(where: \.isGGUF) && !files.contains(where: { $0.path.hasSuffix(".safetensors") }) ? .gguf : .mlx }
@@ -113,13 +122,20 @@ public struct HubCatalog: Sendable {
         }
     }
 
-    public enum HubError: LocalizedError {
-        case offline, http(Int, String), gated(String), noWeights(String), badJSON(String), visionGGUF(String)
+    public enum HubError: LocalizedError, Equatable {
+        case offline, http(Int, String), noWeights(String), badJSON(String), visionGGUF(String)
+        /// 401/403 with NO token: private or gated — a Hugging Face token would help.
+        case signInRequired(String)
+        /// 401/403 WITH a token: this account cannot read it.
+        case noAccess(String)
+        @available(*, deprecated, renamed: "signInRequired")
+        public static func gated(_ repo: String) -> HubError { .signInRequired(repo) }
         public var errorDescription: String? {
             switch self {
             case .offline: "offline mode is on — browsing Hugging Face needs the network (models already on this device still load)"
             case .http(let c, let p): "Hugging Face answered HTTP \(c) for \(p)"
-            case .gated(let r): "\(r) is gated — loopl downloads public models only"
+            case .signInRequired(let r): "\(r) is private or gated — sign in to Hugging Face in Settings to use it"
+            case .noAccess(let r): "your Hugging Face account can't read \(r) — it is private or gated; check access on huggingface.co"
             case .noWeights(let r): "\(r) has no MLX safetensors and no .gguf file loopl can run"
             case .badJSON(let p): "unexpected response for \(p)"
             case .visionGGUF(let r): "\(r) is a vision model in GGUF — loopl runs vision models through MLX only; pick an mlx-community build"
@@ -265,8 +281,31 @@ public struct HubCatalog: Sendable {
                        bits: bits,
                        ctx: (gguf?["context_length"] as? NSNumber)?.intValue,
                        sizeBytes: size, paramsB: params,
-                       lastModified: row["lastModified"] as? String)
+                       lastModified: row["lastModified"] as? String,
+                       isPrivate: (row["private"] as? Bool) ?? false)
         }
+    }
+
+    /// A user's own repos (`/api/models?author=…`): every format mixed together, so the kind is read
+    /// per row — `gguf` metadata or the `gguf` tag → GGUF; the `mlx` tag / library → MLX; anything else
+    /// (full-precision transformers checkpoints, LoRA adapters, robot policies…) is dropped because loopl
+    /// cannot run it. Vision detection is the same `isVision` the search path uses.
+    public static func parseMine(_ data: Data) throws -> [Hit] {
+        guard let rows = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { throw HubError.badJSON("mine") }
+        var out: [Hit] = []
+        for row in rows {
+            guard let kind = Self.kind(ofRow: row), let one = try? parseSearch(JSONSerialization.data(withJSONObject: [row]), kind: kind).first else { continue }
+            out.append(one)
+        }
+        return out
+    }
+
+    static func kind(ofRow row: [String: Any]) -> Kind? {
+        let tags = Set((row["tags"] as? [String] ?? []).map { $0.lowercased() })
+        let library = (row["library_name"] as? String)?.lowercased()
+        if row["gguf"] != nil || tags.contains("gguf") || library == "gguf" { return .gguf }
+        if tags.contains("mlx") || library == "mlx" { return .mlx }
+        return nil
     }
 
     public static func parseRepo(_ data: Data) throws -> Repo {
@@ -284,7 +323,8 @@ public struct HubCatalog: Sendable {
                     modelType: (config["model_type"] as? String) ?? (gguf?["architecture"] as? String),
                     ggufContext: (gguf?["context_length"] as? NSNumber)?.intValue,
                     paramsB: (st?["total"] as? NSNumber).map { $0.doubleValue / 1e9 },
-                    lastModified: row["lastModified"] as? String)
+                    lastModified: row["lastModified"] as? String,
+                    isPrivate: (row["private"] as? Bool) ?? false)
     }
 
     public static func parseConfig(_ data: Data) throws -> Config {
@@ -341,33 +381,49 @@ public struct HubCatalog: Sendable {
 
     // MARK: - Network
 
-    func request(_ url: URL) -> URLRequest {
+    /// Bearer only on `host` (see `HFDownloader.request`).
+    public func request(_ url: URL) -> URLRequest {
         var r = URLRequest(url: url, timeoutInterval: 30)
         r.setValue("loopl/0.3 (iOS)", forHTTPHeaderField: "User-Agent")
         r.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let t = bearer, HFDownloader.sameHost(url, host) { r.setValue("Bearer \(t)", forHTTPHeaderField: "Authorization") }
         return r
     }
 
+    func denied(_ repo: String) -> HubError { bearer == nil ? .signInRequired(repo) : .noAccess(repo) }
+
     /// GET with the disk cache: offline → cached or `HubError.offline`; online → network, falling back to a stale copy on failure.
-    func fetch(_ url: URL, ttl: TimeInterval) async throws -> Data {
-        if let cache, let hit = cache.read(url, maxAge: ttl) { return hit }
+    /// `repo:` names the repository for the 401/403 message (defaults to the URL's last path component).
+    func fetch(_ url: URL, ttl: TimeInterval, repo: String? = nil, cacheable: Bool = true) async throws -> Data {
+        // Authenticated answers are cached under a separate key: a private listing must never be served
+        // to the anonymous path (after Remove), and the public cache must not shadow a now-visible private repo.
+        let key = bearer == nil ? url : Self.cacheKey(url)
+        let cache = cacheable ? self.cache : nil
+        if let cache, let hit = cache.read(key, maxAge: ttl) { return hit }
         if NetworkPolicy.isOffline {
-            if let cache, let stale = cache.read(url, maxAge: .infinity) { return stale }
+            if let cache, let stale = cache.read(key, maxAge: .infinity) { return stale }
             throw HubError.offline
         }
         do {
             let (data, resp) = try await NetworkPolicy.session.data(for: request(url))
             let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
-            if code == 401 || code == 403 { throw HubError.gated(url.lastPathComponent) }
+            if code == 401 || code == 403 { throw denied(repo ?? url.lastPathComponent) }
             guard code == 200 else { throw HubError.http(code, url.path) }
-            cache?.write(url, data)
+            cache?.write(key, data)
             return data
         } catch let e as HubError {
             throw e
         } catch {
-            if let cache, let stale = cache.read(url, maxAge: .infinity) { return stale }
+            if let cache, let stale = cache.read(key, maxAge: .infinity) { return stale }
             throw error
         }
+    }
+
+    /// Cache key for an authenticated request: the URL with a marker fragment (never sent on the wire).
+    static func cacheKey(_ url: URL) -> URL {
+        var c = URLComponents(url: url, resolvingAgainstBaseURL: false)!
+        c.fragment = "auth"
+        return c.url ?? url
     }
 
     public func searchURL(_ query: String, kind: Kind, limit: Int = 30) -> URL {
@@ -389,26 +445,47 @@ public struct HubCatalog: Sendable {
     }
 
     /// Top text-generation repos for a query (by downloads). Empty query → the most downloaded.
+    /// Gated rows are dropped: even with a token the user must accept the terms on huggingface.co first.
     public func search(_ query: String, kind: Kind, limit: Int = 30) async throws -> [Hit] {
         let data = try await fetch(searchURL(query, kind: kind, limit: limit), ttl: 3600)
         return try Self.parseSearch(data, kind: kind).filter { !$0.gated }
     }
 
+    /// `GET /api/models?author=<me>` — with the owner's token this includes PRIVATE repos.
+    public func mineURL(author: String, limit: Int = 500) -> URL {
+        var c = URLComponents(string: "\(host)/api/models")!
+        var q: [URLQueryItem] = [URLQueryItem(name: "author", value: author), URLQueryItem(name: "sort", value: "lastModified"),
+                                 URLQueryItem(name: "direction", value: "-1"), URLQueryItem(name: "limit", value: String(limit))]
+        for f in ["config", "safetensors", "gguf", "gated", "pipeline_tag", "lastModified", "likes", "downloads", "private", "library_name", "tags"] {
+            q.append(URLQueryItem(name: "expand[]", value: f))
+        }
+        c.queryItems = q
+        return c.url!
+    }
+
+    /// The user's own runnable repos (MLX + GGUF, private and public), newest first. Needs the token
+    /// for the private ones; anonymous it still works and lists the public ones. Short TTL: the user
+    /// comes here right after a training job pushed a new repo.
+    public func mine(author: String) async throws -> [Hit] {
+        let data = try await fetch(mineURL(author: author), ttl: 120, repo: author)
+        return try Self.parseMine(data).filter { $0.isTextGeneration }
+    }
+
     public func repo(_ id: String) async throws -> Repo {
-        let data = try await fetch(URL(string: "\(host)/api/models/\(id)?blobs=true")!, ttl: 86_400)
+        let data = try await fetch(URL(string: "\(host)/api/models/\(id)?blobs=true")!, ttl: 86_400, repo: id)
         return try Self.parseRepo(data)
     }
 
     public func config(_ repo: String) async throws -> Config? {
         let url = URL(string: "\(host)/\(repo)/resolve/main/config.json")!
-        do { return try Self.parseConfig(try await fetch(url, ttl: 86_400 * 7)) }
+        do { return try Self.parseConfig(try await fetch(url, ttl: 86_400 * 7, repo: repo)) }
         catch HubError.http(404, _) { return nil }   // GGUF repos usually have none
     }
 
     /// Search hit → downloadable spec (repo detail + config.json, two cached requests).
     public func resolve(_ repoId: String, ggufFile: File? = nil) async throws -> ModelSpec {
         let r = try await repo(repoId)
-        if r.gated { throw HubError.gated(repoId) }
+        if r.gated { throw denied(repoId) }
         let c = r.kind == .mlx || r.files.contains { $0.path == "config.json" } ? try await config(repoId) : nil
         return try Self.spec(for: r, config: c, ggufFile: ggufFile)
     }
