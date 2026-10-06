@@ -219,7 +219,7 @@ enum VisionPrompt {
             switch m.role {
             case .user:
                 if m.hasToolResult {
-                    for r in m.toolResults { out.append(.tool(r.content, id: r.toolUseId, name: r.name)) }
+                    for r in m.toolResults { out.append(.tool(r.promptContent, id: r.toolUseId, name: r.name)) }
                 } else {
                     out.append(.user(m.text, images: m.images.compactMap(image)))
                 }

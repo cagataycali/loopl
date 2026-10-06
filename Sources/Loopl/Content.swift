@@ -70,6 +70,34 @@ public struct ToolResult: Sendable, Hashable, Codable, Identifiable {
     public static func error(_ toolUse: ToolUse, _ message: String, durationMs: Double = 0) -> ToolResult {
         ToolResult(toolUseId: toolUse.toolUseId, name: toolUse.name, status: .error, content: message, durationMs: durationMs)
     }
+
+    // MARK: what the model reads
+
+    /// The marker every rendered error result starts with. No chat template renders
+    /// `status` (Qwen3/Qwen3.5/Gemma/Llama templates print the tool message's `content`
+    /// only, and so do loopl's `<tool_response>` fold and the Apple FM transcript) — so
+    /// the word has to be *in* the text the model sees, or a small model cannot tell a
+    /// failed call from a result and asks for the same thing again.
+    public static let errorPrefix = "ERROR: "
+    /// The one-line instruction appended to argument/validation errors.
+    public static let retryHint = "Fix the arguments and call the tool again, or answer the user without it."
+
+    /// The text handed to the model for this result — identical to `content` for a
+    /// success; for an error it begins with `ERROR: ` exactly once (a leading
+    /// "Error:"/"error:" is normalised, nothing else is touched). Every runtime's
+    /// prompt path renders tool results through this, never through `content` directly.
+    public var promptContent: String {
+        guard status == .error else { return content }
+        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = trimmed.lowercased()
+        let body: String
+        if lower.hasPrefix("error:") {
+            body = String(trimmed.dropFirst("error:".count)).trimmingCharacters(in: .whitespaces)
+        } else {
+            body = trimmed
+        }
+        return Self.errorPrefix + (body.isEmpty ? "the tool failed without a message" : body)
+    }
 }
 
 /// Strands `ContentBlock.image` (`{"image": {"format", "source": {"bytes"}}}`): an
@@ -212,7 +240,7 @@ extension Message {
         switch role {
         case .user:
             if hasToolResult {
-                return toolResults.map { r in ["role": "tool", "content": r.content, "tool_call_id": r.toolUseId, "name": r.name] }
+                return toolResults.map { r in ["role": "tool", "content": r.promptContent, "tool_call_id": r.toolUseId, "name": r.name] }
             }
             return [["role": "user", "content": text]]
         case .assistant:

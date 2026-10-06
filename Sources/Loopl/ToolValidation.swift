@@ -72,7 +72,7 @@ public enum ToolValidation {
                 valid.append(fixed)
             case .invalid(let complaint):
                 log.debug("rejected tool call \(use.name, privacy: .public) \(JSONValue.object(use.input).compact, privacy: .public): \(complaint, privacy: .public)")
-                results.append(.error(use, "Error: \(complaint)"))
+                results.append(.error(use, "Error: \(complaint)\n\(ToolResult.retryHint)"))
             }
         }
         return Outcome(valid: valid, results: results)
