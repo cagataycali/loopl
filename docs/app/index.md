@@ -9,33 +9,16 @@ hide:
 
 Free, no sign-in, no analytics. The first launch fetches a small model; from then on you talk to an agent that uses the phone — with the network off if you like.
 
-[TestFlight — App Store listing pending](https://github.com/cagataycali/loopl/releases){ .md-button .md-button--primary } [Build from source](https://github.com/cagataycali/loopl){ .md-button }
+<div class="l-actions l-actions--page"><a class="l-btn l-btn--ink l-btn--tf" href="https://testflight.apple.com/join/uUNjfzW9">Get it on TestFlight</a><a class="l-link" href="https://github.com/cagataycali/loopl">Build from source</a></div>
+<p class="l-micro">Public beta · iOS 18+ · the App Store listing follows the 1.0 review.</p>
 
-<div class="l-shots" markdown>
-<figure markdown>
-![Ready — the model is loaded, everything runs on this device](../assets/app/01-hero.png){ loading=lazy }
-<figcaption>Ready, on this device.</figcaption>
-</figure>
-<figure markdown>
-![Streaming an answer with Markdown and a Swift code block](../assets/app/02-streaming.png){ loading=lazy }
-<figcaption>Streaming, Markdown, code.</figcaption>
-</figure>
-<figure markdown>
-![Two tool calls, expanded to show arguments and results](../assets/app/03-tool.png){ loading=lazy }
-<figcaption>Tool rows open to arguments and results.</figcaption>
-</figure>
-<figure markdown>
-![The model list](../assets/app/04-models.png){ loading=lazy }
-<figcaption>Any public MLX or GGUF repo.</figcaption>
-</figure>
-<figure markdown>
-![Offline mode](../assets/app/05-offline.png){ loading=lazy }
-<figcaption>Offline mode refuses every network call.</figcaption>
-</figure>
-<figure markdown>
-![Settings](../assets/app/06-settings.png){ loading=lazy }
-<figcaption>No token, no account, no cap.</figcaption>
-</figure>
+<div class="l-shots l-shots--v2">
+<figure class="l-shot"><div class="l-phone l-phone--mini" aria-hidden="true"><div class="l-phone__screen"><picture><source srcset="../assets/app2/offline-dark.webp" type="image/webp" media="(prefers-color-scheme: dark)"><source srcset="../assets/app2/offline-dark.png" media="(prefers-color-scheme: dark)"><source srcset="../assets/app2/offline-light.webp" type="image/webp"><img src="../assets/app2/offline-light.png" alt="The chat screen in airplane mode: the model is ready, everything runs on this device" width="393" height="852" loading="lazy" decoding="async"></picture></div></div><figcaption>Ready, offline, on this device.</figcaption></figure>
+<figure class="l-shot"><div class="l-phone l-phone--mini" aria-hidden="true"><div class="l-phone__screen"><picture><source srcset="../assets/app2/tool-dark.webp" type="image/webp" media="(prefers-color-scheme: dark)"><source srcset="../assets/app2/tool-dark.png" media="(prefers-color-scheme: dark)"><source srcset="../assets/app2/tool-light.webp" type="image/webp"><img src="../assets/app2/tool-light.png" alt="Two tool rows, current_time and calculator, expanded to arguments and results" width="393" height="852" loading="lazy" decoding="async"></picture></div></div><figcaption>Tool rows open to arguments and results.</figcaption></figure>
+<figure class="l-shot"><div class="l-phone l-phone--mini" aria-hidden="true"><div class="l-phone__screen"><picture><source srcset="../assets/app2/approval-dark.webp" type="image/webp" media="(prefers-color-scheme: dark)"><source srcset="../assets/app2/approval-dark.png" media="(prefers-color-scheme: dark)"><source srcset="../assets/app2/approval-light.webp" type="image/webp"><img src="../assets/app2/approval-light.png" alt="An approval card for a POST request with Approve, Deny and Edit" width="393" height="852" loading="lazy" decoding="async"></picture></div></div><figcaption>Writes ask first. Deny, and the model is told.</figcaption></figure>
+<figure class="l-shot"><div class="l-phone l-phone--mini" aria-hidden="true"><div class="l-phone__screen"><picture><source srcset="../assets/app2/vision-dark.webp" type="image/webp" media="(prefers-color-scheme: dark)"><source srcset="../assets/app2/vision-dark.png" media="(prefers-color-scheme: dark)"><source srcset="../assets/app2/vision-light.webp" type="image/webp"><img src="../assets/app2/vision-light.png" alt="A photo of shapes described by a vision model, then a calculator call" width="393" height="852" loading="lazy" decoding="async"></picture></div></div><figcaption>Photos go to vision models.</figcaption></figure>
+<figure class="l-shot"><div class="l-phone l-phone--mini" aria-hidden="true"><div class="l-phone__screen"><picture><source srcset="../assets/app2/audio-dark.webp" type="image/webp" media="(prefers-color-scheme: dark)"><source srcset="../assets/app2/audio-dark.png" media="(prefers-color-scheme: dark)"><source srcset="../assets/app2/audio-light.webp" type="image/webp"><img src="../assets/app2/audio-light.png" alt="A recorded take in the composer transcribed by the transcribe tool" width="393" height="852" loading="lazy" decoding="async"></picture></div></div><figcaption>Record a take; the model calls transcribe.</figcaption></figure>
+<figure class="l-shot"><div class="l-phone l-phone--mini" aria-hidden="true"><div class="l-phone__screen"><picture><source srcset="../assets/app2/models-dark.webp" type="image/webp" media="(prefers-color-scheme: dark)"><source srcset="../assets/app2/models-dark.png" media="(prefers-color-scheme: dark)"><source srcset="../assets/app2/models-light.webp" type="image/webp"><img src="../assets/app2/models-light.png" alt="The Models tab: Browse Hugging Face, Train your own, Mine, Apple Intelligence, Qwen3 downloading" width="393" height="852" loading="lazy" decoding="async"></picture></div></div><figcaption>Any public repo, your private ones, or Apple's model.</figcaption></figure>
 </div>
 
 | | |

@@ -452,3 +452,14 @@ html.l-js .l-reveal.is-on { opacity: 1; transform: none; }
 .l-end--v2 h2 { max-width: 22ch; margin: 0 auto !important; }
 .l-end--v2 .l-actions { justify-content: center; margin-top: 1.8rem; }
 .l-actions--center { justify-content: center; }
+
+/* docs pages: real captures in small frames + the same CTA */
+.l-actions--page { margin: 1.4rem 0 0; }
+.md-typeset .l-actions--page + .l-micro { margin-top: .7rem !important; }
+.l-shots--v2 { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2rem 1.6rem; margin: 2.6rem 0 2.8rem; }
+.l-shots--v2 .l-shot { margin: 0 !important; width: 100% !important; min-width: 0; display: block; }
+.l-shots--v2 .l-phone--mini { width: min(100%, 220px); margin: 0 auto; box-shadow: 0 0 0 1px #2a2a2f, 0 0 0 5px #0d0d10, 0 0 0 6px #30303a, 0 24px 48px -24px rgba(0,0,0,.6); }
+[data-md-color-scheme="default"] .l-shots--v2 .l-phone--mini { box-shadow: 0 0 0 1px #8e8e96, 0 0 0 5px #1d1d22, 0 0 0 6px #a3a3ab, 0 24px 48px -24px rgba(0,0,0,.3); }
+.l-shots--v2 .l-phone--mini::after { display: none; }
+.l-shots--v2 figcaption { font-style: normal; font-size: .64rem; color: var(--l-ink-2); margin: .9rem auto 0; text-align: center; max-width: 24ch; }
+@media (max-width: 44em) { .l-shots--v2 { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.6rem 1rem; } .l-shots--v2 .l-phone--mini { width: min(100%, 170px); } }
