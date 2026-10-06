@@ -61,6 +61,9 @@ enum DesignFixture {
         case "history":
             // Share to Hugging Face: three archived conversations (one with tool calls, one plain, one whose
             // only tool row never finished — the review sheet shows that one as skipped). Chat stays empty.
+            // `--design-signed-out` forgets the Hugging Face token first (the sheet's token step is reachable
+            // only when there is none; a previous fixture run may have stored one).
+            if CommandLine.arguments.contains("--design-signed-out") { try? HFAccount.shared.clear() }
             seedHistory(engine, spec: spec)
         case "approval":
             t.user("Post a note to my notes API saying the build is green.")

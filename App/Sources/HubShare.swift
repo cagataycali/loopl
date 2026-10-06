@@ -154,6 +154,17 @@ final class HubShare {
             } else {
                 files.append(.init(path: "README.md", text: ConversationExport.readme(repo: repo, shards: [shard.path], rows: shard.records.count, appVersion: appVersion)))
             }
+            #if DEBUG
+            // Proof hook (simulator runs): keep the exact bytes that go up, so the lane can diff them against the Hub.
+            if let dir = ProcessInfo.processInfo.environment["LOOPL_EXPORT_DIR"], !dir.isEmpty {
+                let root = URL(fileURLWithPath: dir)
+                for f in files {
+                    let url = root.appendingPathComponent(f.path)
+                    try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    try? f.data.write(to: url)
+                }
+            }
+            #endif
             stage = .pushing("Uploading \(ByteSize.label(Int64(shard.byteCount)))…")
             let result = try await hub.commit(repo: repo, type: .dataset, summary: "loopl \(appVersion): share \(shard.records.count) conversation\(shard.records.count == 1 ? "" : "s")",
                                               description: "Pushed from the loopl app (Share to Hugging Face). Redaction: images \(redaction.stripImages ? "stripped" : "kept"), tool results \(redaction.stripToolResults ? "stripped" : "kept"), URLs \(redaction.anonymiseURLs ? "anonymised" : "kept").",

@@ -6,7 +6,8 @@ import XCTest
 ///
 /// `testSharePushesForReal` pushes to a PRIVATE test dataset when the runner passes a Hugging Face write
 /// token (`TEST_RUNNER_LOOPL_HF_TOKEN`, which xcodebuild forwards to the app as `LOOPL_HF_TOKEN`); it is
-/// skipped otherwise, so CI stays offline. Target dataset: `TEST_RUNNER_LOOPL_HF_SHARE_REPO`
+/// skipped otherwise, so CI stays offline. (A UI-test runner does not receive `TEST_RUNNER_*` variables — on a
+/// simulator set it with `xcrun simctl spawn <udid> launchctl setenv LOOPL_HF_TOKEN hf_…` before the run.) Target dataset: `TEST_RUNNER_LOOPL_HF_SHARE_REPO`
 /// (bare name, default `loopl-app-conversations-test`) — creating it a second time is a 409 the app treats
 /// as "append", exactly the second-share path.
 final class HubShareUITests: XCTestCase {
@@ -21,7 +22,7 @@ final class HubShareUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--design-fixture", "history"]
         if signedIn, let token { app.launchEnvironment["LOOPL_HF_TOKEN"] = token }
-        else { app.launchEnvironment["LOOPL_HF_TOKEN"] = "" }
+        else { app.launchEnvironment["LOOPL_HF_TOKEN"] = ""; app.launchArguments.append("--design-signed-out") }
         app.launch()
         return app
     }
@@ -93,9 +94,8 @@ final class HubShareUITests: XCTestCase {
         let name = app.textFields["hubshare.repoName"]
         XCTAssertTrue(name.waitForExistence(timeout: 5))
         name.tap()
-        if let current = name.value as? String, !current.isEmpty, current != "loopl-conversations" {
-            name.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count + 2))
-        }
+        // The default name is real text (not just a placeholder) — clear it; extra deletes on an empty field are no-ops.
+        name.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 48))
         name.typeText(repoName)
         app.keyboards.buttons["Return"].firstMatch.exists ? app.keyboards.buttons["Return"].firstMatch.tap() : ()
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "/\(repoName)")).firstMatch.waitForExistence(timeout: 5), "repository line shows owner/\(repoName)")
@@ -105,7 +105,7 @@ final class HubShareUITests: XCTestCase {
         XCTAssertTrue(shared.waitForExistence(timeout: 90), "push finished")
         let url = app.staticTexts["hubshare.doneURL"].firstMatch
         XCTAssertTrue(url.exists)
-        let link = (url.value as? String) ?? url.label
+        let link = url.label.isEmpty ? ((url.value as? String) ?? "") : url.label
         let a = XCTAttachment(string: "DONE_URL \(link)\n"); a.name = "done-url"; a.lifetime = .keepAlways; add(a)
         shot("07-shared")
         app.buttons["hubshare.close"].firstMatch.tap()
