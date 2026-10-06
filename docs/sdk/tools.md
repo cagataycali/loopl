@@ -82,6 +82,8 @@ let tools: [any Tool] = AppleTools.available   // what this device can do right 
 _ = try OpenAppTool.parse(["url": "shortcuts://run-shortcut?name=Log%20Water", "params": ["input": "text", "text": "500 ml"]])
 ```
 
+A recording reaches `transcribe` as a line in the user's message, not as hidden audio: `AudioAttachmentMarker` (LooplUI) writes `[audio attached: <path> (<s> s) — call transcribe with this path to hear it]` and `AudioAttachmentMarker.split(_:)` reads it back for the chip. The model chooses to listen.
+
 `open_app` merges `params` into the link's query string, so the next app starts with context; `fallback_url` opens when the app is missing.
 
 ## Built in
@@ -98,5 +100,7 @@ _ = try OpenAppTool.parse(["url": "shortcuts://run-shortcut?name=Log%20Water", "
 - Small models write calls in many dialects. `ToolCallParser` reads them all: `{"name", "arguments"}`, flat calls, `<tool_call>` JSON, fenced JSON, Llama's `<|python_tag|>`, the Qwen XML `<function=…>` form.
 - `ToolValidation` repairs what it safely can — quoted numbers, `uri` for `url`, a bare value into the one missing field — and refuses the rest with an example of the right shape, so the model can correct itself.
 - `ToolCallStreamGate` keeps raw call JSON out of the visible text.
+- A failure is a result, not a retry rule. A thrown `ToolError`, a refused argument, an HTTP 4xx/5xx or an unknown tool name (`Unknown tool: X. Available tools: …`) comes back as `ToolResult.error`; the model reads it as `ERROR: <message>` (`ToolResult.promptContent`) and decides — call again with better arguments, or answer. There is no repeat heuristic in the loop.
+- On MLX, tool specs reach the chat template in the key order the models were trained on (`type`, `function`, `name`, `description`, `parameters`), not alphabetically.
 - All calls in a turn run concurrently; pass `SequentialToolExecutor` to serialise.
 - Every event of one call carries the same `toolUseId`, so a UI row can follow it from first byte to result.
