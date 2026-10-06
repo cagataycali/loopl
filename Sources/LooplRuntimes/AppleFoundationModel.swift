@@ -17,6 +17,8 @@ import Loopl
 /// on plain text.
 public actor AppleFoundationModel: Model {
     public nonisolated let kind: RuntimeKind = .appleFM
+    /// Apple Foundation Models is a fixed 4096-token window (no config to read).
+    public nonisolated static var contextCeiling: Int { 4096 }
     public private(set) var loadedModelId: String?
     public private(set) var params = GenerationParams()
     private nonisolated let factory: any AppleFMSessionFactory

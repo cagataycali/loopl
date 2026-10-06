@@ -31,6 +31,10 @@ public struct EventLoopMetrics: Sendable, Hashable, Codable {
     public var toolCallCount = 0
     public var accumulatedUsage = Usage()
     public var accumulatedLatencyMs: Double = 0
+    /// How many times a `ContextWindowOverflowError` was recovered by reducing
+    /// context in this run (mirrors the maxTokens recovery; capped by
+    /// `Agent.maxContextReductions`).
+    public var contextReductionCount = 0
     /// The last runtime report (tok/s, TTFT, context) — for the debug sheet.
     public var last = Metrics()
     public init() {}
@@ -227,16 +231,33 @@ public actor Agent {
 
     // MARK: Strands `_execute_event_loop_cycle` (overflow → reduce → retry)
 
-    private func executeEventLoopCycle(_ yield: @Sendable @escaping (AgentEvent) -> Void) async throws -> AgentResult {
+    private func executeEventLoopCycle(_ yield: @Sendable @escaping (AgentEvent) -> Void,
+                                       contextReductionAttempt: Int = 0) async throws -> AgentResult {
         do {
             return try await eventLoopCycle(yield)
         } catch let overflow as ContextWindowOverflowError {
+            // Same shape as the maxTokens recovery: take the runtime's refusal,
+            // repair the history, try again — once. A second overflow after a
+            // successful reduction means the prompt cannot be made to fit, and
+            // the caller gets a clear error instead of an endless retry.
+            guard contextReductionAttempt < Self.maxContextReductions else {
+                let detail = overflow.errorDescription ?? "context window exceeded"
+                let message = "\(detail) — context was reduced \(contextReductionAttempt) time(s) and still does not fit the model's window"
+                yield(.forceStop(message))
+                throw ContextWindowOverflowError(message)
+            }
             var msgs = messages
-            try conversationManager.reduceContext(&msgs, error: overflow)
+            try conversationManager.reduceContext(&msgs, error: overflow)   // throws if nothing can be removed
             messages = msgs
-            return try await executeEventLoopCycle(yield)
+            eventLoopMetrics.contextReductionCount += 1
+            return try await executeEventLoopCycle(yield, contextReductionAttempt: contextReductionAttempt + 1)
         }
     }
+
+    /// How many times one run may recover from a context-window overflow by
+    /// reducing context and retrying (Strands retries the reduced prompt; on
+    /// a 4096-token runtime one reduction is enough or nothing will be).
+    public static let maxContextReductions = 1
 
     // MARK: Strands `event_loop_cycle`
 
@@ -274,7 +295,7 @@ public actor Agent {
         while true {
             try Task.checkCancellation()
             let specs = tools.map(\.toolSpec)
-            let contextWindow = await model.params.contextLength
+            let contextWindow = await model.contextWindow     // per-runtime: Apple FM 4096, MLX/GGUF their real ctx
             var before = BeforeModelCallEvent(messages: messages, systemPrompt: systemPrompt,
                                               projectedInputTokens: TokenEstimator.estimate(messages: messages, systemPrompt: systemPrompt, toolSpecs: specs),
                                               contextWindow: contextWindow)
