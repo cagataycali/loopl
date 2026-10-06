@@ -303,6 +303,9 @@ html.l-js .l-stage[data-typing] .l-caret { opacity: 1; animation: l-blink 1s ste
 .l-tools { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: 1px solid var(--l-line); border-left: 1px solid var(--l-line); }
 .l-tool { padding: 1.1rem 1.1rem 1.2rem; border-right: 1px solid var(--l-line); border-bottom: 1px solid var(--l-line); transition: background-color .3s var(--l-ease); }
 .l-tool:hover { background: var(--l-raise); }
+.l-tool--yours { text-decoration: none !important; color: inherit !important; border-left: 0; }
+.l-tool--yours code { color: var(--l-flame); }
+.l-tool--yours:hover p { color: var(--l-ink); }
 .l-tool code { border: 0; padding: 0; font-size: .64rem; color: var(--l-ink); background: transparent; }
 .l-tool p { margin: .35rem 0 0; font-size: .7rem; color: var(--l-ink-2); line-height: 1.5; }
 .l-tool em { font-style: normal; font-size: .56rem; color: var(--l-flame); margin-left: .4rem; letter-spacing: .02em; }
@@ -423,7 +426,7 @@ html.l-js .l-reveal.is-on { opacity: 1; transform: none; }
 .l-phone__screen figure, .l-phone__screen picture { margin: 0 !important; padding: 0; width: 100% !important; height: 100% !important; max-width: none !important; display: block; }
 .l-phone__screen img { max-width: none !important; }
 .l-hero--v2 .l-phone--hero { width: min(78vw, 300px); }
-@media (min-width: 68em) { .l-hero--v2 { grid-template-columns: minmax(0, 1.12fr) minmax(0, .88fr); } .l-hero--v2 .l-phone--hero { width: min(100%, 330px); } }
+@media (min-width: 68em) { .l-hero--v2 { grid-template-columns: minmax(0, 1.12fr) minmax(0, .88fr); } .l-hero--v2 .l-phone--hero { width: min(100%, 330px, calc((100vh - 11rem) * .4613)); min-width: 240px; } }  /* fits the fold: 393/852 = .4613 */
 @media (prefers-reduced-motion: no-preference) {
   .l-js .l-hero--v2 .l-phone--hero { animation: l-rise-x .9s var(--l-ease) both; }
   .l-js .l-hero--v2 .l-hero__text > * { animation: l-rise .8s var(--l-ease) both; }

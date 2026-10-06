@@ -103,12 +103,13 @@ hide:
 <div class="l-tool"><code>remember</code> · <code>recall</code><p>Notes the agent keeps between chats.</p></div>
 <div class="l-tool"><code>http</code><em>asks first</em><p>Any HTTPS request, behind a human approval card.</p></div>
 <div class="l-tool"><code>calculator</code> · <code>current_time</code><p>Exact arithmetic, any time zone.</p></div>
+<a class="l-tool l-tool--yours" href="#your-own-tool"><code>your_tool</code><p>A Swift struct: name, schema, async function. ↓</p></a>
 </div>
 </section>
 
 <section class="l-sec" markdown>
 <div class="l-sec__head l-reveal">
-<div><span class="l-num">03 — Your own</span><h2>A tool is a Swift struct.</h2></div>
+<div><span class="l-num">03 — Your own</span><h2 id="your-own-tool">A tool is a Swift struct.</h2></div>
 <p>A name, a description, a JSON schema and an async function. Hand it to an Agent next to the built-ins.</p>
 </div>
 <div class="l-split l-reveal" markdown>
