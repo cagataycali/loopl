@@ -4,6 +4,7 @@ import LooplUI
 
 @main
 struct LooplApp: App {
+    @UIApplicationDelegateAdaptor(LooplAppDelegate.self) private var appDelegate   // ⌘↩ from inside the composer (KeyCommands.swift)
     @State private var settings = AppSettings()
     @State private var store = ModelStore()
     @State private var engine: Engine?
@@ -60,12 +61,13 @@ struct RootView: View {
     @Bindable var store: ModelStore
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var selection: Pane = DesignFixture.initialPane
+    @State private var columns: NavigationSplitViewVisibility = .automatic
     enum Pane: Hashable { case chat, models, settings }
 
     var body: some View {
         if sizeClass == .regular {
             // iPad / landscape: two columns — history in the sidebar, the conversation as the detail.
-            NavigationSplitView {
+            NavigationSplitView(columnVisibility: $columns) {
                 HistoryList(engine: engine, selection: $selection)
             } detail: {
                 switch selection {
@@ -73,6 +75,14 @@ struct RootView: View {
                 case .models: ModelsView(engine: engine, store: store, settings: settings)
                 case .settings: SettingsView(engine: engine, settings: settings, store: store)
                 }
+            }
+            // ⌘Y shows / hides the History sidebar (on iPhone the same chord opens the History sheet — ChatView).
+            .background {
+                // Toggle on the SHOWN state, not on `.detailOnly`: the initial value is `.automatic` (sidebar hidden in
+                // portrait), so "== .detailOnly ? .all : .detailOnly" wasted the first press re-hiding a hidden sidebar.
+                Button("History") { withAnimation { columns = columns == .all ? .detailOnly : .all } }
+                    .keyboardShortcut("y", modifiers: .command)
+                    .opacity(0).frame(width: 0, height: 0).accessibilityHidden(true)
             }
         } else {
             TabView(selection: $selection) {

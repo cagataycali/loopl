@@ -73,6 +73,15 @@ struct ChatView: View {
                 // The edited row left the transcript (saved, or the thread was cut under it): no stale editor.
                 if let editing, engine.transcript.index(of: editing) == nil { self.editing = nil }
             }
+            .onAppear {
+                #if DEBUG
+                // Screenshot fixtures: the in-place editor on the last user row / History (+ share) already open.
+                if DesignFixture.editing, editing == nil {
+                    editing = engine.transcript.items.last { if case .user = $0.kind { return true }; return false }?.id
+                }
+                if DesignFixture.share != nil { showHistory = true }
+                #endif
+            }
             .animation(LooplDesign.Motion.faded(LooplDesign.Motion.spring, reduceMotion), value: engine.lastError)
             .navigationTitle(engine.loadedModel?.name ?? "loopl")
             .navigationBarTitleDisplayMode(.inline)
@@ -86,7 +95,9 @@ struct ChatView: View {
                 }
                 if !inSplit {
                     ToolbarItem(placement: .topBarLeading) {
-                        Button { LooplDesign.haptic(); showHistory = true } label: { Image(systemName: LooplDesign.iconHistory) }
+                        // Label (icon-only) rather than a bare Image: the iPad ⌘-hold shortcut list shows the title.
+                        Button { LooplDesign.haptic(); showHistory = true } label: { Label("History", systemImage: LooplDesign.iconHistory).labelStyle(.iconOnly) }
+                            .keyboardShortcut("y", modifiers: .command)   // ⌘Y = History (Safari's chord; ⌘⇧H is the system Home on iPad)
                             .accessibilityLabel("History")
                             .matchedTransitionSource(id: "history", in: zoom)
                     }
@@ -117,7 +128,8 @@ struct ChatView: View {
                                     .presentationCompactAdaptation(.popover)
                                 }
                         }
-                        Button { LooplDesign.haptic(); engine.newConversation() } label: { Image(systemName: "square.and.pencil") }
+                        Button { LooplDesign.haptic(); engine.newConversation() } label: { Label("New conversation", systemImage: "square.and.pencil").labelStyle(.iconOnly) }
+                            .keyboardShortcut("n", modifiers: .command)
                             .disabled(engine.transcript.items.isEmpty || engine.isGenerating)
                             .accessibilityLabel("New conversation")
                     }
@@ -459,6 +471,9 @@ struct Composer: View {
                 .focused(focused)
                 .submitLabel(.send)
                 .onSubmit { if sendable { send() } }
+                // ⌘↩ while typing: the field (a UITextView) swallows the chord, so it arrives via LooplAppDelegate's
+                // priority key command; a plain Return still inserts a newline.
+                .onReceive(NotificationCenter.default.publisher(for: .looplSendShortcut)) { _ in if sendable { send() } }
                 .accessibilityLabel("Message")
             Group {
                 if generating {
@@ -466,6 +481,9 @@ struct Composer: View {
                         Image(systemName: "stop.fill").font(.callout.weight(.bold)).frame(width: side, height: side)
                             .background(Color.primary.opacity(0.85), in: Circle()).foregroundStyle(Color(.systemBackground))
                     }
+                    .keyboardShortcut(".", modifiers: .command)
+                    // UIKit delivers ⌘. as Escape before SwiftUI sees the chord — this companion catches it (and plain Esc).
+                    .background { Button("Stop", action: stop).keyboardShortcut(.escape, modifiers: []).opacity(0).accessibilityHidden(true) }
                     .accessibilityLabel("Stop generating")
                     .transition(.scale.combined(with: .opacity))
                 } else {
@@ -474,6 +492,7 @@ struct Composer: View {
                             .background(sendable ? LooplDesign.accent : Color(.tertiarySystemFill), in: Circle())
                             .foregroundStyle(sendable ? Color.white : Color.secondary)
                     }
+                    .keyboardShortcut(.return, modifiers: .command)
                     .disabled(!sendable)
                     .accessibilityLabel("Send")
                     .transition(.scale.combined(with: .opacity))

@@ -24,6 +24,13 @@ public final class HFSession {
         }
     }
 
+    #if DEBUG
+    /// Screenshot fixture (`--design-mine`): a signed-in look without a token or network. Never persisted.
+    public func designIdentity(name: String, fullname: String?) {
+        identity = Identity(name: name, fullname: fullname, type: "user", role: "read", tokenName: "loopl", fineGrainedScopes: [], avatarURL: nil)
+    }
+    #endif
+
     public var isSignedIn: Bool { account.isSignedIn }
     public var token: String? { account.token }
     public var provider: HFTokenProvider { account.provider }

@@ -14,6 +14,10 @@ One tab, four sources. Every row says its size, its context, whether it sees pic
 <figure class="l-shot"><div class="l-phone l-phone--mini" aria-hidden="true"><div class="l-phone__screen"><picture><source srcset="../../assets/app2/vision-dark.webp" type="image/webp" media="(prefers-color-scheme: dark)"><source srcset="../../assets/app2/vision-dark.png" media="(prefers-color-scheme: dark)"><source srcset="../../assets/app2/vision-light.webp" type="image/webp"><img src="../../assets/app2/vision-light.png" alt="A photo of shapes described by a vision model, then a calculator call" width="393" height="852" loading="lazy" decoding="async"></picture></div></div><figcaption>A vision model gets the photo button.</figcaption></figure>
 </div>
 
+## The loopl collection
+
+The first section of the tab is the [loopl collection on Hugging Face](https://huggingface.co/collections/cagataydev/loopl-on-device-agents-swift-6ac51395b13a9c41d4932eaf), in the curator's order: the MLX 4‑bit builds (with the **vision** badge read from their files), the GGUF builds under one disclosure, each with the collection's note as its subtitle — quiz score against the base model, tool-call results. Tap a row for the same sheet Browse uses, download once, chat. The list refreshes from the Hub once per launch and on pull; offline it shows the last copy (the footer says when it was updated), and a fresh install offline still lists the models from a snapshot shipped with the app. Datasets, bf16 merges and LoRA adapters in the collection are not runnable on the phone and are not shown.
+
 ## First launch
 
 Three cards — **Qwen3 0.6B** (fastest), **Qwen3.5 0.8B** (small, sees pictures), **Qwen3.5 2B** (smartest of the three, about 3 GB of memory). The line under them says what the download costs on the network you are on (Wi‑Fi, cellular, offline). On iOS 26 with Apple Intelligence on, *Use Apple Intelligence instead* skips the download. Skippable; the download carries on in the background.

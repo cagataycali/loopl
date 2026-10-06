@@ -32,6 +32,10 @@ Free, no sign-in, no analytics. On first launch you pick a model (three cards, s
 
 Eleven tools — time, arithmetic, notes, `http`, and the iPhone's own: images, voice, transcription, translation, Vision, flashlight, haptics, other apps. Writes ask first. → [Tools](tools.md)
 
+## Keyboard
+
+With a hardware keyboard — iPad, Mac, or an iPhone in a case with one — **⌘N** starts a new conversation, **⌘Y** shows History (the sidebar on iPad, the sheet on iPhone), **⌘.** or **Esc** stops an answer mid-stream, and **⌘↩** sends. Plain Return still makes a newline in the composer. Hold **⌘** on iPad to see the list.
+
 ## Requirements
 
 iOS 18+, 8 GB RAM recommended — the app checks memory and disk before a download. MLX needs a device; GGUF also runs on the simulator. Apple's model needs iOS 26 with Apple Intelligence on.

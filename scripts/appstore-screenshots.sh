@@ -33,15 +33,23 @@ if [ "${1:-}" != "--skip-build" ]; then
 fi
 APP="$DD/Build/Products/Debug-iphonesimulator/loopl.app"
 
-# scene → (fixture args, caption)
+# scene → (launch args after --skip-onboarding, caption). The story mirrors loopl.dev landing-v2; every scene is a DEBUG
+# DesignFixture (no model, no network). SD is a folder that stands in for a USB-C drive (`--storage-fixture`).
+SD=${SD:-/tmp/loopl}
 SCENES=(
-  "01-hero|empty|Runs on your iPhone. Nothing leaves it."
-  "02-streaming|streaming|Streams answers from a local model."
-  "03-tool|tool|Tools, inline. Tap a row for the details."
-  "04-models|empty --design-tab models|Any model on Hugging Face. Downloads once."
-  "05-offline|offline --design-tab chat|Airplane mode is a feature."
-  "06-settings|empty --design-tab settings|Only the settings that matter."
+  "01-tool|--design-fixture tool|Tools, inline. Tap a row for the details."
+  "02-vision|--design-fixture vision|Show it a photo. It sees, then it acts."
+  "03-approval|--design-fixture approval|Every request leaves with your approval."
+  "04-models|--design-fixture persona --design-local-vision --design-tab models --design-mine|Your Hugging Face models. Private ones too."
+  "05-audio|--design-fixture audio|Talk. The model calls transcribe itself."
+  "06-train|--design-fixture empty --design-tab models --design-train form|Train your own, on your conversations."
+  "07-share|--design-fixture history --design-share review|Your conversations → your private dataset."
+  "08-storage|--design-fixture empty --design-tab settings --design-settings storage --storage-fixture $SD|Models on a USB-C drive."
+  "09-edit|--design-fixture edit --design-editing|Hold a message to edit it."
+  "10-onboarding|--design-fixture onboarding --no-skip|Pick a model. Nothing leaves the phone."
 )
+# per-scene settle time (the audio scene writes a real recording first; storage copies a fake model)
+settle() { case "$1" in 05-audio|08-storage) echo 10;; 07-share|09-edit) echo 7;; *) echo 5;; esac; }
 
 shoot() { # udid size
   local ud=$1 size=$2 dir="$PWD/$OUT/$2"
@@ -50,17 +58,22 @@ shoot() { # udid size
   xcrun simctl bootstatus "$ud" -b >/dev/null
   xcrun simctl status_bar "$ud" override --time "9:41" --batteryState charged --batteryLevel 100 --wifiBars 3 --cellularBars 4 --operatorName "" >/dev/null 2>&1 || true
   xcrun simctl install "$ud" "$APP"
+  xcrun simctl ui "$ud" appearance "${APPEARANCE:-light}" >/dev/null 2>&1 || true
+  # the simulator's one-time "slide to type" keyboard tip would sit over the 09-edit keyboard
+  xcrun simctl spawn "$ud" defaults write com.apple.Preferences UIKeyboardDidShowContinuousPathIntroduction -bool true >/dev/null 2>&1 || true
+  mkdir -p "$SD"
   for s in "${SCENES[@]}"; do
     IFS='|' read -r name args caption <<<"$s"
     xcrun simctl terminate "$ud" technology.tiny.loopl 2>/dev/null || true
+    skip=--skip-onboarding; case "$args" in *--no-skip*) skip=""; args=${args//--no-skip/};; esac
     # shellcheck disable=SC2086
-    xcrun simctl launch "$ud" technology.tiny.loopl --design-fixture $args >/dev/null
-    sleep 4
+    xcrun simctl launch "$ud" technology.tiny.loopl $skip $args >/dev/null
+    sleep "$(settle "$name")"
     xcrun simctl io "$ud" screenshot "$dir/$name.png" >/dev/null
     echo "$dir/$name.png  $(magick identify -format '%wx%h' "$dir/$name.png" 2>/dev/null || sips -g pixelWidth -g pixelHeight "$dir/$name.png" | awk '/pixel/ {printf "%s ", $2}')"
   done
   xcrun simctl status_bar "$ud" clear >/dev/null 2>&1 || true
-  if command -v magick >/dev/null; then
+  if [ "${FRAMED:-0}" = 1 ] && command -v magick >/dev/null; then
     mkdir -p "$dir/framed"
     for s in "${SCENES[@]}"; do
       IFS='|' read -r name args caption <<<"$s"
