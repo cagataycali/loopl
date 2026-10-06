@@ -33,6 +33,26 @@ final class UXAuditUITests: XCTestCase {
         geom(app, name)
     }
 
+    /// Regression (not a capture — runs in CI): a five-line draft, keyboard dismissed by dragging the transcript.
+    /// With a LazyVStack transcript this froze the app in a layout loop (100 % main thread, every XCUI query timed out).
+    func testKeyboardDismissWithTallDraftDoesNotHangLayout() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--design-fixture", "vision", "--design-local-vision"]
+        app.launch()
+        let field = app.textViews["Message"].firstMatch.exists ? app.textViews["Message"].firstMatch : app.textFields["Message"].firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 15))
+        field.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 8))
+        field.typeText("Hello there — can you look at the picture I attached and tell me what the sign says, then convert the price to euros? Also remember that I prefer short answers. One more paragraph so the field reaches its maximum height and starts scrolling inside.")
+        let w = app.windows.firstMatch
+        w.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)).press(forDuration: 0.05, thenDragTo: w.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.9)))
+        // The app must answer queries within seconds afterwards (the hang made this take 30 s and fail).
+        let t0 = Date()
+        XCTAssertTrue(app.buttons["Send"].firstMatch.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.tabBars.firstMatch.waitForExistence(timeout: 10), "tab bar back after the keyboard")
+        XCTAssertLessThan(Date().timeIntervalSince(t0), 15, "layout loop: queries stalled")
+    }
+
     func testShootComposerMatrix() throws {
         guard let dir = ProcessInfo.processInfo.environment["LOOPL_UX_SHOTS"], !dir.isEmpty else { throw XCTSkip("captures only") }
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
@@ -41,6 +61,8 @@ final class UXAuditUITests: XCTestCase {
 
         let app = XCUIApplication()
         app.launchArguments = ["--design-fixture", scene, "--design-local-vision"] + extra
+        // LOOPL_UX_ORIENT=landscape rotates the device before launch (the whole matrix repeats sideways).
+        XCUIDevice.shared.orientation = ProcessInfo.processInfo.environment["LOOPL_UX_ORIENT"] == "landscape" ? .landscapeLeft : .portrait
         app.launch()
         let field = app.textViews["Message"].firstMatch.exists ? app.textViews["Message"].firstMatch : app.textFields["Message"].firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 15), "no composer")
