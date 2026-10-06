@@ -42,7 +42,10 @@ final class ModelsOrderUITests: XCTestCase {
         let storage = app.descendants(matching: .any).matching(identifier: "models-storage").firstMatch
         XCTAssertTrue(storage.waitForExistence(timeout: 5), "this iPhone's storage row")
         XCTAssertTrue(storage.label.contains("free"), storage.label)
-        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "models-storage-settings").firstMatch.exists, "the way to Settings › Storage")
+        // The rows below it realise as they scroll in (lazy List; the last one can sit under the floating tab bar).
+        let toSettings = app.descendants(matching: .any).matching(identifier: "models-storage-settings").firstMatch
+        for _ in 0..<4 where !toSettings.exists { app.swipeUp() }
+        XCTAssertTrue(toSettings.waitForExistence(timeout: 5), "the way to Settings › Storage")
         XCTAssertFalse(app.staticTexts["From Hugging Face"].exists)
         shoot(app, "models-order-storage")
     }
