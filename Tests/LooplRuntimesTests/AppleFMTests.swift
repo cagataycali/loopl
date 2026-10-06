@@ -44,12 +44,19 @@ final class AppleFMTests: XCTestCase {
         let reply: String
         let record: @Sendable (String) -> Void
         /// Yields cumulative snapshots, as `LanguageModelSession.streamResponse` does.
+        /// A reply written as "a\u{0}b\u{0}c" is replayed as those literal snapshots —
+        /// which is how a *non-monotonic* revision (snapshot n+1 is not a prefix extension
+        /// of snapshot n) gets into a test.
         func snapshots(prompt: String) -> AsyncThrowingStream<String, Error> {
             record(prompt)
             let reply = self.reply
             return AsyncThrowingStream { continuation in
-                var sofar = ""
-                for chunk in reply.chunked(8) { sofar += chunk; continuation.yield(sofar) }
+                if reply.contains("\u{0}") {
+                    for snap in reply.components(separatedBy: "\u{0}") { continuation.yield(snap) }
+                } else {
+                    var sofar = ""
+                    for chunk in reply.chunked(8) { sofar += chunk; continuation.yield(sofar) }
+                }
                 continuation.finish()
             }
         }
@@ -176,6 +183,80 @@ final class AppleFMTests: XCTestCase {
         XCTAssertEqual(result.stopReason, .endTurn)
         XCTAssertTrue(result.text.contains("03:29"), "got: \(result.text)")
         XCTAssertEqual(factory.promptCount, 3)
+    }
+
+    // MARK: - owner-required fixes (OWNER UPDATE 00:18Z)
+
+    /// (a) Prose that comes with a tool call must never be streamed as an answer: the tool
+    /// result does not exist yet, and the real answer arrives one cycle later. It is kept as
+    /// reasoning so nothing is lost and nothing is shown twice.
+    func testProseThatComesWithAToolCallIsHeldAsReasoningNotAnAnswer() async throws {
+        let tool = CountingTool()
+        let prose = "Let me check the clock for you."
+        let (agent, _) = makeAgent([prose + "\n" + Self.fencedCall, Self.answer], tool: tool)
+
+        let result = try await agent("what time is it in Istanbul?")
+
+        XCTAssertEqual(tool.calls, 1)
+        XCTAssertEqual(result.stopReason, .endTurn)
+        XCTAssertEqual(result.text, Self.answer)
+        let messages = await agent.messages
+        let toolTurn = try XCTUnwrap(messages.first { $0.role == .assistant && $0.hasToolUse })
+        XCTAssertEqual(toolTurn.text, "", "the prose must not be a text block in the tool turn")
+        XCTAssertTrue(toolTurn.reasoning.contains("check the clock"), "…it must survive as reasoning")
+        let answers = messages.filter { $0.role == .assistant && !$0.text.isEmpty }
+        XCTAssertEqual(answers.count, 1, "one answer only: \(answers.map(\.text))")
+    }
+
+    /// Prose with NO tool call is the answer and stays text.
+    func testProseWithoutAToolCallIsTheAnswer() async throws {
+        let tool = CountingTool()
+        let (agent, _) = makeAgent([Self.answer], tool: tool)
+        let result = try await agent("hello?")
+        XCTAssertEqual(tool.calls, 0)
+        XCTAssertEqual(result.text, Self.answer)
+        XCTAssertEqual(result.stopReason, .endTurn)
+    }
+
+    /// (c) The snapshot bug: `LanguageModelSession` may hand back a snapshot that does NOT
+    /// extend the previous one (the model revises). The old code skipped such a snapshot and
+    /// lost the text. Replace semantics: the newest snapshot is the answer.
+    func testNonPrefixSnapshotRevisionLosesNoText() async throws {
+        let tool = CountingTool()
+        // three literal snapshots; the 2nd and 3rd are NOT extensions of their predecessor
+        let script = "It is 3 AM\u{0}It is 03:29 in Istanbul\u{0}It is 6 October 2026 at 03:29 in Istanbul."
+        let (agent, _) = makeAgent([script], tool: tool)
+
+        let result = try await agent("what time is it in Istanbul?")
+
+        XCTAssertEqual(result.text, "It is 6 October 2026 at 03:29 in Istanbul.")
+        XCTAssertEqual(result.stopReason, .endTurn)
+    }
+
+    /// A revision that ends in a tool call must still be parsed as that call (nothing dropped).
+    func testNonPrefixSnapshotEndingInAToolCallStillCallsTheTool() async throws {
+        let tool = CountingTool()
+        let script = "I cannot tell the time.\u{0}" + Self.fencedCall
+        let (agent, _) = makeAgent([script, Self.answer], tool: tool)
+
+        let result = try await agent("what time is it in Istanbul?")
+
+        XCTAssertEqual(tool.calls, 1)
+        XCTAssertEqual(result.text, Self.answer)
+    }
+
+    /// (b) The answer-mode prompt restates the USER's question — not the assistant's own prose,
+    /// which is what a naive "last line of the transcript" rule picks up.
+    func testAnswerModeQuestionComesFromTheUserNotTheAssistantProse() {
+        let use = ToolUse(toolUseId: "t1", name: "current_time", input: [:])
+        let messages: [Message] = [
+            .user("what time is it in Istanbul?"),
+            Message(role: .assistant, content: [.text("Let me check the clock for you."), .toolUse(use)]),
+            .toolResults([ToolResult(toolUseId: "t1", name: "current_time", content: "03:29")]),
+        ]
+        let built = AppleFMPrompt.build(messages: messages, toolSpecs: [CountingTool().toolSpec], systemPrompt: nil)
+        XCTAssertEqual(built.mode, .answer)
+        XCTAssertTrue(built.prompt.contains("The user asked: what time is it in Istanbul?"), built.prompt)
     }
 
     // MARK: - the prompt rendering that caused it

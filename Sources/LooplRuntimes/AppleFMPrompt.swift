@@ -101,7 +101,7 @@ public enum AppleFMPrompt {
             if history.count > 1 {
                 out += history.dropLast().map(\.rendered).joined(separator: "\n") + "\n\n"
             }
-            let question = history.last.map(\.text) ?? ""
+            let question = history.last(where: { if case .user = $0 { return true }; return false })?.text ?? history.last?.text ?? ""
             out += "The user asked: \(question)\n\n"
             out += "Tools have already been run for you. Results:\n"
             out += results.map { "\($0.name) -> \($0.content)" }.joined(separator: "\n")
