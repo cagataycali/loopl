@@ -43,9 +43,9 @@ enum Onboarding {
     /// One line of plain language per pick; anything else falls back to the row's own notes.
     static func blurb(_ spec: ModelSpec) -> String {
         switch spec.id {
-        case "loopl-0.8b-4bit": "Smallest — quick answers and tools, sees pictures. Any recent iPhone."
-        case "loopl-2b-4bit": "The best balance of speed and quality on iPhone. Photos, tools, memory."
-        case "loopl-4b-4bit": "Most capable — needs a Pro-class iPhone (8 GB of memory)."
+        case "loopl-0.8b-4bit": "Smallest — quick answers and tools, sees pictures. Any recent \(LooplDesign.deviceName)."
+        case "loopl-2b-4bit": "The best balance of speed and quality on \(LooplDesign.deviceName). Photos, tools, memory."
+        case "loopl-4b-4bit": LooplDesign.deviceName == "iPhone" ? "Most capable — needs a Pro-class iPhone (8 GB of memory)." : "Most capable — needs 8 GB of memory (Pro-class \(LooplDesign.deviceName))."
         case "qwen3-0.6b-4bit": "Fastest. Chat, tools and quick answers — runs on any recent iPhone."
         case "qwen3.5-0.8b-4bit": "Small and sees pictures. Ask about a photo or a screenshot."
         case "qwen3.5-2b-4bit": "Smartest of the three. Photos + tools — needs about 3 GB of memory."
