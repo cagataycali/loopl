@@ -49,9 +49,9 @@ hide:
 <circle class="l-track" cx="210" cy="175" r="118" fill="none" stroke-width="1"/>
 <path id="ring-p" d="M210 57 A118 118 0 1 1 210 293 A118 118 0 1 1 210 57" fill="none" stroke="none"/>
 <circle class="l-spark" r="4"><animateMotion dur="3.6s" repeatCount="indefinite"><mpath href="#ring-p"/></animateMotion></circle>
-<rect class="l-node" x="160" y="40" width="100" height="34" rx="17" stroke-width="1"/>
+<rect class="l-node" x="160" y="40" width="100" height="34" rx="17" stroke-width="1"><animate attributeName="stroke-width" values="1;2.2;1;1" keyTimes="0;.06;.2;1" dur="3.6s" repeatCount="indefinite"/></rect>
 <text x="210" y="62" text-anchor="middle">model</text>
-<rect class="l-node" x="160" y="276" width="100" height="34" rx="17" stroke-width="1"/>
+<rect class="l-node" x="160" y="276" width="100" height="34" rx="17" stroke-width="1"><animate attributeName="stroke-width" values="1;2.2;1;1" keyTimes="0;.06;.2;1" dur="3.6s" begin="1.8s" repeatCount="indefinite"/></rect>
 <text x="210" y="298" text-anchor="middle">tools</text>
 <text class="l-sub" x="350" y="179" text-anchor="middle">calls</text>
 <text class="l-sub" x="70" y="179" text-anchor="middle">results</text>
