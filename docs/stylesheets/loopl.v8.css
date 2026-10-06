@@ -357,8 +357,13 @@ html.l-js .l-reveal.is-on { opacity: 1; transform: none; }
   .l-ring { max-width: 340px; }
   .l-phone { order: -1; }
 }
+@media (max-width: 21em) { .l-tools { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 30em) {
-  .l-tools { grid-template-columns: minmax(0, 1fr); }
+  .l-tool { padding: .9rem .8rem 1rem; }
+  .l-tool p { font-size: .64rem; }
+  .l-tool code { font-size: .58rem; }
+  .l-tool em { display: block; margin: .2rem 0 0; }
+  .md-typeset pre > code { font-size: .6rem; padding: 1em 1.1em; }
   .l-stats { grid-template-columns: minmax(0, 1fr); }
   .l-stat, .l-stat + .l-stat { padding: 1.3rem 0; border-left: 0; border-bottom: 1px solid var(--l-line); }
   .md-typeset h1 { font-size: 1.6rem; }
