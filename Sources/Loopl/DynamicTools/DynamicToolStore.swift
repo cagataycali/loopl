@@ -24,8 +24,11 @@ public actor DynamicToolStore {
     public let directory: URL
     public private(set) var records: [DynamicToolRecord] = []
     private var live: [String: any Tool] = [:]
-    /// Called (off the actor) after the set of live tools changed.
-    private var observers: [@Sendable ([any Tool]) -> Void] = []
+    /// AWAITED after the set of live tools changed — `create` does not return (so the tool result does not reach the model)
+    /// until the host has handed the running Agent its new tool list. MEASURED with loopl-2b: a fire-and-forget Task here
+    /// lost the race with the agent's next request in 4/4 runs — the model created `reverse_string`, was never offered it, and
+    /// reached for `calculator("loopl".reversed())` instead.
+    private var observers: [@Sendable ([any Tool]) async -> Void] = []
     /// Builtin names the agent may not shadow — the host sets this (Engine: every tool it offers).
     public private(set) var reserved: Set<String> = []
 
@@ -43,8 +46,8 @@ public actor DynamicToolStore {
     public var tools: [any Tool] { records.filter(\.status.isActive).compactMap { live[$0.name] } }
 
     public func setReserved(_ names: [String]) { reserved = Set(names.map(DynamicToolName.key)) }
-    public func onChange(_ f: @escaping @Sendable ([any Tool]) -> Void) { observers.append(f) }
-    private func notify() { let t = tools; for o in observers { o(t) } }
+    public func onChange(_ f: @escaping @Sendable ([any Tool]) async -> Void) { observers.append(f) }
+    private func notify() async { let t = tools; for o in observers { await o(t) } }
 
     public func source(of name: String) -> String? {
         guard let r = records.first(where: { $0.name == name }) else { return nil }
@@ -77,7 +80,7 @@ public actor DynamicToolStore {
     }
 
     /// `ToolCreator.remove`: delete the persisted source (the registry unregisters first).
-    public func remove(name: String) async throws { _ = try remove(name: name) as String }
+    public func remove(name: String) async throws { _ = try await remove(name: name) as String }
 
     /// Created tools saved on this device, restored at launch by the host.
     public func saved() async -> [(name: String, language: String)] { records.map { ($0.name, $0.language.rawValue) } }
@@ -104,7 +107,8 @@ public actor DynamicToolStore {
         }
         if reserved.contains(DynamicToolName.key(name)) { throw CreateError(message: "\"\(name)\" is a built-in tool name — pick another") }
         if let existing = records.first(where: { DynamicToolName.key($0.name) == DynamicToolName.key(name) }) {
-            throw CreateError(message: "a tool named \"\(existing.name)\" already exists — remove it first (manage_tools remove name=\(existing.name)) or pick another name")
+            let hint = existing.status.isActive ? "and is LIVE in your tool list — call `\(existing.name)` directly instead of creating it again" : "— remove it first (manage_tools remove name=\(existing.name)) or pick another name"
+            throw CreateError(message: "a tool named \"\(existing.name)\" already exists \(hint)")
         }
 
         var record = DynamicToolRecord(name: name, language: language, description: "", status: .saved(reason: ""))
@@ -112,12 +116,14 @@ public actor DynamicToolStore {
             let loaded = try await load(source: src, record: record)   // throws with the compiler's/engine's words
             record.description = loaded.description
             record.status = .active
-            try persist(record: record, source: src)
+            try persist(record: record, source: lastBuiltSource ?? src)
             live[name] = loaded
             records.append(record)
-            notify()
+            await notify()
             let where_ = language == .swift ? "compiled and loaded" : "loaded in JavaScriptCore"
-            return CreateResult(record: record, message: "✅ \(name) (\(language.rawValue)) \(where_) — call it NOW and after relaunch. Saved at \(sourceURL(record).lastPathComponent).")
+            let repaired = lastRepairNotes.isEmpty ? "" : " (I \(lastRepairNotes.joined(separator: "; ")) before compiling — saved that way.)"
+            // Action-oriented on purpose (MEASURED: after "✅ … call it NOW" loopl-2b called `create` three more times): say the next step.
+            return CreateResult(record: record, message: "✅ \(name) (\(language.rawValue)) \(where_) and is in your tool list.\(repaired) NEXT STEP: call `\(name)` itself with its arguments — do not call manage_tools create again. It stays available after relaunch.")
         } else {
             // Honest result, never a silent drop: Swift source written on an iPhone/iPad is kept for a Mac.
             let reason = "Swift cannot be compiled on \(Self.deviceWord) — saved; it runs on your Mac (same loopl account) or in a build that bundles it. Rewrite it in JavaScript to use it here now."
@@ -130,7 +136,7 @@ public actor DynamicToolStore {
     }
 
     /// `manage_tools remove`. Deletes the source and metadata; the tool leaves the model's list on the next call.
-    public func remove(name: String) throws -> String {
+    public func remove(name: String) async throws -> String {
         guard let idx = records.firstIndex(where: { DynamicToolName.key($0.name) == DynamicToolName.key(name) }) else {
             throw CreateError(message: "no agent-written tool named \"\(name)\"\(records.isEmpty ? "" : " — have: \(records.map(\.name).joined(separator: ", "))")")
         }
@@ -142,7 +148,7 @@ public actor DynamicToolStore {
         try? FileManager.default.removeItem(at: buildDirectory.appendingPathComponent("\(r.name).dylib"))
         try? FileManager.default.removeItem(at: buildDirectory.appendingPathComponent("\(r.name).build"))
         #endif
-        notify()
+        await notify()
         return "🗑 removed \"\(r.name)\" (\(r.language.rawValue)) — source deleted; it is gone from the tool list from the next call on"
     }
 
@@ -179,13 +185,19 @@ public actor DynamicToolStore {
         }
         records = out.sorted { $0.createdAt < $1.createdAt }
         live = newLive
-        notify()
+        await notify()
         return records
     }
 
     // MARK: - internals
 
+    /// What the Swift compiler step changed in the last successful `load` (empty when compiled as written).
+    private var lastRepairNotes: [String] = []
+    /// The source that actually compiled (repaired when `lastRepairNotes` is non-empty) — what gets persisted.
+    private var lastBuiltSource: String?
+
     private func load(source: String, record: DynamicToolRecord) async throws -> any Tool {
+        lastRepairNotes = []; lastBuiltSource = nil
         switch record.language {
         case .javascript:
             return try JSTool(source: source, bridge: JSToolRuntime.bridge)
@@ -193,10 +205,12 @@ public actor DynamicToolStore {
             #if os(macOS)
             let buildDir = buildDirectory
             let name = record.name
+            let repairNotes = Locked<[String]>([]); let builtSource = Locked<String>(source)
             // swiftc + probe are blocking subprocesses: keep them off the actor.
-            return try await Task.detached(priority: .userInitiated) {
-                let dylib = try SwiftToolCompiler.compile(source: source, name: name, buildDir: buildDir)
+            let tool: any Tool = try await Task.detached(priority: .userInitiated) {
+                let (dylib, repairs, built) = try SwiftToolCompiler.compileRepairing(source: source, name: name, buildDir: buildDir)
                 let spec = try SwiftToolCompiler.probe(dylib: dylib, buildDir: buildDir)
+                repairNotes.value = repairs.map(\.note); builtSource.value = built
                 guard spec.name == name else {
                     throw CreateError(message: "the tool calls itself \"\(spec.name)\" but the file/name is \"\(name)\" — make them match")
                 }
@@ -205,6 +219,8 @@ public actor DynamicToolStore {
                 }
                 return try SwiftToolCompiler.load(dylib: dylib, spec: spec) as any Tool
             }.value
+            lastRepairNotes = repairNotes.value; lastBuiltSource = builtSource.value
+            return tool
             #else
             throw CreateError(message: "Swift tools cannot run on \(Self.deviceWord)")
             #endif

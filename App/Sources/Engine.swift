@@ -150,12 +150,14 @@ public final class Engine {
         Task { @MainActor [weak self] in
             await store.setReserved(AppSettings.allToolNames + AppleTools.all.map(\.name) + ["manage_tools", "manage_messages", "use_agent"])
             await store.onChange { tools in
-                Task { @MainActor in
+                // Awaited by the store: the model's `create` result is not delivered until the Agent holds the new list.
+                let records = await store.records
+                await MainActor.run {
                     guard let engine = Engine.current else { return }
                     engine.createdLive = tools
-                    engine.createdTools = await store.records
-                    if let agent = engine.agent { await agent.setTools(engine.activeTools) }   // effective on the next model call
+                    engine.createdTools = records
                 }
+                if let agent = await Engine.current?.agent, let tools = await Engine.current?.activeTools { await agent.setTools(tools) }
             }
             #if DEBUG
             // `--design-created-tools`: a live JavaScript tool + a Swift one saved for the Mac, for Settings shots and UITests.

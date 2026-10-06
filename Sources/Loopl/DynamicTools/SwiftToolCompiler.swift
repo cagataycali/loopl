@@ -44,6 +44,21 @@ public enum SwiftToolCompiler {
         return first
     }
 
+    /// What `compile` did to the source before it built: empty when it compiled as written.
+    public struct Repair: Sendable, Hashable { public var line: Int; public var note: String }
+
+    /// `compile`, with ONE automatic repair for the slip small models make most (MEASURED, loopl-2b 3/4 runs): the closing
+    /// `]` of a container literal is dropped — `expected ']' in container literal expression`. The missing brackets are
+    /// appended to that line and the build is retried once; the caller tells the model what was changed. Anything else
+    /// comes back verbatim.
+    public static func compileRepairing(source: String, name: String, buildDir: URL) throws -> (dylib: URL, repairs: [Repair], source: String) {
+        do { return (try compile(source: source, name: name, buildDir: buildDir), [], source) }
+        catch let e as Failure where e.stage == .compile {
+            guard let (fixed, repair) = SwiftToolRepair.closeContainerLiteral(source: source, compilerOutput: e.message) else { throw e }
+            do { return (try compile(source: fixed, name: name, buildDir: buildDir), [repair], fixed) } catch { throw e }   // the ORIGINAL error, not the repair's
+        }
+    }
+
     /// The source the model wrote plus the shim, compiled to `<buildDir>/<name>.dylib`.
     /// `name` is only used for file/module names; the tool's real name comes from the probe.
     public static func compile(source: String, name: String, buildDir: URL) throws -> URL {
@@ -64,7 +79,7 @@ public enum SwiftToolCompiler {
         let out = buildDir.appendingPathComponent("\(name).dylib")
         try? FileManager.default.removeItem(at: out)
         let module = "looplTool_" + name.replacingOccurrences(of: "-", with: "_")
-        let r = try run(swiftc.path, ["-swift-version", "5", "-O", "-emit-library", "-module-name", module, "-o", out.path, shimFile.path, userFile.path],
+        let r = try run(swiftc.path, sdkArgs() + ["-swift-version", "5", "-O", "-emit-library", "-module-name", module, "-o", out.path, shimFile.path, userFile.path],
                         timeout: compileTimeout)
         guard r.status == 0, FileManager.default.fileExists(atPath: out.path) else {
             // Line numbers refer to the model's file: strip the work dir so the error reads `reverse_string.swift:6:12: error: …`.
@@ -124,7 +139,12 @@ public enum SwiftToolCompiler {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: path)
         p.arguments = args
-        var env = ProcessInfo.processInfo.environment
+        // A SCRUBBED environment: inside an xcodebuild/xctest process the inherited SDKROOT, TOOLCHAINS, DYLD_* and
+        // __XCODE_* variables make swiftc say "unable to load standard library for target arm64-apple-macos" — measured
+        // with loopl-2b in the harness. Keep only what finding the toolchain needs.
+        let inherited = ProcessInfo.processInfo.environment
+        var env: [String: String] = [:]
+        for k in ["PATH", "HOME", "TMPDIR", "USER", "LANG", "DEVELOPER_DIR"] { if let v = inherited[k] { env[k] = v } }
         env["LOOPL_SANDBOX"] = "1"
         p.environment = env
         let out = Pipe(), err = Pipe()
@@ -145,6 +165,13 @@ public enum SwiftToolCompiler {
         return RunResult(status: status, stdout: String(decoding: outData, as: UTF8.self), stderr: String(decoding: errData, as: UTF8.self))
     }
 
+    /// `-sdk <macOS SDK>` explicitly — with the scrubbed environment swiftc no longer sees SDKROOT.
+    static func sdkArgs() -> [String] {
+        guard let r = try? run("/usr/bin/xcrun", ["--sdk", "macosx", "--show-sdk-path"], timeout: 20), r.status == 0 else { return [] }
+        let path = r.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        return path.isEmpty ? [] : ["-sdk", path]
+    }
+
     /// The probe is itself compiled once (≈0.3 s) into `buildDir/.probe-v<abi>`; rebuilt when the toolchain changes.
     static func probeExecutable(in buildDir: URL) throws -> URL {
         guard let swiftc = toolchain() else { throw Failure(stage: .toolchain, message: "no Swift toolchain (`xcrun --find swiftc` failed)") }
@@ -154,7 +181,7 @@ public enum SwiftToolCompiler {
         try FileManager.default.createDirectory(at: buildDir, withIntermediateDirectories: true)
         let src = buildDir.appendingPathComponent(".probe.swift")
         try probeSource.write(to: src, atomically: true, encoding: .utf8)
-        let r = try run(swiftc.path, ["-O", "-o", bin.path, src.path], timeout: compileTimeout)
+        let r = try run(swiftc.path, sdkArgs() + ["-O", "-o", bin.path, src.path], timeout: compileTimeout)
         guard r.status == 0 else { throw Failure(stage: .toolchain, message: "could not build the probe: \(r.stderr.prefix(800))") }
         return bin
     }
@@ -250,4 +277,27 @@ public struct CompiledSwiftTool: Tool {
 
 /// A dlopen handle is just a pointer; it lives as long as the process (we never dlclose a live tool).
 struct UncheckedHandle: @unchecked Sendable { let raw: UnsafeMutableRawPointer; init(_ raw: UnsafeMutableRawPointer) { self.raw = raw } }
+#endif
+
+#if os(macOS)
+public enum SwiftToolRepair {
+    /// `…swift:5:121: error: expected ']' in container literal expression` → append the unbalanced `]`s to line 5.
+    public static func closeContainerLiteral(source: String, compilerOutput: String) -> (String, SwiftToolCompiler.Repair)? {
+        guard compilerOutput.contains("expected ']' in container literal expression"),
+              let m = try? NSRegularExpression(pattern: #"\.swift:(\d+):\d+: error: expected '\]' in container literal"#)
+                .firstMatch(in: compilerOutput, range: NSRange(compilerOutput.startIndex..., in: compilerOutput)),
+              let r = Range(m.range(at: 1), in: compilerOutput), let lineNo = Int(compilerOutput[r]) else { return nil }
+        var lines = source.components(separatedBy: "\n")
+        guard lineNo >= 1, lineNo <= lines.count else { return nil }
+        let line = lines[lineNo - 1]
+        var depth = 0, inString = false, escaped = false
+        for ch in line {
+            if inString { if escaped { escaped = false } else if ch == "\\" { escaped = true } else if ch == "\"" { inString = false }; continue }
+            if ch == "\"" { inString = true } else if ch == "[" { depth += 1 } else if ch == "]" { depth -= 1 }
+        }
+        guard depth > 0 else { return nil }
+        lines[lineNo - 1] = line + String(repeating: "]", count: depth)
+        return (lines.joined(separator: "\n"), SwiftToolCompiler.Repair(line: lineNo, note: "added \(depth) missing `]` at the end of line \(lineNo)"))
+    }
+}
 #endif

@@ -7,9 +7,11 @@ import Foundation
 public struct ManageToolsFallbackTool: Tool {
     public let name = "manage_tools"
     public let store: DynamicToolStore
-    public init(store: DynamicToolStore = .shared) { self.store = store }
+    /// The language the description steers the model to — the device's by default; a harness can force the iPhone path on a Mac.
+    public let language: DynamicToolLanguage
+    public init(store: DynamicToolStore = .shared, language: DynamicToolLanguage = .preferredHere) { self.store = store; self.language = language }
 
-    public var description: String { ManageToolsCreate.description(for: .preferredHere) }
+    public var description: String { ManageToolsCreate.description(for: language) }
     public var parameters: JSONValue { ManageToolsCreate.parameters }
 
     public func call(_ args: [String: JSONValue]) async throws -> String {
@@ -59,7 +61,7 @@ public enum ManageToolsCreate {
             }
         case "remove":
             guard let name = args["name"]?.stringValue, !name.isEmpty else { throw ToolError("remove needs `name`") }
-            do { return try await store.remove(name: name) } catch let e as DynamicToolStore.CreateError { throw ToolError(e.message) }
+            do { return try await store.remove(name: name) as String } catch let e as DynamicToolStore.CreateError { throw ToolError(e.message) }
         case "list", "":
             let records = await store.records
             if records.isEmpty { return "no agent-written tools yet — `create` one (\(DynamicToolLanguage.preferredHere.rawValue) on this device)" }

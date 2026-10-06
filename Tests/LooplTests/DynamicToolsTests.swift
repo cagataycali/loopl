@@ -91,7 +91,7 @@ final class DynamicToolsTests: XCTestCase {
         let src = await again.source(of: "reverse_string"); XCTAssertEqual(src, Self.reverseJS.trimmingCharacters(in: .whitespacesAndNewlines))
 
         // Remove deletes files; a reload finds nothing.
-        _ = try await again.remove(name: "reverse_string")
+        _ = try await again.remove(name: "reverse_string") as String
         XCTAssertFalse(FileManager.default.fileExists(atPath: dir.appendingPathComponent("reverse_string.js").path))
         let left = await again.reload(); XCTAssertEqual(left.count, 0)
     }
@@ -114,7 +114,7 @@ final class DynamicToolsTests: XCTestCase {
         XCTAssertTrue(tool.description.contains("write Swift") && tool.description.contains("struct ReverseString: Tool"), "description should explain the tool: \(tool.description)")
         let l0 = try await tool.call(["action": "list"]); XCTAssertTrue(l0.contains("no agent-written tools"))
         let created = try await tool.call(["action": "create", "source": .string(Self.reverseJS), "language": "javascript"])
-        XCTAssertTrue(created.contains("reverse_string") && created.contains("NOW"), created)
+        XCTAssertTrue(created.contains("reverse_string") && created.contains("NEXT STEP"), created)
         let l1 = try await tool.call(["action": "list"]); XCTAssertTrue(l1.contains("reverse_string [javascript, active]"), l1)
         do { _ = try await tool.call(["action": "create", "source": "var tool = { name: 'x' }"]); XCTFail() }
         catch { XCTAssertTrue("\(error)".contains("create rejected"), "\(error)") }
@@ -150,6 +150,21 @@ final class DynamicToolsTests: XCTestCase {
         let again = DynamicToolStore(directory: dir)
         _ = await again.reload()
         let o2 = try await again.tools.first?.call(["text": "xy"]); XCTAssertEqual(o2, "yx")
+    }
+
+    func testSwiftMissingClosingBracketIsRepairedOnceAndReported() async throws {
+        try XCTSkipIf(SwiftToolCompiler.toolchain() == nil, "no swiftc")
+        // loopl-2b's most common slip (measured 3/4 runs): the `]` closing inputSchema is dropped.
+        let slipped = DynamicToolShape.swift.replacingOccurrences(of: "\"required\": [\"text\"]]", with: "\"required\": [\"text\"]")
+        XCTAssertNotEqual(slipped, DynamicToolShape.swift)
+        let store = DynamicToolStore(directory: tempDir())
+        let r = try await store.create(name: nil, source: slipped, language: .swift)
+        XCTAssertTrue(r.live)
+        XCTAssertTrue(r.message.contains("added 1 missing `]`") && r.message.contains("NEXT STEP: call `reverse_string`"), r.message)
+        let saved = await store.source(of: "reverse_string")
+        XCTAssertTrue(saved?.contains("\"required\": [\"text\"]]") == true, "the repaired source is what gets saved")
+        // Pure helper: a line with balanced brackets is not touched; the error line must be named.
+        XCTAssertNil(SwiftToolRepair.closeContainerLiteral(source: DynamicToolShape.swift, compilerOutput: "x.swift:1:1: error: expected ']' in container literal expression"))
     }
 
     func testSwiftCompileErrorsComeBackVerbatimForTheModel() async throws {
