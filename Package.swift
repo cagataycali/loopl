@@ -57,7 +57,7 @@ let package = Package(
                     swiftSettings: [.swiftLanguageMode(.v6)]),
         .testTarget(name: "LooplTests", dependencies: ["Loopl", "LooplUI"], path: "Tests/LooplTests",
                     resources: [.copy("Fixtures")], swiftSettings: [.swiftLanguageMode(.v6)]),
-        .testTarget(name: "LooplRuntimesTests", dependencies: ["Loopl", "LooplRuntimes"], path: "Tests/LooplRuntimesTests",
+        .testTarget(name: "LooplRuntimesTests", dependencies: ["Loopl", "LooplRuntimes", "LooplAppleTools"], path: "Tests/LooplRuntimesTests",
                     resources: [.copy("Fixtures")], swiftSettings: [.swiftLanguageMode(.v6)]),
     ] + (hasLlama ? [.binaryTarget(name: "llama", path: llamaXCFramework)] : [])
 )
