@@ -49,7 +49,7 @@ A tuned model is a base too. Two controls on the Recipe card make training a thi
   moment loss rises. The guide under *Fine-tune manually* is the one we measured: **under 200 conversations 3–4 · 200–1 000 → 2 · over 1 000 → 1–2.** Pick 1–4 by
   hand when you know better. The result card draws held-out loss per epoch and marks the epoch that was kept.
 
-How conversations are grouped into training samples is the script's call, not a setting (`loopl_sft.py --stitch`, default `none`; the job plan line reports what it did).
+Related chats from the same day are trained together as well as on their own — the script's call, not a setting (`loopl_sft.py --stitch`, default `day` since 1.2.4: measured 0.281 vs 0.297 held-out loss against separate-only on the same 74 conversations; the job plan line reports how many it stitched).
 
 Measured, round 2 from the app: base `loopl-app-sim` (itself trained from the app), 74 conversations, epochs auto → 3 trained, best epoch 2 —
 A10G, 334 s, ≈ $0.10, held-out loss 0.58 → 0.22, tool calls 12/12, vision kept. The result lists in Mine as **round 2** and can be continued again.
@@ -68,7 +68,7 @@ Measured: 191 conversations, 0.8B LoRA, 2 epochs on an A10G — 8 min, $0.13, he
 
 ## For SDK users
 
-`TrainingPlan` → `TrainingEstimate` (`sentence`, `capSeconds` = the automatic stop, `TrainingPlan.summary(user:)` = the plan in words); `TrainingLaunch.jobSpec` builds the job body; `TrainingSession` uploads the script, creates the job through `HFHubClient` and polls `TrainingProgress` (the script's `[loopl] stage=…` lines). The token travels only as the job's HF_TOKEN secret. The training script lives in [loopl-train](https://github.com/cagataycali/loopl-train) (`train/loopl_sft.py` ≥ 1.1.0 — the MLX export keeps the vision tower), bundled with the app byte-for-byte.
+`TrainingPlan` → `TrainingEstimate` (`sentence`, `capSeconds` = the automatic stop, `TrainingPlan.summary(user:)` = the plan in words); `TrainingLaunch.jobSpec` builds the job body; `TrainingSession` uploads the script, creates the job through `HFHubClient` and polls `TrainingProgress` (the script's `[loopl] stage=…` lines). The token travels only as the job's HF_TOKEN secret. The training script lives in [loopl-train](https://github.com/cagataycali/loopl-train) (`train/loopl_sft.py` ≥ 1.2.4 — the MLX export keeps the vision tower, stitching by day is the default), bundled with the app byte-for-byte.
 
 ---
 
