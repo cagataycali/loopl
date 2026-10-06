@@ -32,6 +32,9 @@ let package = Package(
         // MLXFoundationModels, which needs iOS 27 types under the default trait).
         .package(url: "https://github.com/ml-explore/mlx-swift-lm", exact: "3.32.3"),
         .package(url: "https://github.com/huggingface/swift-transformers", exact: "1.3.4"),
+        // Already pulled in by swift-transformers; linked directly so LooplRuntimes can hand the chat
+        // template ORDERED tool specs (swift-jinja sorts plain dictionaries → `description` before `name`).
+        .package(url: "https://github.com/huggingface/swift-jinja.git", exact: "2.5.1"),
     ],
     targets: [
         .target(name: "Loopl", path: "Sources/Loopl", swiftSettings: [.swiftLanguageMode(.v6)]),
@@ -44,6 +47,7 @@ let package = Package(
                 .product(name: "MLXLMCommon", package: "mlx-swift-lm"),
                 .product(name: "Tokenizers", package: "swift-transformers"),
                 .product(name: "Hub", package: "swift-transformers"),
+                .product(name: "Jinja", package: "swift-jinja"),
             ] + (hasLlama ? [.target(name: "llama")] : []),
             path: "Sources/LooplRuntimes",
             swiftSettings: [.swiftLanguageMode(.v6)]),

@@ -8,6 +8,7 @@ import MLXVLM
 import MLXLMCommon
 import Tokenizers
 import Hub
+import Jinja
 import CoreImage
 
 /// Bridges swift-transformers' tokenizer to MLXLMCommon's `Tokenizer`
@@ -44,6 +45,8 @@ public struct GenerationTrace: Sendable {
     public var raw: String
     /// Tool calls mlx-swift-lm's own detector fired on (merged with the parser's).
     public var nativeToolCalls: [String]
+    /// Calls mlx-swift-lm's own detector rejected (`reason: raw text`); the raw text is re-fed to loopl's gate.
+    public var rejectedToolCalls: [String] = []
     public var stopReason: String?
 }
 
@@ -126,7 +129,9 @@ public actor MLXModel: Model {
                     let gen: AsyncStream<Generation>
                     if isVLM && hasImages {
                         let chat = VisionPrompt.chat(systemPrompt: systemPrompt, messages: messages)
-                        let input = UserInput(chat: chat, processing: VisionPrompt.processing, tools: specDicts.isEmpty ? nil : specDicts, additionalContext: kwargs)
+                        // Tools go through `additionalContext` in canonical key order (see `PromptEncoder.toolsContext`).
+                        let input = UserInput(chat: chat, processing: VisionPrompt.processing, tools: nil,
+                                              additionalContext: toolSpecs.isEmpty ? kwargs : PromptEncoder.toolsContext(toolSpecs, kwargs: kwargs))
                         let lmInput = try await container.prepare(input: input)
                         promptCount = lmInput.text.tokens.size
                         if trace != nil { promptTokens = lmInput.text.tokens.asArray(Int.self) }
@@ -170,6 +175,7 @@ public actor MLXModel: Model {
                     var chunks = 0
                     var hitBudget = false
                     var raw = ""
+                    var rejected: [String] = []
                     for await g in gen {
                         try Task.checkCancellation()
                         switch g {
@@ -191,7 +197,9 @@ public actor MLXModel: Model {
                             // measured on Qwen3.5-0.8B, which writes `<function=http>\n<url>\n…\n</parameter>`
                             // (sloppy XML that loopl's parser reads, ToolCallParser/HttpCallShapesTests).
                             // Hand the preview (32 KB bound, whole call in practice) to the gate instead.
-                            for ev in gate.feed(rejection.rawTextPreview) { continuation.yield(ev) }
+                            let preview = rejection.rawTextPreview
+                            if trace != nil { raw += preview; rejected.append("\(rejection.reason.rawValue): \(preview.prefix(300))") }
+                            for ev in gate.feed(preview) { continuation.yield(ev) }
                         case .info(let info):
                             stats.promptTokens = info.promptTokenCount
                             stats.generatedTokens = info.generationTokenCount
@@ -207,7 +215,7 @@ public actor MLXModel: Model {
                     if let trace {
                         let ids = promptTokens
                         let text = try await container.perform { context in context.tokenizer.decode(tokenIds: ids, skipSpecialTokens: false) }
-                        trace(GenerationTrace(prompt: text, promptTokens: promptCount, raw: raw, nativeToolCalls: native.map(\.name), stopReason: stats.stopReason))
+                        trace(GenerationTrace(prompt: text, promptTokens: promptCount, raw: raw, nativeToolCalls: native.map(\.name), rejectedToolCalls: rejected, stopReason: stats.stopReason))
                     }
                     for ev in gate.finish(stopReason: hitBudget ? .maxTokens : .endTurn, native: native) { continuation.yield(ev) }
                     continuation.finish()
@@ -281,10 +289,41 @@ enum VisionPrompt {
 /// Chat-template rendering with the right fallbacks, in one place so a
 /// unit test can pin it with a fake tokenizer.
 enum PromptEncoder {
+    /// Key order a tool spec is rendered in. swift-jinja sorts the keys of a plain Swift dictionary, which
+    /// puts `description` before `name` and `function` before `type` — a 0.8B model reads that as a
+    /// different tool catalogue than the one it was trained on (measured: Qwen3.5-0.8B picked the right
+    /// tool 24/24 with this order vs 11/24 sorted, drifting to `remember`/`recall`). Everything not
+    /// listed keeps alphabetical order after these.
+    static let keyOrder = ["type", "function", "name", "description", "parameters", "properties", "required", "enum", "items", "examples", "default"]
+
+    /// A `JSONValue` as an ordered Jinja value: objects follow `keyOrder`, then alphabetical.
+    static func orderedValue(_ v: Loopl.JSONValue) -> Jinja.Value {
+        switch v {
+        case .null: return .null
+        case .bool(let b): return .boolean(b)
+        case .number(let d): return d == d.rounded() && abs(d) < 1e15 ? .int(Int(d)) : .double(d)
+        case .string(let s): return .string(s)
+        case .array(let a): return .array(a.map(orderedValue))
+        case .object(let o):
+            var out = OrderedDictionary<String, Jinja.Value>()
+            for k in keyOrder where o[k] != nil { out[k] = orderedValue(o[k]!) }
+            for k in o.keys.sorted() where out[k] == nil { out[k] = orderedValue(o[k]!) }
+            return .object(out)
+        }
+    }
+
+    /// Template context carrying the tools in canonical order (`tools` is read by every HF template
+    /// that supports function calling), plus the spec's kwargs (`enable_thinking` …).
+    static func toolsContext(_ toolSpecs: [Loopl.ToolSpec], kwargs: [String: any Sendable]?) -> [String: any Sendable] {
+        var ctx = kwargs ?? [:]
+        ctx["tools"] = Jinja.Value.array(toolSpecs.map { orderedValue($0.openAIFunction) })
+        return ctx
+    }
+
     static func encode(systemPrompt: String?, messages: [Loopl.Message], toolSpecs: [Loopl.ToolSpec], family: ToolFamily, kwargs: [String: any Sendable]?, tokenizer: any MLXLMCommon.Tokenizer) throws -> [Int] {
-        let specs = toolSpecs.templateDictionaries
-        // 1. Native template with tools (Qwen3, Llama 3.x, Phi-4, SmolLM3…).
-        if !toolSpecs.isEmpty, let ids = try? tokenizer.applyChatTemplate(messages: Loopl.Message.templateDictionaries(systemPrompt: systemPrompt, messages: messages), tools: specs, additionalContext: kwargs) { return ids }
+        // 1. Native template with tools (Qwen3/3.5, Llama 3.x, Phi-4, SmolLM3…). The specs travel through
+        //    `additionalContext` as ordered Jinja values — the `tools:` parameter would re-sort their keys.
+        if !toolSpecs.isEmpty, let ids = try? tokenizer.applyChatTemplate(messages: Loopl.Message.templateDictionaries(systemPrompt: systemPrompt, messages: messages), tools: nil, additionalContext: toolsContext(toolSpecs, kwargs: kwargs)) { return ids }
         // 2. Template without tools: inject the manual spec into the system prompt, fold tool turns.
         let folded = PromptBuilder.foldToolMessages(messages)
         let sys = PromptBuilder.toolSystemPrompt(toolSpecs: toolSpecs, family: family, base: systemPrompt)
