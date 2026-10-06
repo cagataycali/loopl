@@ -462,13 +462,9 @@ struct Composer: View {
                 .focused(focused)
                 .submitLabel(.send)
                 .onSubmit { if sendable { send() } }
-                // ⌘↩ while typing: the multi-line field (a UITextView) swallows the chord before the Send button's
-                // .keyboardShortcut sees it, so it is handled here too; a plain Return still inserts a newline.
-                .onKeyPress(.return, phases: .down) { press in
-                    guard press.modifiers.contains(.command) else { return .ignored }
-                    if sendable { send() }
-                    return .handled
-                }
+                // ⌘↩ while typing: the field (a UITextView) swallows the chord, so it arrives via LooplAppDelegate's
+                // priority key command; a plain Return still inserts a newline.
+                .onReceive(NotificationCenter.default.publisher(for: .looplSendShortcut)) { _ in if sendable { send() } }
                 .accessibilityLabel("Message")
             Group {
                 if generating {

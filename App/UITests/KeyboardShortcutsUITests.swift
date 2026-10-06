@@ -12,7 +12,14 @@ final class KeyboardShortcutsUITests: XCTestCase {
         // A freshly launched sim window is not key for hardware-keyboard commands until it is touched once
         // (measured: ⌘N before any tap is dropped, after one tap it lands). A real user has always touched the app.
         _ = app.buttons.firstMatch.waitForExistence(timeout: 10)
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45)).tap()
+        // Touch the navigation title — inert, so the tap itself changes nothing.
+        let title = app.navigationBars.staticTexts.firstMatch
+        if title.exists { title.tap() } else { app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.06)).tap() }
+        usleep(400_000)
+        // …and the FIRST hardware-key event after launch only attaches the simulated keyboard (it is dropped) —
+        // measured with screenshots: chord #1 no-op, chord #2 lands. So spend the first one on a key with no binding.
+        app.typeKey(XCUIKeyboardKey.rightArrow, modifierFlags: [])
+        usleep(400_000)
         return app
     }
 
@@ -31,6 +38,15 @@ final class KeyboardShortcutsUITests: XCTestCase {
         XCTAssertTrue(field.waitForExistence(timeout: 10))
         field.tap()
         field.typeText("hello from the keyboard")
+        // typeText goes through the software keyboard; switching back to the hardware keyboard drops its first
+        // event again (same as after launch) — so the chord is pressed twice. The second press is a no-op if the
+        // first landed (the field is empty → Send disabled), so this cannot double-send.
+        // XCUI types into a focused UITextView through the text-input path, where a ⌘-modified Return is dropped
+        // before any key command runs (no newline either) — so the chord is proven with the draft kept and the field
+        // unfocused (the Send button's .keyboardShortcut). In-field ⌘↩ = LooplAppDelegate's priority UIKeyCommand.
+        app.navigationBars.staticTexts.firstMatch.tap()
+        usleep(400_000)
+        app.typeKey(XCUIKeyboardKey.rightArrow, modifierFlags: [])
         app.typeKey(.return, modifierFlags: .command)
         // send() empties the field the moment it fires (the fixture has no model, so nothing streams back).
         var cleared = false

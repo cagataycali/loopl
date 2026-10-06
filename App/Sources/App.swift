@@ -4,6 +4,7 @@ import LooplUI
 
 @main
 struct LooplApp: App {
+    @UIApplicationDelegateAdaptor(LooplAppDelegate.self) private var appDelegate   // ⌘↩ from inside the composer (KeyCommands.swift)
     @State private var settings = AppSettings()
     @State private var store = ModelStore()
     @State private var engine: Engine?
