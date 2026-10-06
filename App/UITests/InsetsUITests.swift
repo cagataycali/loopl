@@ -19,6 +19,12 @@ final class InsetsUITests: XCTestCase {
     private var before = false
     private var tag: String { before ? "before" : "after" }
 
+    /// Which simulator this run is on — the same suite runs on SE / 16 Pro /
+    /// 16 Pro Max / iPad Pro, and the gap is only meaningful next to the device.
+    private var deviceTag: String {
+        ProcessInfo.processInfo.environment["SIMULATOR_DEVICE_NAME"] ?? "unknown"
+    }
+
     override func setUp() { continueAfterFailure = false }
 
     private func launch(tab: String, dynamicTypeXL: Bool = false) -> XCUIApplication {
@@ -56,6 +62,19 @@ final class InsetsUITests: XCTestCase {
         Thread.sleep(forTimeInterval: 1.0)   // let the scroll settle so frames are final
     }
 
+    /// A `List` only instantiates the rows near the viewport, so a row in the
+    /// middle of a long pane has to be scrolled INTO existence before it can be
+    /// measured (on an iPhone SE the Storage section is off the a11y tree once the
+    /// list is scrolled to its end).
+    private func scrollUntilVisible(_ scroll: XCUIElement, _ element: XCUIElement, times: Int = 14) {
+        XCTAssertTrue(scroll.waitForExistence(timeout: 15))
+        for _ in 0..<times {
+            if element.exists && element.isHittable { break }
+            scroll.swipeUp(velocity: .fast)
+        }
+        Thread.sleep(forTimeInterval: 0.6)
+    }
+
     private func lastRow(_ scroll: XCUIElement) -> XCUIElement {
         let cells = scroll.cells
         XCTAssertGreaterThan(cells.count, 0, "empty list")
@@ -70,6 +89,10 @@ final class InsetsUITests: XCTestCase {
         let limit = bar?.frame.minY ?? app.windows.firstMatch.frame.maxY
         let gap = limit - element.frame.maxY
         let name = "\(label)-\(tag)"
+        // One grep-able line per measurement: the gates read the geometry out of the
+        // xcodebuild log (`grep INSETS-GAP`), so a run is checkable without opening
+        // the .xcresult. Device name included because the same test runs on 4 sims.
+        print("INSETS-GAP device=\(deviceTag) case=\(name) maxY=\(element.frame.maxY) limit=\(limit) gap=\(gap)")
         XCTContext.runActivity(named: "\(name): maxY \(element.frame.maxY) · limit \(limit) · gap \(gap)") { a in
             let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
             shot.lifetime = .keepAlways
@@ -98,8 +121,9 @@ final class InsetsUITests: XCTestCase {
     func testSettingsDeleteHistoryButtonIsHittable() {
         let app = launch(tab: "settings")
         let list = pane(app, "pane-settings", sidebar: "Settings")
-        scrollToEnd(list)
-        check(app.buttons["Delete conversation history"], app, "settings-delete-history")
+        let btn = app.buttons["Delete conversation history"]
+        scrollUntilVisible(list, btn)
+        check(btn, app, "settings-delete-history")
     }
 
     func testSettingsBottomClearsTabBarAtAccessibilityXL() {
@@ -150,7 +174,7 @@ final class InsetsUITests: XCTestCase {
     func testToolsEditorBottomClearsTabBar() {
         let app = launch(tab: "settings")
         _ = pane(app, "pane-settings", sidebar: "Settings")   // iPad: pick the pane from the sidebar first
-        let tools = app.buttons["Tools"].firstMatch
+        let tools = app.descendants(matching: .any)["settings-tools"].firstMatch
         XCTAssertTrue(tools.waitForExistence(timeout: 10))
         tools.tap()
         let list = app.collectionViews.firstMatch
