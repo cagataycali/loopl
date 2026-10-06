@@ -378,6 +378,7 @@
       "min_ram_gb": 2,
       "gated": true,
       "vision": false,
+      "persona": "loopl",
       "chat_template_kwargs": {
         "enable_thinking": false
       },
@@ -397,6 +398,7 @@
       "min_ram_gb": 3,
       "gated": true,
       "vision": false,
+      "persona": "loopl",
       "chat_template_kwargs": {
         "enable_thinking": false
       },
@@ -415,6 +417,7 @@
       "min_ram_gb": 3,
       "gated": true,
       "vision": false,
+      "persona": "loopl",
       "chat_template_kwargs": {
         "enable_thinking": false
       },
@@ -434,6 +437,7 @@
       "min_ram_gb": 4,
       "gated": true,
       "vision": false,
+      "persona": "loopl",
       "chat_template_kwargs": {
         "enable_thinking": false
       },
@@ -452,6 +456,7 @@
       "min_ram_gb": 6,
       "gated": true,
       "vision": false,
+      "persona": "loopl",
       "chat_template_kwargs": {
         "enable_thinking": false
       },
@@ -471,6 +476,7 @@
       "min_ram_gb": 6,
       "gated": true,
       "vision": false,
+      "persona": "loopl",
       "chat_template_kwargs": {
         "enable_thinking": false
       },

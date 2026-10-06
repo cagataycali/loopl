@@ -40,9 +40,35 @@ public final class ModelStore {
     public private(set) var bundled: Catalog
     /// Repos the user added from "Browse Hugging Face" — persisted next to the weights.
     public private(set) var hubModels: [ModelSpec] = []
-    /// Everything the app can run: curated + Hub additions (one list for Engine/ModelsView).
+    /// Everything the app can run: curated + Hub additions (one list for Engine/ModelsView), with `vision` corrected
+    /// from the downloaded config.json where the files disagree with the row (`localVision`).
     public var catalog: Catalog {
-        Catalog(version: bundled.version, updated: bundled.updated, models: bundled.models + hubModels, defaultModelId: bundled.defaultModelId)
+        Catalog(version: bundled.version, updated: bundled.updated, models: (bundled.models + hubModels).map(applyLocalVision), defaultModelId: bundled.defaultModelId)
+    }
+    /// spec.id → what `<dir>/config.json` says about a vision tower, for every downloaded MLX model (vision.json).
+    /// The row (models.json / Hub listing) may be wrong or stale; the weights on the phone are the truth the
+    /// composer's photo button and the MLX loader must follow.
+    public private(set) var localVision: [String: Bool] = [:]
+    static let visionFile = root.appendingPathComponent("vision.json")
+
+    func applyLocalVision(_ spec: ModelSpec) -> ModelSpec {
+        guard spec.runtime == .mlx, let local = localVision[spec.id], (spec.vision ?? false) != local else { return spec }
+        var s = spec
+        s.vision = local ? true : nil
+        return s
+    }
+
+    /// Read `config.json` of a complete MLX download and remember whether it has a vision tower
+    /// (`LocalModelFiles.hasVisionTower`). Called from `refresh()` for every downloaded model — a few KB per read.
+    private func noteLocalVision(_ spec: ModelSpec, directory: URL) {
+        guard spec.runtime == .mlx, let has = LocalModelFiles.hasVisionTower(in: directory) else { return }
+        if localVision[spec.id] != has {
+            localVision[spec.id] = has
+            if (spec.vision ?? false) != has {
+                log.info("\(spec.id, privacy: .public): config.json says vision=\(has) — row said \(spec.vision ?? false); following the files")
+            }
+            if let data = try? JSONEncoder().encode(localVision) { try? data.write(to: Self.visionFile, options: .atomic) }
+        }
     }
     public private(set) var states: [String: State] = [:]
     public private(set) var diskUsed: Int64 = 0
@@ -67,6 +93,7 @@ public final class ModelStore {
         if let data = try? Data(contentsOf: Self.hubModelsFile), let list = try? JSONDecoder().decode([ModelSpec].self, from: data) {
             hubModels = list.filter(\.isFromHub)
         }
+        if let data = try? Data(contentsOf: Self.visionFile), let v = try? JSONDecoder().decode([String: Bool].self, from: data) { localVision = v }
         refresh()
     }
 
@@ -94,6 +121,7 @@ public final class ModelStore {
         }
         storage.set(location: .internalStorage, for: spec.id)
         states[spec.id] = nil
+        forgetLocalVision(spec.id)
         refresh()
     }
 
@@ -176,7 +204,10 @@ public final class ModelStore {
             let partial: Int64 = if let gguf = spec.file {
                 files.first { $0.lastPathComponent == gguf + ".part" }.map { Int64((try? $0.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) } ?? 0
             } else { bytes }
-            if complete { states[spec.id] = .downloaded(bytes: spec.file == nil ? bytes : (files.first { $0.lastPathComponent == spec.file }.map { Int64((try? $0.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) } ?? bytes)) }
+            if complete {
+                states[spec.id] = .downloaded(bytes: spec.file == nil ? bytes : (files.first { $0.lastPathComponent == spec.file }.map { Int64((try? $0.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) } ?? bytes))
+                noteLocalVision(spec, directory: dir)
+            }
             else if partial > 0 { states[spec.id] = .paused(done: partial, total: spec.sizeBytes) }
             else if case .failed? = states[spec.id] { /* keep the message */ }
             else { states[spec.id] = .notDownloaded }
@@ -331,7 +362,14 @@ public final class ModelStore {
         else { try? FileManager.default.removeItem(at: dir) }
         storage.set(location: .internalStorage, for: spec.id)
         states[spec.id] = .notDownloaded
+        forgetLocalVision(spec.id)
         refresh()
+    }
+
+    /// The files are gone → the row describes the model again until the next download.
+    private func forgetLocalVision(_ id: String) {
+        guard localVision.removeValue(forKey: id) != nil else { return }
+        if let data = try? JSONEncoder().encode(localVision) { try? data.write(to: Self.visionFile, options: .atomic) }
     }
 
     public func deleteAll() { catalog.models.forEach(delete) }
