@@ -43,12 +43,16 @@
 		<key>NSAllowsArbitraryLoads</key>
 		<false/>
 	</dict>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Let the model read your calendar and add events you approve. Nothing leaves this device.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Take a photo to show the model. It never leaves this device.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Record a message for the model to transcribe. Audio never leaves this device.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Save pictures the model produced to your library.</string>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>Let the model read your reminders and add ones you approve. Nothing leaves this device.</string>
 	<key>UILaunchScreen</key>
 	<dict>
 		<key>UIImageName</key>
