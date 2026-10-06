@@ -45,6 +45,12 @@ Tools you need now and then stay **off** until you switch them on in **Settings 
 
 Reads and creates are separate tools on purpose: with one tool carrying both verbs a 0.8B model turned "what did I copy?" into a write 4 times in 6. The create tools' descriptions carry today's date, so "tomorrow at 12:30" becomes a real timestamp without a second tool call.
 
+## The model can mount a tool itself
+
+`manage_tools` is always on. When the model needs a tool that is switched off — say you asked it to fetch a page while `http` is off — it can call `manage_tools list`, see every tool the app has (and why one cannot run on this device), and `mount` the one it needs. The mount counts **for this conversation** and works on the model's very next step, inside the same answer; a new conversation starts from your switches again. Settings › Tools shows the difference as *mounted for this conversation* / *unmounted for this conversation* and one line under the list says what the agent changed. Your switch always wins: flipping a tool in Settings applies to the current conversation too.
+
+Measured, not assumed: the ManageToolsMeasurement test runs the real loopl 0.8B and 2B models with the needed tool unmounted and records whether the model mounted it and used it in the same turn (numbers in the changelog).
+
 ## Asking first
 
 A call that writes — `http` with POST/PUT/DELETE, `open_app`, `clipboard_write` — stops at an **approval card**: the exact request, **Approve**, **Deny**, or **Edit** the arguments. Deny, and the model is told it was denied and carries on without it. **Settings › Network › Ask before** chooses: every request, writes only (the default), or never. An unanswered card is denied after two minutes.

@@ -29,13 +29,16 @@ struct SavedConversation: Codable, Identifiable, Hashable {
     /// (OpenAI function specs). Optional + tolerant — files saved before this field exist decode as nil.
     var modelId: String?
     var tools: [ToolSpec]?
+    /// Phase 6: the tool names MOUNTED for this thread when it was last saved (Settings' defaults ± what the agent
+    /// mounted/unmounted with `manage_tools`). Reopening restores it. Optional — older files decode as nil → defaults.
+    var mounted: [String]?
 
-    init(id: UUID, title: String, updated: Date, modelName: String?, items: [Item], editedAt: Date? = nil, modelId: String? = nil, tools: [ToolSpec]? = nil) {
+    init(id: UUID, title: String, updated: Date, modelName: String?, items: [Item], editedAt: Date? = nil, modelId: String? = nil, tools: [ToolSpec]? = nil, mounted: [String]? = nil) {
         self.id = id; self.title = title; self.updated = updated; self.modelName = modelName; self.items = items
-        self.editedAt = editedAt; self.modelId = modelId; self.tools = tools
+        self.editedAt = editedAt; self.modelId = modelId; self.tools = tools; self.mounted = mounted
     }
 
-    static func from(_ t: Transcript, id: UUID, modelName: String?, editedAt: Date? = nil, modelId: String? = nil, tools: [ToolSpec]? = nil) -> SavedConversation? {
+    static func from(_ t: Transcript, id: UUID, modelName: String?, editedAt: Date? = nil, modelId: String? = nil, tools: [ToolSpec]? = nil, mounted: [String]? = nil) -> SavedConversation? {
         let items: [Item] = t.items.compactMap {
             switch $0.kind {
             case .user(let s): .user(s, images: HistoryImage.thumbnails($0.images))
@@ -53,7 +56,7 @@ struct SavedConversation: Codable, Identifiable, Hashable {
         }
         guard items.contains(where: { if case .user = $0 { return true }; return false }) else { return nil }
         let first = items.compactMap { if case .user(let s, _) = $0 { return s }; return nil }.first ?? "Conversation"
-        return SavedConversation(id: id, title: String(first.prefix(60)), updated: Date(), modelName: modelName, items: items, editedAt: editedAt, modelId: modelId, tools: tools)
+        return SavedConversation(id: id, title: String(first.prefix(60)), updated: Date(), modelName: modelName, items: items, editedAt: editedAt, modelId: modelId, tools: tools, mounted: mounted)
     }
 
     /// Everything strictly before the item at `index` (History-level "delete from here" / the kept half of an edit).

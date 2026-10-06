@@ -95,6 +95,24 @@ A recording reaches `transcribe` as a line in the user's message, not as hidden 
 | `RememberTool` · `RecallTool` | notes on the device (`NotesStore`) |
 | `HttpTool` | any HTTPS request; asks before it runs ([Human in the loop](hitl.md)); refused in offline mode |
 
+## The agent manages its own tools
+
+A `ToolRegistry` holds every tool the agent *knows* — mounted or not, runnable here or not (with the reason) — and the subset the model is offered. Give the agent one and `tools` becomes a mirror of `registry.mounted`, read **when each model request is built**, not once per run:
+
+```swift
+// snippet: compile(wrap)
+import Loopl
+let registry = ToolRegistry(catalog: [CurrentTimeTool(), CalculatorTool(), HttpTool()],
+                            mounted: ["current_time"], selfManaging: true)   // + manage_tools, pinned
+// let agent = Agent(model: model, systemPrompt: "…", registry: registry)
+await registry.mount(["http"])                 // effective for the very next model call — same turn
+let names = await registry.mountedNames        // ["current_time", "http", "manage_tools"]
+```
+
+`selfManaging: true` registers `manage_tools` (`ManageToolsTool`) bound to that registry: `list` shows the model every known tool and why one cannot run here, `mount` / `unmount` change the set, `describe` prints one tool's parameters. Because the agent re-reads the registry before every request and before running a message's calls, a tool the model mounts in cycle *n* is both **offered** and **runnable** in cycle *n + 1* of the same turn — the proof is `ToolRegistryTests.testMountMidTurnIsOfferedOnTheNextModelCall` (three requests, one user message, request 2 carries `http`). `AgentEvent.toolsChanged(mounted:)` fires whenever the offered list changes, so a UI can show it.
+
+`create` / `remove` route to a `ToolCreator` you plug in with `registry.setCreator(_:)` — source code the model wrote, turned into a `Tool` (Swift on a Mac, JavaScript on iPhone). Without one they answer *"not available on this device yet"*, never silently. `register(_:source:…)` adds a tool at runtime (mounted by default — the point of registering mid-task is to use it); `setMounted(_:)` replaces the set wholesale, the way a host applies its Settings; pinned tools stay, unavailable ones stay out.
+
 ## How a call reaches your code
 
 - Small models write calls in many dialects. `ToolCallParser` reads them all: `{"name", "arguments"}`, flat calls, `<tool_call>` JSON, fenced JSON, Llama's `<|python_tag|>`, the Qwen XML `<function=…>` form.

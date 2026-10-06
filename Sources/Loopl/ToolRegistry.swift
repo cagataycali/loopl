@@ -74,13 +74,28 @@ public actor ToolRegistry {
     /// - Parameters:
     ///   - catalog: every tool the agent may ever be offered, in catalog order.
     ///   - mounted: names offered at the start (defaults from Settings › Tools). Unknown names are ignored.
-    ///   - pinned: names the model cannot unmount (the Engine pins `manage_tools`).
-    public init(catalog: [any Tool] = [], mounted: [String]? = nil, pinned: Set<String> = []) {
+    ///   - pinned: names the model cannot unmount.
+    ///   - selfManaging: also register `manage_tools` (bound to this registry) as a pinned, always-mounted app tool —
+    ///     what the Engine does, so the model can mount/unmount the rest.
+    public init(catalog: [any Tool] = [], mounted: [String]? = nil, pinned: Set<String> = [], selfManaging: Bool = false) {
         for t in catalog {
             let isPinned = pinned.contains(t.name)
             if entries[t.name] == nil { order.append(t.name) }
             entries[t.name] = Entry(tool: t, source: .app, mounted: isPinned || (mounted?.contains(t.name) ?? true), pinned: isPinned)
         }
+        self.selfManaging = selfManaging
+    }
+
+    private let selfManaging: Bool
+    private var selfToolInstalled = false
+    /// `manage_tools` needs a reference to this registry, which an actor's init cannot hand out and keep touching its
+    /// state — so it is installed on first access instead (every public entry point calls this first).
+    private func install() {
+        guard selfManaging, !selfToolInstalled else { return }
+        selfToolInstalled = true
+        let me = ManageToolsTool(registry: self)
+        if entries[me.name] == nil { order.append(me.name) }
+        entries[me.name] = Entry(tool: me, source: .app, mounted: true, pinned: true)
     }
 
     private func add(_ e: Entry) {
@@ -93,13 +108,13 @@ public actor ToolRegistry {
     // MARK: reading
 
     /// The tools the agent is offered right now, in catalog order.
-    public var mounted: [any Tool] { order.compactMap { entries[$0] }.filter(\.mounted).map(\.tool) }
-    public var mountedNames: [String] { order.filter { entries[$0]?.mounted == true } }
+    public var mounted: [any Tool] { install(); return order.compactMap { entries[$0] }.filter(\.mounted).map(\.tool) }
+    public var mountedNames: [String] { install(); return order.filter { entries[$0]?.mounted == true } }
     /// Every known tool, in catalog order.
-    public var catalog: [Entry] { order.compactMap { entries[$0] } }
-    public var names: [String] { order }
-    public func entry(_ name: String) -> Entry? { entries[name] }
-    public func tool(named name: String) -> (any Tool)? { entries[name]?.tool }
+    public var catalog: [Entry] { install(); return order.compactMap { entries[$0] } }
+    public var names: [String] { install(); return order }
+    public func entry(_ name: String) -> Entry? { install(); return entries[name] }
+    public func tool(named name: String) -> (any Tool)? { install(); return entries[name]?.tool }
 
     /// Catalog as plain rows (for `manage_tools list`, Settings › Tools and tests).
     public func list() -> [Listing] {
@@ -114,6 +129,7 @@ public actor ToolRegistry {
     /// Mount by name. Returns what actually changed and what could not be done, so the tool result is honest.
     @discardableResult
     public func mount(_ names: [String]) -> Change {
+        install()
         var c = Change()
         for n in names {
             guard let e = entries[n] else { c.unknown.append(n); continue }
@@ -128,6 +144,7 @@ public actor ToolRegistry {
     /// Unmount by name. Pinned tools stay (reported under `pinned`).
     @discardableResult
     public func unmount(_ names: [String]) -> Change {
+        install()
         var c = Change()
         for n in names {
             guard let e = entries[n] else { c.unknown.append(n); continue }
@@ -142,6 +159,7 @@ public actor ToolRegistry {
     /// Replace the mounted set wholesale (the Engine applies Settings › Tools, a host restores a thread).
     /// Pinned entries stay mounted; unavailable ones stay unmounted.
     public func setMounted(_ names: Set<String>) {
+        install()
         var changed = false
         for n in order {
             guard var e = entries[n] else { continue }
@@ -156,6 +174,7 @@ public actor ToolRegistry {
     /// cannot run yet; it is listed, never offered.
     public func register(_ tool: any Tool, source: Source = .session, mounted: Bool = true, pinned: Bool = false,
                          available: Bool = true, reason: String = "") {
+        install()
         let wasMounted = entries[tool.name]?.mounted ?? false
         add(Entry(tool: tool, source: source, available: available, reason: reason, mounted: mounted, pinned: pinned))
         if (entries[tool.name]?.mounted ?? false) != wasMounted || wasMounted { bump() }
@@ -164,6 +183,7 @@ public actor ToolRegistry {
     /// Remove a tool from the catalog entirely (created tools, session extras). App tools and pinned tools refuse.
     @discardableResult
     public func unregister(_ name: String) -> Bool {
+        install()
         guard let e = entries[name], e.source != .app, !e.pinned else { return false }
         entries[name] = nil; order.removeAll { $0 == name }
         if e.mounted { bump() }
