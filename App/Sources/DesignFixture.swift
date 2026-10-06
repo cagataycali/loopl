@@ -43,24 +43,31 @@ enum DesignFixture {
     static let trainLog: [String] = [
         #"[loopl] stage=discover t=1s {"revision": "d91e2b68", "read": 191, "invalid": 0, "duplicates": 0, "denylisted": 0, "pii_scrubbed": 0, "train": 174, "eval": 17, "source": "cagataydev/loopl-app-smoke-data@d91e2b68"}"#,
         "[loopl] stage=render t=1s",
-        #"[loopl] stage=train t=24s {"method": "lora", "steps": 24, "rows": 191}"#,
+        #"[loopl] plan {"round": 2, "base": "cagataydev/loopl-app-sim", "root": "Qwen/Qwen3.5-0.8B", "lineage": ["Qwen/Qwen3.5-0.8B", "cagataydev/loopl-app-sim"], "size": "0.8b", "epochs": {"mode": "auto", "max": 3.0, "heuristic": "3–4", "conversations": 191, "early_stop": true}, "replay": true, "replay_from": null, "stitch": {"mode": "day", "groups": 9, "stitched": 9, "threads_in": 61, "dropped_for_budget": 0, "unkeyed": 12, "budget_tokens": 4096}, "lora": {"r": 32, "alpha": 64}}"#,
+        #"[loopl] stage=train t=24s {"method": "lora", "steps": 24, "rows": 200, "epochs": 3.0, "epochs_mode": "auto", "round": 2}"#,
         "  4%|▍         | 1/24 [00:55<21:27, 56.00s/it]",
         "{'loss': 2.4321, 'grad_norm': 1.1, 'learning_rate': 9.6e-05, 'epoch': 0.08}",
         " 58%|█████▊    | 14/24 [02:41<01:07,  6.75s/it]",
         "{'loss': 2.2134, 'grad_norm': 0.9, 'learning_rate': 4.2e-05, 'epoch': 1.17}",
+        "[loopl] epoch=1 eval_loss=2.2410 best=2.2410",
     ]
     static let trainLogDone: [String] = trainLog + [
+        "[loopl] epoch=2 eval_loss=2.1477 best=2.1477",
+        "[loopl] epoch=3 eval_loss=2.1702 best=2.1477",
         "[loopl] stage=merge t=317s",
         #"[loopl] stage=eval t=321s {"probes": 17}"#,
         #"[loopl] stage=push t=420s {"repo": "cagataydev/loopl-app-smoke"}"#,
         #"[loopl] stage=mlx t=428s {"repo": "cagataydev/loopl-app-smoke-4bit"}"#,
         #"[loopl] stage=gguf t=446s {"repo": "cagataydev/loopl-app-smoke-GGUF"}"#,
-        #"[loopl] done {"out": {"merged": "cagataydev/loopl-app-smoke", "mlx": "cagataydev/loopl-app-smoke-4bit", "gguf": "cagataydev/loopl-app-smoke-GGUF", "gguf_file": "loopl-app-smoke-Q4_K_M.gguf"}, "eval_loss_base": 2.3794, "eval_loss_tuned": 2.1477, "tool_name_match": "7/9", "wall_s": 476, "script": "1.0.2"}"#,
+        #"[loopl] done {"out": {"merged": "cagataydev/loopl-app-smoke", "mlx": "cagataydev/loopl-app-smoke-4bit", "gguf": "cagataydev/loopl-app-smoke-GGUF", "gguf_file": "loopl-app-smoke-Q4_K_M.gguf"}, "round": 2, "lineage": ["Qwen/Qwen3.5-0.8B", "cagataydev/loopl-app-sim"], "base": "cagataydev/loopl-app-sim", "epochs_trained": 3.0, "best_epoch": 2, "eval_history": [{"epoch": 1.0, "eval_loss": 2.241}, {"epoch": 2.0, "eval_loss": 2.1477}, {"epoch": 3.0, "eval_loss": 2.1702}], "stitched": 9, "eval_loss_base": 2.3794, "eval_loss_tuned": 2.1477, "tool_name_match": "7/9", "wall_s": 476, "script": "1.2.0"}"#,
     ]
 
     @MainActor static func trainSession() -> TrainingSession? {
         guard let scene = trainScene, scene != "form" else { return nil }
-        let plan = TrainingPlan(dataset: "cagataydev/loopl-app-conversations", conversations: 191, withTools: 64, base: .b0_8, outputName: "loopl-app-smoke", hoursCap: 1)
+        // round 2 of loopl-app-sim: the fixture mirrors a continual job (tuned base, epochs auto, stitched by day)
+        let tuned = TrainingTunedBase(repo: "cagataydev/loopl-app-sim-4bit", bf16Repo: "cagataydev/loopl-app-sim", round: 1, size: .b0_8)
+        let plan = TrainingPlan(dataset: "cagataydev/loopl-app-conversations", conversations: 191, withTools: 64, base: .b0_8, tunedBase: tuned,
+                                epochs: .auto, stitch: .day, outputName: "loopl-app-smoke", hoursCap: 1)
         switch scene {
         case "done": return TrainingSession.preview(plan: plan, user: "cagataydev", logLines: trainLogDone, finished: true, startedAt: Date().addingTimeInterval(-476))
         case "failed": return TrainingSession.preview(plan: plan, user: "cagataydev", logLines: trainLog + ["torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 1.2 GiB."], failed: "torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 1.2 GiB.")

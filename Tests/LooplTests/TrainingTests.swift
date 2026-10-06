@@ -56,7 +56,7 @@ final class TrainingTests: XCTestCase {
     }
 
     func testJobSpecIsTheLaunchContract() throws {
-        let plan = TrainingPlan(dataset: "cagataydev/loopl-app-smoke-data", conversations: 191, base: .b0_8, outputName: "loopl-app-smoke", hoursCap: 1)
+        let plan = TrainingPlan(dataset: "cagataydev/loopl-app-smoke-data", conversations: 191, base: .b0_8, epochs: .fixed(2), outputName: "loopl-app-smoke", hoursCap: 1)
         let spec = TrainingLaunch.jobSpec(plan: plan, user: "cagataydev", token: "hf_secret")
         XCTAssertEqual(spec.dockerImage, "ghcr.io/astral-sh/uv:python3.12-bookworm")
         XCTAssertEqual(spec.command, ["bash", "-lc",
@@ -117,5 +117,83 @@ final class TrainingTests: XCTestCase {
         XCTAssertEqual(p.current?.name, "error")
         var q = TrainingProgress(); q.ingest("[loopl] error: no trainable conversations after validation"); 
         XCTAssertEqual(q.error, "no trainable conversations after validation")
+    }
+
+    // MARK: script 1.2.0 — continual tuning, epochs auto, stitch
+
+    func testTunedBaseResolvesToBF16AndRefusesWithoutIt() {
+        let owned = [HubCatalog.OwnedRepo(id: "me/loopl-app-sim", library: "transformers", looplRound: 1),
+                     HubCatalog.OwnedRepo(id: "me/loopl-app-sim-4bit", library: "mlx", looplRound: 1, looplParent: "me/loopl-app-sim"),
+                     HubCatalog.OwnedRepo(id: "me/loopl-app-sim-GGUF", library: "gguf"),
+                     HubCatalog.OwnedRepo(id: "me/loopl-2b-r2-4bit", library: "mlx", looplRound: 2), HubCatalog.OwnedRepo(id: "me/loopl-2b-r2", looplRound: 2),
+                     HubCatalog.OwnedRepo(id: "me/orphan-4bit", library: "mlx")]
+        let bases = TrainingTunedBase.fromOwned(runnable: ["me/loopl-app-sim-4bit", "me/loopl-app-sim-GGUF", "me/loopl-2b-r2-4bit", "me/orphan-4bit"], owned: owned)
+        XCTAssertEqual(bases.map(\.repo), ["me/loopl-app-sim-4bit", "me/loopl-2b-r2-4bit", "me/orphan-4bit"], "one base per bf16 twin; GGUF twin folds in")
+        XCTAssertEqual(bases[0].bf16Repo, "me/loopl-app-sim"); XCTAssertEqual(bases[0].round, 1); XCTAssertEqual(bases[0].size, .b0_8)
+        XCTAssertEqual(bases[1].bf16Repo, "me/loopl-2b-r2"); XCTAssertEqual(bases[1].round, 2); XCTAssertEqual(bases[1].size, .b2)
+        XCTAssertNil(bases[2].bf16Repo, "no bf16 next to the 4-bit weights → not trainable (the script refuses 4-bit)")
+        XCTAssertFalse(bases[2].isTrainable)
+        XCTAssertEqual(TrainingTunedBase.bf16Sibling(of: "x/loopl-mine-GGUF"), "x/loopl-mine")
+        XCTAssertEqual(TrainingBase.sizeToken(in: "Qwen/Qwen3.5-0.8B"), "0.8b"); XCTAssertEqual(TrainingBase.sizeToken(in: "me/loopl-4b-4bit"), "4b")
+        XCTAssertNil(TrainingBase.sizeToken(in: "me/loopl-app-sim"))
+    }
+
+    func testContinualPlanArgumentsAndDefaults() {
+        let tuned = TrainingTunedBase(repo: "me/loopl-app-sim-4bit", bf16Repo: "me/loopl-app-sim", round: 1, size: .b0_8)
+        let plan = TrainingPlan(dataset: "me/loopl-app-conversations", conversations: 120, base: .b2, tunedBase: tuned, stitch: .day, hoursCap: 0.25)
+        XCTAssertEqual(plan.base, .b0_8, "the tuned base's Qwen root wins over the stock pick")
+        XCTAssertEqual(plan.method, .lora, "round ≥ 2 defaults to LoRA, like the script")
+        XCTAssertEqual(plan.round, 2)
+        XCTAssertEqual(plan.outputName, "loopl-app-sim-r2")
+        XCTAssertEqual(plan.baseLabel, "loopl-app-sim-4bit · round 2")
+        XCTAssertEqual(plan.scriptArguments(user: "me"),
+                       ["--dataset", "me/loopl-app-conversations", "--base", "me/loopl-app-sim", "--out", "me/loopl-app-sim-r2",
+                        "--epochs", "auto", "--method", "lora", "--stitch", "day"])
+        var noReplay = plan; noReplay.includeAllShards = false
+        XCTAssertTrue(noReplay.scriptArguments(user: "me").contains("--new-shards-only"))
+        var fresh = TrainingPlan(dataset: "me/d", conversations: 50, base: .b0_8, epochs: .fixed(9))
+        fresh.includeAllShards = false
+        XCTAssertEqual(fresh.scriptArguments(user: "me")[7], "4", "fixed epochs clamp to 1…4")
+        XCTAssertFalse(fresh.scriptArguments(user: "me").contains("--new-shards-only"), "round 1 has nothing to replay")
+        // round-aware output names do not pile up suffixes
+        XCTAssertEqual(TrainingPlan.defaultOutputName(continuing: TrainingTunedBase(repo: "me/loopl-app-sim-r2-4bit", bf16Repo: "me/loopl-app-sim-r2", round: 2, size: .b0_8)), "loopl-app-sim-r3")
+    }
+
+    func testEpochsHeuristicDrivesAutoAndTheEstimate() {
+        XCTAssertEqual(TrainingEpochs.heuristic(forConversations: 120).text, "3–4"); XCTAssertEqual(TrainingEpochs.heuristic(forConversations: 120).autoMax, 3)
+        XCTAssertEqual(TrainingEpochs.heuristic(forConversations: 500).text, "2"); XCTAssertEqual(TrainingEpochs.heuristic(forConversations: 500).autoMax, 2)
+        XCTAssertEqual(TrainingEpochs.heuristic(forConversations: 5000).text, "1–2"); XCTAssertEqual(TrainingEpochs.heuristic(forConversations: 5000).autoMax, 2)
+        let auto = TrainingPlan(dataset: "me/d", conversations: 120, base: .b0_8, epochs: .auto)
+        let three = TrainingPlan(dataset: "me/d", conversations: 120, base: .b0_8, epochs: .fixed(3))
+        XCTAssertEqual(auto.estimate.steps, three.estimate.steps, "auto bills for the heuristic's upper bound — never a surprise")
+        XCTAssertEqual(TrainingEpochs.auto.argument, "auto"); XCTAssertEqual(TrainingEpochs.fixed(2).label, "2")
+    }
+
+    func testProgressReadsPlanEpochAndLineageLines() {
+        var p = TrainingProgress()
+        p.ingest(#"[loopl] plan {"round": 2, "base": "me/loopl-app-sim", "lineage": ["Qwen/Qwen3.5-0.8B", "me/loopl-app-sim"], "epochs": {"mode": "auto", "max": 3.0, "heuristic": "3–4", "conversations": 120, "early_stop": true}, "replay": true, "stitch": {"mode": "day", "stitched": 9, "unkeyed": 12}}"#)
+        XCTAssertEqual(p.plan?.round, 2); XCTAssertEqual(p.plan?.lineage, ["Qwen/Qwen3.5-0.8B", "me/loopl-app-sim"])
+        XCTAssertEqual(p.plan?.epochsMode, "auto"); XCTAssertEqual(p.plan?.heuristic, "3–4"); XCTAssertEqual(p.plan?.stitched, 9); XCTAssertEqual(p.plan?.unkeyed, 12); XCTAssertEqual(p.plan?.replay, true)
+        p.ingest("[loopl] epoch=1 eval_loss=2.2410 best=2.2410")
+        p.ingest("[loopl] epoch=2 eval_loss=2.1477 best=2.1477")
+        p.ingest("[loopl] epoch=2 eval_loss=2.1470 best=2.1470")   // a re-read line updates, never duplicates
+        XCTAssertEqual(p.evalHistory.map(\.epoch), [1, 2]); XCTAssertEqual(p.evalHistory.last?.evalLoss, 2.147)
+        p.ingest(#"[loopl] done {"out": {"merged": "me/loopl-app-sim-r2", "mlx": "me/loopl-app-sim-r2-4bit"}, "round": 2, "lineage": ["Qwen/Qwen3.5-0.8B", "me/loopl-app-sim"], "epochs_trained": 3.0, "best_epoch": 2, "eval_history": [{"epoch": 1.0, "eval_loss": 2.241}, {"epoch": 2.0, "eval_loss": 2.147}, {"epoch": 3.0, "eval_loss": 2.17}], "stitched": 9, "eval_loss_base": 2.38, "eval_loss_tuned": 2.147, "script": "1.2.0"}"#)
+        let o = try! XCTUnwrap(p.output)
+        XCTAssertEqual(o.round, 2); XCTAssertEqual(o.bestEpoch, 2); XCTAssertEqual(o.epochsTrained, 3); XCTAssertEqual(o.stitched, 9)
+        XCTAssertEqual(o.evalHistory?.map(\.epoch), [1, 2, 3]); XCTAssertEqual(o.lineage?.last, "me/loopl-app-sim")
+        // a 1.1.0 job without the new keys still parses (nil, not garbage)
+        var old = TrainingProgress()
+        old.ingest(#"[loopl] done {"out": {"merged": "x/y"}, "eval_loss_base": 2.3, "eval_loss_tuned": 2.1, "script": "1.1.0"}"#)
+        XCTAssertNil(old.output?.round); XCTAssertNil(old.output?.evalHistory)
+    }
+
+    func testOwnedRepoParsing() throws {
+        let json = #"[{"id": "me/loopl-app-sim", "library_name": "transformers", "tags": ["loopl"], "cardData": {"loopl_round": 1, "base_model": "Qwen/Qwen3.5-0.8B"}}, {"id": "me/loopl-app-sim-4bit", "library_name": "mlx", "cardData": {"loopl_round": "1", "loopl_parent": "me/loopl-app-sim"}}, {"id": "me/plain"}]"#
+        let owned = try HubCatalog.parseOwned(Data(json.utf8))
+        XCTAssertEqual(owned.map(\.id), ["me/loopl-app-sim", "me/loopl-app-sim-4bit", "me/plain"])
+        XCTAssertEqual(owned[0].looplRound, 1); XCTAssertEqual(owned[1].looplRound, 1); XCTAssertEqual(owned[1].looplParent, "me/loopl-app-sim"); XCTAssertNil(owned[2].looplRound)
+        let url = HubCatalog(token: nil).ownedURL(author: "me").absoluteString
+        XCTAssertTrue(url.contains("author=me") && url.contains("expand%5B%5D=cardData"))
     }
 }
