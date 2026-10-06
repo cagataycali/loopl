@@ -156,9 +156,9 @@ struct HubHitRow: View {
             }
             Spacer(minLength: 8)
             VStack(alignment: .trailing, spacing: 4) {
-                if let s = hit.sizeBytes { Text(ByteCountFormatter.string(fromByteCount: s, countStyle: .file)).font(.footnote.monospacedDigit()).foregroundStyle(.secondary) }
+                if let s = hit.sizeBytes, s > 0 { Text(ByteSize.label(s)).font(.footnote.monospacedDigit()).foregroundStyle(.secondary) }
                 if added { Image(systemName: "checkmark").font(.footnote.weight(.semibold)).foregroundStyle(.secondary).accessibilityLabel("on this device") }
-                else if let s = hit.sizeBytes { FitBadge(fit: .verdict(bytes: s, available: MemoryBudget.budget)) }
+                else if let s = hit.sizeBytes, s > 0 { FitBadge(fit: .verdict(bytes: s, available: MemoryBudget.budget)) }
             }
         }
         .contentShape(Rectangle())
@@ -284,7 +284,7 @@ struct HubRepoSheet: View {
                                     HStack {
                                         Text(f.quant ?? f.path).font(.body.monospaced())
                                         Spacer()
-                                        Text(ByteCountFormatter.string(fromByteCount: f.size, countStyle: .file)).font(.footnote.monospacedDigit()).foregroundStyle(.secondary)
+                                        Text(ByteSize.label(f.size, zero: "size unknown")).font(.footnote.monospacedDigit()).foregroundStyle(.secondary)
                                         Image(systemName: quant?.path == f.path ? "checkmark.circle.fill" : "circle")
                                             .foregroundStyle(quant?.path == f.path ? LooplDesign.accent : Color.secondary)
                                     }
@@ -299,7 +299,7 @@ struct HubRepoSheet: View {
                                 HStack {
                                     Text(f.path).font(.footnote.monospaced()).lineLimit(1).truncationMode(.middle)
                                     Spacer()
-                                    Text(ByteCountFormatter.string(fromByteCount: f.size, countStyle: .file)).font(.footnote.monospacedDigit()).foregroundStyle(.secondary)
+                                    Text(ByteSize.label(f.size, zero: "size unknown")).font(.footnote.monospacedDigit()).foregroundStyle(.secondary)
                                 }
                             }
                             if repo.files.count > repo.mlxFiles.count {
@@ -357,7 +357,7 @@ struct HubRepoSheet: View {
         if let existing, store.states[existing.id]?.isDownloaded == true {
             return engine.loadedModel?.id == existing.id ? "In use" : "Use this model"
         }
-        return "Download · \(spec.sizeLabel)"
+        return spec.sizeBytes > 0 ? "Download · \(spec.sizeLabel)" : "Download"
     }
 
     private func fitFootnote(_ spec: ModelSpec) -> String {

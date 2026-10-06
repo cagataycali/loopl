@@ -1,6 +1,6 @@
 {
-  "version": 3,
-  "updated": "2026-10-05",
+  "version": 4,
+  "updated": "2026-10-06",
   "default": "qwen3-0.6b-4bit",
   "models": [
     {
@@ -67,34 +67,6 @@
       "chat_template_kwargs": {
         "enable_thinking": false
       }
-    },
-    {
-      "id": "qwen2.5-1.5b-instruct-4bit",
-      "name": "Qwen2.5-1.5B Instruct (4-bit)",
-      "repo": "mlx-community/Qwen2.5-1.5B-Instruct-4bit",
-      "runtime": "mlx",
-      "family": "hermes",
-      "params_b": 1.5,
-      "size_bytes": 868628559,
-      "ctx_nominal": 32768,
-      "ctx_usable_8gb": 8192,
-      "min_ram_gb": 6,
-      "gated": false,
-      "notes": "KV 28 KiB/token → memory-bound ctx ≈32,768 on 8 GB (estimate)."
-    },
-    {
-      "id": "qwen2.5-3b-instruct-4bit",
-      "name": "Qwen2.5-3B Instruct (4-bit)",
-      "repo": "mlx-community/Qwen2.5-3B-Instruct-4bit",
-      "runtime": "mlx",
-      "family": "hermes",
-      "params_b": 3.1,
-      "size_bytes": 1736293090,
-      "ctx_nominal": 32768,
-      "ctx_usable_8gb": 8192,
-      "min_ram_gb": 8,
-      "gated": false,
-      "notes": "KV 36 KiB/token → memory-bound ctx ≈32,768 on 8 GB (estimate)."
     },
     {
       "id": "llama-3.2-1b-instruct-4bit",

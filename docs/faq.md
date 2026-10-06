@@ -24,7 +24,7 @@ description: Short answers — price, phones, context size, the no-cap loop, MLX
     The simulator has no Metal JIT, so `MLXModel` is unavailable there; `GGUFModel` runs on CPU. `availability()` tells you which.
 
 ??? question "Which models do tool calls well?"
-    Qwen3 and Qwen2.5 (Hermes `<tool_call>` format), Llama-3.2 1B/3B, Phi-4-mini and Apple's model. Gemma 3 and SmolLM fall back to bare-JSON parsing — fine for one tool, flaky for many. The [models table](models.md) has a column.
+    Qwen3 (Hermes `<tool_call>` format), Llama-3.2 1B/3B, Phi-4-mini and Apple's model. Any other Hermes-family repo you add from Browse Hugging Face uses the same grammar. Gemma 3 and SmolLM fall back to bare-JSON parsing — fine for one tool, flaky for many. The [models table](models.md) has a column.
 
 ??? question "Qwen3 answers with a long `<think>` block. Can I turn it off?"
     The catalog sets `enable_thinking: false` in `chatTemplateKwargs`; remove it if you want the monologue. It costs tokens.
