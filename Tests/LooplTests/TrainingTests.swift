@@ -70,7 +70,7 @@ final class TrainingTests: XCTestCase {
         let body = String(decoding: HFHubClient.createJobBody(spec), as: UTF8.self)
         XCTAssertEqual(body.components(separatedBy: "hf_secret").count - 1, 1)
         XCTAssertTrue(body.contains("\"secrets\""))
-        XCTAssertEqual(TrainingLaunch.scriptVersion(in: "x\nSCRIPT_VERSION = \"1.0.2\"\ny"), "1.0.2")
+        XCTAssertEqual(TrainingLaunch.scriptVersion(in: "x\nSCRIPT_VERSION = \"1.0.3\"\ny"), "1.0.3")
     }
 
     func testProgressParsesARealJobLog() {

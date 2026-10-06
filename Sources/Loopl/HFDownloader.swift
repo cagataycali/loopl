@@ -21,7 +21,10 @@ public struct HFDownloader: Sendable {
         public var path: String
         public var size: Int64
         public var type: String
-        public init(path: String, size: Int64, type: String) { self.path = path; self.size = size; self.type = type }
+        /// Git blob hash of a non-LFS file (the tree API's `oid`; LFS files report their pointer's oid instead and carry
+        /// the real sha256 under `lfs`). Compared with `TokenizerFiles.gitBlobSHA1` to see whether a small file changed.
+        public var oid: String?
+        public init(path: String, size: Int64, type: String, oid: String? = nil) { self.path = path; self.size = size; self.type = type; self.oid = oid }
     }
 
     public enum DLError: LocalizedError, Equatable {

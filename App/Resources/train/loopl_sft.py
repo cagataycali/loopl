@@ -53,7 +53,7 @@ import sys
 import time
 from pathlib import Path
 
-SCRIPT_VERSION = "1.0.2"
+SCRIPT_VERSION = "1.0.3"
 LLAMA_TAG_DEFAULT = "b11401"  # the llama.cpp build the loopl app vendors (scripts/fetch-llama-xcframework.sh)
 
 BASES = {"0.8b": "Qwen/Qwen3.5-0.8B", "2b": "Qwen/Qwen3.5-2B", "4b": "Qwen/Qwen3.5-4B"}
@@ -268,9 +268,16 @@ def assistant_spans(text: str) -> list[tuple[int, int]]:
     return spans
 
 
-def tokenize_with_mask(tokenizer, text: str, max_length: int) -> dict | None:
+def assistant_weights(messages: list[dict]) -> list[int]:
+    """Per assistant turn, in order: 0 when the message carries `weight: 0` (kept in the prompt, excluded from the loss)."""
+    return [0 if m.get("weight", 1) == 0 else 1 for m in messages if m.get("role") == "assistant"]
+
+
+def tokenize_with_mask(tokenizer, text: str, max_length: int, weights: list[int] | None = None) -> dict | None:
     enc = tokenizer(text, add_special_tokens=False, return_offsets_mapping=True, truncation=True, max_length=max_length)
     spans = assistant_spans(text)
+    if weights and len(weights) == len(spans):
+        spans = [sp for sp, w in zip(spans, weights) if w]
     mask = [0 if a == b else (1 if any(a >= s and b <= e for s, e in spans) else 0) for (a, b) in enc["offset_mapping"]]
     if 1 not in mask:
         return None
@@ -424,7 +431,7 @@ def build_rows(tokenizer, samples: list[dict], fmt: str, max_length: int, oversa
                 if stats["render_error"] <= 3:
                     log(f"render error ({d}): {e}")
                 continue
-            row = tokenize_with_mask(tokenizer, text, max_length)
+            row = tokenize_with_mask(tokenizer, text, max_length, assistant_weights(messages))
             if row is None:
                 stats["no_assistant"] += 1
                 continue
@@ -519,6 +526,107 @@ def convert_mlx(merged_dir: Path, out_dir: Path, bits: int, group: int) -> None:
     run(["uv", "run", "--no-project", "--python", "3.12", "--with", spec, "--with", "transformers>=5.7,<6",
          "python", "-m", "mlx_lm", "convert", "--hf-path", str(merged_dir), "--mlx-path", str(out_dir),
          "-q", "--q-bits", str(bits), "--q-group-size", str(group)])
+
+
+# ----------------------------------------------------------------------------- app-loadable tokenizer files
+# transformers 5 writes `tokenizer_class: "Qwen3_5Tokenizer"` (+ a `backend` key, no vocab.json, the chat template only
+# inside the python class). The loopl app tokenizes with swift-transformers, whose table has Qwen2Tokenizer but no
+# Qwen3_5Tokenizer → "Qwen3_5Tokenizer is not supported" on the phone AFTER the weights downloaded (owner, 2026-10-06).
+# So every export gets the tokenizer files of the mlx-community 4-bit base of the same size — the files every stock loopl
+# model already loads with — after asserting the vocabulary is identical, and APP_TOKENIZER_CHECK gates the push.
+APP_TOKENIZER_CLASS = "Qwen2Tokenizer"
+MLX_BASES = {"0.8b": "mlx-community/Qwen3.5-0.8B-4bit", "2b": "mlx-community/Qwen3.5-2B-4bit", "4b": "mlx-community/Qwen3.5-4B-4bit"}
+# swift-transformers 1.3.4 TokenizerModel.knownTokenizers
+SWIFT_KNOWN_TOKENIZERS = {"BertTokenizer", "CodeGenTokenizer", "CodeLlamaTokenizer", "CohereTokenizer", "DistilbertTokenizer",
+                          "DistilBertTokenizer", "FalconTokenizer", "GemmaTokenizer", "GPT2Tokenizer", "LlamaTokenizer",
+                          "RobertaTokenizer", "T5Tokenizer", "TokenizersBackend", "PreTrainedTokenizer", "Qwen2Tokenizer",
+                          "WhisperTokenizer", "XLMRobertaTokenizer", "Xlm-RobertaTokenizer"}
+
+
+def mlx_base_for(base: str) -> str | None:
+    m = re.search(r"(0\.8|2|4)B", base, re.I)
+    return MLX_BASES.get(m.group(1).lower() + "b") if m else None
+
+
+def normalize_tokenizer_files(out_dir: Path, base_repo: str, token: str | None) -> list[str]:
+    """Replace out_dir's tokenizer files with base_repo's (tokenizer.json, chat_template.jinja, vocab.json, merges.txt) and
+    rewrite tokenizer_config.json with tokenizer_class Qwen2Tokenizer and no `backend`. Refuses if the vocabulary differs."""
+    from huggingface_hub import hf_hub_download
+    from huggingface_hub.errors import EntryNotFoundError
+
+    def base(name):
+        try:
+            return Path(hf_hub_download(base_repo, name, token=token)).read_text()
+        except EntryNotFoundError:
+            return None
+
+    cur = json.loads((out_dir / "tokenizer.json").read_text())
+    bas_text = base("tokenizer.json")
+    bas = json.loads(bas_text)
+    for key in ("vocab", "merges"):
+        if cur["model"].get(key) != bas["model"].get(key):
+            raise RuntimeError(f"tokenizer.json model.{key} differs from {base_repo}: vocabulary changed, refusing to swap tokenizer files")
+    if cur.get("added_tokens") != bas.get("added_tokens"):
+        raise RuntimeError(f"tokenizer.json added_tokens differ from {base_repo}")
+    changed: list[str] = []
+    if (out_dir / "tokenizer.json").read_text() != bas_text:
+        (out_dir / "tokenizer.json").write_text(bas_text); changed.append("tokenizer.json")
+    cfg_path = out_dir / "tokenizer_config.json"
+    cfg = json.loads(cfg_path.read_text()) if cfg_path.exists() else {}
+    base_cfg = json.loads(base("tokenizer_config.json") or "{}")
+    new = dict(cfg) or dict(base_cfg)
+    new["tokenizer_class"] = APP_TOKENIZER_CLASS
+    new.pop("backend", None)
+    for k in ("eos_token", "pad_token", "bos_token", "model_max_length", "added_tokens_decoder"):
+        if k not in new and k in base_cfg:
+            new[k] = base_cfg[k]
+    if new != cfg:
+        cfg_path.write_text(json.dumps(new, indent=2, ensure_ascii=False) + "\n"); changed.append("tokenizer_config.json")
+    if not (out_dir / "chat_template.jinja").exists():
+        template = cfg.get("chat_template") if isinstance(cfg.get("chat_template"), str) else None
+        template = template or base("chat_template.jinja") or (base_cfg.get("chat_template") if isinstance(base_cfg.get("chat_template"), str) else None)
+        if not template:
+            raise RuntimeError("no chat template in the export or the base")
+        (out_dir / "chat_template.jinja").write_text(template); changed.append("chat_template.jinja")
+    for name in ("vocab.json", "merges.txt"):
+        if not (out_dir / name).exists():
+            text = base(name)
+            if text is not None:
+                (out_dir / name).write_text(text); changed.append(name)
+    return changed
+
+
+def check_app_loadable(out_dir: Path) -> list[str]:
+    """What the loopl app does at load, as a list of failures (empty = loadable). Mirrors train/check_mlx_repo.py."""
+    fails: list[str] = []
+    cfg = json.loads((out_dir / "config.json").read_text()) if (out_dir / "config.json").exists() else None
+    if not cfg or not cfg.get("model_type"):
+        fails.append("config.json missing or without model_type")
+    tc = json.loads((out_dir / "tokenizer_config.json").read_text()) if (out_dir / "tokenizer_config.json").exists() else {}
+    cls = tc.get("tokenizer_class") or ""
+    if cls.replace("Fast", "") not in SWIFT_KNOWN_TOKENIZERS:
+        fails.append(f"tokenizer_class {cls!r} is unknown to swift-transformers ('{cls} is not supported' on iOS)")
+    if not (out_dir / "tokenizer.json").exists():
+        fails.append("tokenizer.json missing")
+    template = (out_dir / "chat_template.jinja").read_text() if (out_dir / "chat_template.jinja").exists() else tc.get("chat_template")
+    if not isinstance(template, str) or not template:
+        fails.append("no chat template (chat_template.jinja / tokenizer_config.chat_template)")
+    elif "tools" not in template:
+        fails.append("chat template never mentions `tools`")
+    return fails
+
+
+def make_app_loadable(out_dir: Path, base: str, token: str | None, what: str) -> None:
+    mlx_base = mlx_base_for(base)
+    if mlx_base:
+        changed = normalize_tokenizer_files(out_dir, mlx_base, token)
+        log(f"{what}: tokenizer files normalised from {mlx_base} ({', '.join(changed) or 'already clean'})")
+    else:
+        log(f"{what}: no mlx-community base known for {base} — tokenizer files left as exported")
+    fails = check_app_loadable(out_dir)
+    if fails:
+        raise RuntimeError(f"{what} would not load in the loopl app: " + "; ".join(fails))
+    log(f"{what}: app-loadable ✓ (tokenizer_class {APP_TOKENIZER_CLASS}, chat template present)")
 
 
 def convert_gguf(merged_dir: Path, work: Path, name: str, tag: str, quant: str) -> Path:
@@ -816,6 +924,7 @@ def main():
     log("scorecard: " + json.dumps({k: v for k, v in scorecard.items() if k != "examples"}))
 
     api = HfApi(token=token)
+    make_app_loadable(merged_dir, a.base, token, "merged")
     if not a.no_push:
         stage("push", repo=a.out)
         api.create_repo(a.out, private=not a.public, exist_ok=True)
@@ -851,6 +960,7 @@ def export_artifacts(a, api, work: Path, merged_dir: Path, summary: dict, scorec
         try:
             mlx_dir = work / "mlx"
             convert_mlx(merged_dir, mlx_dir, a.q_bits, a.q_group)
+            make_app_loadable(mlx_dir, a.base, os.environ.get("HF_TOKEN"), "mlx")
             (mlx_dir / "scorecard.json").write_text(json.dumps(scorecard, indent=1))
             (mlx_dir / "README.md").write_text(model_card(a, summary, "mlx", parent=a.out))
             if not a.no_push:

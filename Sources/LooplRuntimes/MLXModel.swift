@@ -10,6 +10,9 @@ import Tokenizers
 import Hub
 import Jinja
 import CoreImage
+import os
+
+private let tokenizerLog = Logger(subsystem: "technology.tiny.loopl", category: "tokenizer")
 
 /// Bridges swift-transformers' tokenizer to MLXLMCommon's `Tokenizer`
 /// protocol — the same shape `#adaptHuggingFaceTokenizer` expands to, written
@@ -32,7 +35,14 @@ struct TransformersTokenizerBridge: MLXLMCommon.Tokenizer {
 
 struct TransformersTokenizerLoader: MLXLMCommon.TokenizerLoader {
     func load(from directory: URL) async throws -> any MLXLMCommon.Tokenizer {
-        TransformersTokenizerBridge(upstream: try await AutoTokenizer.from(modelFolder: directory))
+        // `strict: false`: an unknown `tokenizer_class` (transformers 5 writes "Qwen3_5Tokenizer", which swift-transformers
+        // has no entry for) falls back to the BPE tokenizer that tokenizer.json describes — the same class Qwen2Tokenizer
+        // maps to — instead of failing the load with "Qwen3_5Tokenizer is not supported" (owner, 2026-10-06).
+        let audit = TokenizerFiles.audit(directory)
+        if audit.unknownClass {
+            tokenizerLog.notice("tokenizer_class \(audit.tokenizerClass ?? "?", privacy: .public) is unknown to swift-transformers — loading \(directory.lastPathComponent, privacy: .public) with the BPE fallback")
+        }
+        return TransformersTokenizerBridge(upstream: try await AutoTokenizer.from(modelFolder: directory, strict: false))
     }
 }
 
