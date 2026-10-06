@@ -9,6 +9,20 @@ hide:
 
 The app's built-in catalog. Every entry is a public Hugging Face repo — no token — except the **loopl** rows (`gated: yes`), which are Cagatay's private post-tuned models and download with your own token (Settings › Hugging Face); any other public MLX or GGUF repo loads the same way. *Usable on 8 GB* is the context that fits beside the weights on an iPhone 16 Pro; it is the app's default.
 
+## The loopl models
+
+Qwen3.5 0.8B, 2B and 4B post-tuned on [cagataydev/loopl-train](https://huggingface.co/datasets/cagataydev/loopl-train): the agent loop and how this runtime behaves, tool calls in both dialects loopl speaks, recovering from a tool error instead of repeating it, who they are. The vision tower is the base's, kept — the MLX exports read photos; the GGUF exports are text-only. Every repo lives in one place, **[the loopl collection on Hugging Face](https://huggingface.co/collections/cagataydev/loopl-on-device-agents-swift-6ac51395b13a9c41d4932eaf)** — MLX 4-bit, GGUF, bf16, the LoRA adapter, the dataset and two models trained *from the app*. Each card has the scores against the base, the recipe and how to run it in the app, with `mlx_vlm`, with `llama.cpp` or from Swift.
+
+| | MLX 4-bit · vision | GGUF Q4_K_M · text | bf16 |
+|---|---|---|---|
+| loopl 0.8B | [loopl-0.8b-4bit](https://huggingface.co/cagataydev/loopl-0.8b-4bit) | [loopl-0.8b-GGUF](https://huggingface.co/cagataydev/loopl-0.8b-GGUF) | [loopl-0.8b](https://huggingface.co/cagataydev/loopl-0.8b) |
+| loopl 2B | [loopl-2b-4bit](https://huggingface.co/cagataydev/loopl-2b-4bit) | [loopl-2b-GGUF](https://huggingface.co/cagataydev/loopl-2b-GGUF) | [loopl-2b](https://huggingface.co/cagataydev/loopl-2b) |
+| loopl 4B | [loopl-4b-4bit](https://huggingface.co/cagataydev/loopl-4b-4bit) | [loopl-4b-GGUF](https://huggingface.co/cagataydev/loopl-4b-GGUF) | [loopl-4b](https://huggingface.co/cagataydev/loopl-4b) |
+
+In the app: Settings › Hugging Face › sign in, then Models › **Mine** (private) or **Browse** (public) → download. On a Mac: `pip install mlx-vlm` then `python -m mlx_vlm.generate --model cagataydev/loopl-2b-4bit --image photo.jpg --prompt "What is this?"`.
+
+## The catalog
+
 <div class="loopl-models-table" markdown>
 
 | Model | Runtime | Params | 4-bit size | ctx max | usable on 8 GB | min RAM | gated | tool calls |
