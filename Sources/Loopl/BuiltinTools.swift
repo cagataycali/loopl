@@ -167,6 +167,23 @@ public struct HttpTool: Tool {
         let http = resp as? HTTPURLResponse
         let code = http?.statusCode ?? 0
         let type = (http?.value(forHTTPHeaderField: "Content-Type") ?? "").split(separator: ";").first.map(String.init) ?? ""
+        if code >= 400 {
+            // A 4xx/5xx is a FAILED request as far as the model is concerned. Measured on Qwen3.5-0.8B: a 405
+            // rendered as a success result ("HTTP 405 text/html\n<!DOCTYPE HTML…") was re-issued verbatim 7 times;
+            // the model needs the failure named first and the fix spelled out. The body still travels (capped).
+            var line = "HTTP \(code) \(HTTPURLResponse.localizedString(forStatusCode: code)) for \(r.method) \(r.url.absoluteString)."
+            switch code {
+            case 404: line += " The path does not exist on this server — check the URL."
+            case 405: line += " The server does not allow \(r.method) here — use GET (or the method the API documents)."
+            case 401, 403: line += " The server refused access — this URL needs credentials the tool does not have."
+            case 429: line += " Rate limited — do not retry immediately."
+            case 500...: line += " Server-side failure — retrying the same request is unlikely to help."
+            default: break
+            }
+            let body = String(decoding: data.prefix(2_000), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !body.isEmpty { line += " Response body: " + String(body.prefix(600)) + (body.count > 600 ? "…" : "") }
+            throw ToolError(line)
+        }
         var head = "HTTP \(code)"
         if !type.isEmpty { head += " \(type)" }
         if let loc = http?.value(forHTTPHeaderField: "Location") { head += "\nLocation: \(loc)" }
