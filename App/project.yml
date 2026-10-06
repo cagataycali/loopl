@@ -77,6 +77,8 @@ targets:
         # contacts_search (off by default): read-only name lookup. photos_recent (off by default): Selected Photos is enough.
         NSContactsUsageDescription: Let the model look up a name in your contacts when you ask. Nothing is changed or sent anywhere.
         NSPhotoLibraryUsageDescription: Let the model see your newest photos when you ask — Selected Photos is enough. Nothing leaves this device.
+        # music tool (on by default): play/pause/skip/volume need no permission; now_playing reads the title through the Media Library.
+        NSAppleMusicUsageDescription: Tell the model which song is playing when you ask. Nothing leaves this device.
         # open_app tool: schemes canOpenURL may answer for (UIApplication.open reports truthfully for any scheme).
         LSApplicationQueriesSchemes:
         - shortcuts

@@ -324,9 +324,16 @@ public final class Engine {
         continuedHere = false
     }
 
-    func delete(_ c: SavedConversation) {
-        archive.delete(c)
-        if c.id == currentId { transcript.clear(); agent = nil; currentId = UUID(); currentEditedAt = nil; openedUnder = nil; continuedHere = false }
+    func delete(_ c: SavedConversation) { delete(ids: [c.id]) }
+
+    /// Delete several saved conversations at once (History › Select → Delete). If the thread on screen is among
+    /// them, the chat resets to a fresh, empty one — transcript, agent and model context — so nothing stale is kept.
+    /// Returns how many threads were removed.
+    @discardableResult
+    func delete(ids: Set<UUID>) -> Int {
+        let n = archive.delete(ids: ids)
+        if ids.contains(currentId) { transcript.clear(); agent = nil; currentId = UUID(); currentEditedAt = nil; openedUnder = nil; continuedHere = false }
+        return n
     }
 
     private func archiveCurrent() {

@@ -57,7 +57,7 @@ final class ContactsPhotosToolsTests: XCTestCase {
             XCTAssertTrue(AppleTools.names.contains(n)); XCTAssertFalse(AppleTools.isDefaultOn(n), n)
             XCTAssertTrue(AppleTools.availability(of: n).available)
         }
-        XCTAssertEqual(AppleTools.names.count, 17)
-        XCTAssertEqual(AppleTools.defaultOnNames.count, 10, "the everyday set: today's 8 + the two clipboard tools")
+        XCTAssertEqual(AppleTools.names.count, 18)
+        XCTAssertEqual(AppleTools.defaultOnNames.count, 11, "the everyday set: today's 8 + the two clipboard tools + music")
     }
 }
