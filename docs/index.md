@@ -23,9 +23,10 @@ hide:
 <p class="l-micro">Public beta · nothing collected · works in airplane mode</p>
 <ul class="l-proofs" aria-label="What loopl gives you"><li>Offline</li><li>Native tools</li><li>Asks first</li><li>Your own model</li><li>Open SDK</li></ul>
 </div>
-<div class="l-phone l-phone--hero" aria-label="The loopl app on an iPhone: a model answers with two on-device tool calls">
+<div class="l-phone l-phone--hero" role="img" aria-label="The loopl app on an iPhone: a model answers with two on-device tool calls">
 <div class="l-phone__screen">
-<video class="l-phone__video" autoplay muted loop playsinline preload="metadata" poster="assets/app2/hero-dark-poster.jpg" data-light="assets/app2/hero-light" data-dark="assets/app2/hero-dark" width="393" height="852"><source src="assets/app2/hero-dark.webm" type="video/webm"><source src="assets/app2/hero-dark.mp4" type="video/mp4"></video>
+<picture class="l-phone__poster"><source srcset="assets/app2/hero-dark-poster.jpg" media="(prefers-color-scheme: dark)"><img src="assets/app2/hero-light-poster.jpg" alt="" width="393" height="852" fetchpriority="high" decoding="async"></picture>
+<video class="l-phone__video" autoplay muted loop playsinline preload="metadata" data-light="assets/app2/hero-light" data-dark="assets/app2/hero-dark" width="393" height="852"><source src="assets/app2/hero-dark.webm" type="video/webm"><source src="assets/app2/hero-dark.mp4" type="video/mp4"></video>
 </div>
 </div>
 </section>
@@ -62,11 +63,11 @@ hide:
 <p>loopl is a Swift SDK first; the app is its showcase. Model, tools, model — until it's done. That is the whole algorithm. The model streams; if it asks for tools they run, their results go back, and it is called again. There is no iteration cap — the context window and your Stop button are the only bounds.</p>
 </div>
 <div class="l-loop">
-<svg class="l-ring l-reveal" viewBox="0 0 420 340" role="img" aria-labelledby="ring-t">
+<svg class="l-ring l-reveal" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 420 340" role="img" aria-labelledby="ring-t">
 <title id="ring-t">The agent loop: the model calls tools, the results return to the model, until it answers.</title>
 <circle class="l-track" cx="210" cy="175" r="118" fill="none" stroke-width="1"/>
 <path id="ring-p" d="M210 57 A118 118 0 1 1 210 293 A118 118 0 1 1 210 57" fill="none" stroke="none"/>
-<circle class="l-spark" r="4"><animateMotion dur="3.6s" repeatCount="indefinite"><mpath href="#ring-p"/></animateMotion></circle>
+<circle class="l-spark" r="4"><animateMotion dur="3.6s" repeatCount="indefinite"><mpath xlink:href="#ring-p"/></animateMotion></circle>
 <rect class="l-node" x="160" y="40" width="100" height="34" rx="17" stroke-width="1"><animate attributeName="stroke-width" values="1;2.2;1;1" keyTimes="0;.06;.2;1" dur="3.6s" repeatCount="indefinite"/></rect>
 <text x="210" y="62" text-anchor="middle">model</text>
 <rect class="l-node" x="160" y="276" width="100" height="34" rx="17" stroke-width="1"><animate attributeName="stroke-width" values="1;2.2;1;1" keyTimes="0;.06;.2;1" dur="3.6s" begin="1.8s" repeatCount="indefinite"/></rect>

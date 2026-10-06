@@ -107,10 +107,11 @@
     var base = v.getAttribute(dark ? 'data-dark' : 'data-light');
     if (!base || v.getAttribute('data-base') === base) return;
     v.setAttribute('data-base', base);
-    v.poster = base + '-poster.jpg';
     var ss = v.querySelectorAll('source'); if (ss[0]) ss[0].src = base + '.webm'; if (ss[1]) ss[1].src = base + '.mp4';
+    v.classList.remove('is-playing');
+    v.addEventListener('playing', function () { v.classList.add('is-playing'); });
     v.load(); if (!reduce) v.play().catch(function () {});
-    if (reduce) { v.removeAttribute('autoplay'); v.pause(); }
+    if (reduce) { v.removeAttribute('autoplay'); v.pause(); }   // the poster stays
   }
 
   if ('MutationObserver' in window) new MutationObserver(heroVideo).observe(document.body, { attributes: true, attributeFilter: ['data-md-color-scheme'] });
