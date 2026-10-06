@@ -69,7 +69,52 @@
     } else { play(); }
   }
 
-  function init() { reveal(); copy(); stage(); }
+
+  function story() {
+    var st = document.querySelector('.l-story');
+    if (!st) return;
+    var steps = [].slice.call(st.querySelectorAll('.l-step'));
+    var screens = [].slice.call(st.querySelectorAll('.l-story__screen'));
+    if (reduce || !('IntersectionObserver' in window)) {
+      // no pinned phone: each step carries its own screen
+      steps.forEach(function (s) {
+        var src = screens.filter(function (f) { return f.getAttribute('data-screen') === s.getAttribute('data-screen'); })[0];
+        if (src) { var c = src.cloneNode(true); c.className = 'l-story__step-shot'; c.removeAttribute('data-screen'); s.appendChild(c); }
+      });
+      return;
+    }
+    root.classList.add('l-js');
+    function show(id) {
+      screens.forEach(function (f) { f.classList.toggle('is-on', f.getAttribute('data-screen') === id); });
+      steps.forEach(function (s) { s.classList.toggle('is-on', s.getAttribute('data-screen') === id); });
+    }
+    show(steps[0].getAttribute('data-screen'));
+    // the step whose centre is nearest the viewport's middle wins
+    var io = new IntersectionObserver(function () {
+      var pin = st.querySelector('.l-story__pin'), pr = pin ? pin.getBoundingClientRect() : null;
+      var top = (pr && pr.width > 0 && pr.width >= window.innerWidth * 0.8) ? Math.max(0, pr.bottom) : 0; // mobile: the phone sits above the steps
+      var mid = top + (window.innerHeight - top) * 0.5, best = null, d = Infinity;
+      steps.forEach(function (s) { var r = s.getBoundingClientRect(); var c = Math.abs((r.top + r.bottom) / 2 - mid); if (r.bottom > 0 && r.top < window.innerHeight && c < d) { d = c; best = s; } });
+      if (best) show(best.getAttribute('data-screen'));
+    }, { threshold: [0, .25, .5, .75, 1] });
+    steps.forEach(function (s) { io.observe(s); });
+  }
+
+  function heroVideo() {
+    var v = document.querySelector('.l-phone__video');
+    if (!v) return;
+    var dark = document.body.getAttribute('data-md-color-scheme') === 'slate' || (!document.body.getAttribute('data-md-color-scheme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    var base = v.getAttribute(dark ? 'data-dark' : 'data-light');
+    if (!base || v.getAttribute('data-base') === base) return;
+    v.setAttribute('data-base', base);
+    v.poster = base + '-poster.jpg';
+    var ss = v.querySelectorAll('source'); if (ss[0]) ss[0].src = base + '.webm'; if (ss[1]) ss[1].src = base + '.mp4';
+    v.load(); if (!reduce) v.play().catch(function () {});
+    if (reduce) { v.removeAttribute('autoplay'); v.pause(); }
+  }
+
+  if ('MutationObserver' in window) new MutationObserver(heroVideo).observe(document.body, { attributes: true, attributeFilter: ['data-md-color-scheme'] });
+  function init() { reveal(); copy(); stage(); story(); heroVideo(); }
   if (window.document$ && window.document$.subscribe) window.document$.subscribe(init);
   else if (document.readyState !== 'loading') init(); else document.addEventListener('DOMContentLoaded', init);
 })();
