@@ -16,6 +16,9 @@ final class MineModel {
     /// `force` bypasses nothing on the Hub side (2-minute cache) but re-asks even when `author` is unchanged — pull-to-refresh.
     func load(author: String?, force: Bool = false) async {
         guard let author else { hits = []; error = nil; loadedFor = nil; return }
+        #if DEBUG
+        if DesignFixture.mine { hits = DesignFixture.mineHits; loadedFor = author; return }   // screenshot fixture, no network
+        #endif
         if !force, loadedFor == author, error == nil { return }
         loading = true; error = nil
         defer { loading = false }

@@ -274,6 +274,15 @@ struct HistoryList: View {
                 .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
             }
         }
+        .onAppear {
+            #if DEBUG
+            // `--design-share select|review` (screenshots): every thread ticked; `review` also opens the sheet.
+            if let mode = DesignFixture.share, !selecting, !engine.archive.conversations.isEmpty {
+                selecting = true; selected = Set(engine.archive.conversations.map(\.id))
+                if mode == "review" { sharing = ShareBatch(conversations: engine.archive.conversations) }
+            }
+            #endif
+        }
         .sheet(item: $sharing) { batch in
             HubShareView(share: HubShare(conversations: batch.conversations)) {
                 sharing = nil

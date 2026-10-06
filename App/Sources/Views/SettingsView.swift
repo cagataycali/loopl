@@ -4,6 +4,7 @@ import LooplUI
 import LooplRuntimes
 
 struct SettingsView: View {
+    @State private var storagePushed = false
     @Bindable var engine: Engine
     @Bindable var settings: AppSettings
     @Bindable var store: ModelStore
@@ -92,6 +93,8 @@ struct SettingsView: View {
             }
             .looplScrollClearance()
             .accessibilityIdentifier("pane-settings")
+            .navigationDestination(isPresented: $storagePushed) { StorageView(engine: engine, settings: settings, store: store) }   // DEBUG `--design-settings storage`
+            .onAppear { if DesignFixture.settingsPane == "storage" { storagePushed = true } }
             .navigationTitle("Settings")
         }
     }
