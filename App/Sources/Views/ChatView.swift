@@ -53,6 +53,10 @@ struct ChatView: View {
                          generating: engine.isGenerating, canSend: engine.loadedModel != nil, canAttach: engine.canSeeImages,
                          attachmentsDir: { AudioAttachment.directory(for: engine.currentId) },
                          send: send, stop: engine.stop)
+                // The composer keeps the transcript's reading measure on wide screens; its bar background spans the window.
+                .frame(maxWidth: LooplDesign.readingWidth + 2 * LooplDesign.gutter)
+                .frame(maxWidth: .infinity)
+                .background(.bar)
                 // While a row is being edited the composer steps back: dimmed, inert, until Save or Cancel.
                 .opacity(editing == nil ? 1 : 0.35)
                 .disabled(editing != nil)
@@ -123,7 +127,7 @@ struct ChatView: View {
         case .ready(let s): "**\(s.name)** is ready. Everything runs on this device."
         case .downloading, .loading: "Getting your model ready — the first launch downloads it once."
         case .failed: "Pick a model in **Models** to get started."
-        case .idle: "Runs on this iPhone. Nothing leaves it."
+        case .idle: "Runs on this \(LooplDesign.deviceName). Nothing leaves it."
         }
     }
 

@@ -33,6 +33,23 @@ public enum LooplDesign {
 
     /// Horizontal padding of the document column (brief: 20 pt).
     public static let gutter: CGFloat = 20
+    /// The widest the conversation column (and the composer) gets, on iPad / Mac / landscape: about 75 characters
+    /// of 17 pt body per line. Narrower windows are unaffected (the column simply fills them).
+    public static let readingWidth: CGFloat = 680
+    /// "iPhone" / "iPad" / "Mac" for copy that names the device ("Runs on this iPhone").
+    public static var deviceName: String {
+        #if os(macOS) || targetEnvironment(macCatalyst)
+        return "Mac"
+        #elseif canImport(UIKit) && !os(watchOS)
+        switch UIDevice.current.userInterfaceIdiom {
+        case .pad: return "iPad"
+        case .mac: return "Mac"
+        default: return "iPhone"
+        }
+        #else
+        return "device"
+        #endif
+    }
     /// Air between the LAST row of a scrollable pane and whatever sits under it
     /// (tab bar, home indicator, window edge) — one gutter, so a destructive row
     /// is never flush against the glass. See `looplScrollClearance()`.
