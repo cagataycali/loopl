@@ -60,12 +60,13 @@ struct RootView: View {
     @Bindable var store: ModelStore
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var selection: Pane = DesignFixture.initialPane
+    @State private var columns: NavigationSplitViewVisibility = .automatic
     enum Pane: Hashable { case chat, models, settings }
 
     var body: some View {
         if sizeClass == .regular {
             // iPad / landscape: two columns — history in the sidebar, the conversation as the detail.
-            NavigationSplitView {
+            NavigationSplitView(columnVisibility: $columns) {
                 HistoryList(engine: engine, selection: $selection)
             } detail: {
                 switch selection {
@@ -73,6 +74,12 @@ struct RootView: View {
                 case .models: ModelsView(engine: engine, store: store, settings: settings)
                 case .settings: SettingsView(engine: engine, settings: settings, store: store)
                 }
+            }
+            // ⌘Y shows / hides the History sidebar (on iPhone the same chord opens the History sheet — ChatView).
+            .background {
+                Button("History") { withAnimation { columns = columns == .detailOnly ? .all : .detailOnly } }
+                    .keyboardShortcut("y", modifiers: .command)
+                    .opacity(0).frame(width: 0, height: 0).accessibilityHidden(true)
             }
         } else {
             TabView(selection: $selection) {

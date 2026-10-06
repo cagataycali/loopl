@@ -407,5 +407,10 @@ public final class Engine {
         }
     }
 
-    public func stop() { runTask?.cancel() }
+    public func stop() {
+        runTask?.cancel()
+        #if DEBUG
+        DesignFixture.replay?.cancel()
+        #endif
+    }
 }

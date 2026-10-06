@@ -86,7 +86,9 @@ struct ChatView: View {
                 }
                 if !inSplit {
                     ToolbarItem(placement: .topBarLeading) {
-                        Button { LooplDesign.haptic(); showHistory = true } label: { Image(systemName: LooplDesign.iconHistory) }
+                        // Label (icon-only) rather than a bare Image: the iPad ⌘-hold shortcut list shows the title.
+                        Button { LooplDesign.haptic(); showHistory = true } label: { Label("History", systemImage: LooplDesign.iconHistory).labelStyle(.iconOnly) }
+                            .keyboardShortcut("y", modifiers: .command)   // ⌘Y = History (Safari's chord; ⌘⇧H is the system Home on iPad)
                             .accessibilityLabel("History")
                             .matchedTransitionSource(id: "history", in: zoom)
                     }
@@ -117,7 +119,8 @@ struct ChatView: View {
                                     .presentationCompactAdaptation(.popover)
                                 }
                         }
-                        Button { LooplDesign.haptic(); engine.newConversation() } label: { Image(systemName: "square.and.pencil") }
+                        Button { LooplDesign.haptic(); engine.newConversation() } label: { Label("New conversation", systemImage: "square.and.pencil").labelStyle(.iconOnly) }
+                            .keyboardShortcut("n", modifiers: .command)
                             .disabled(engine.transcript.items.isEmpty || engine.isGenerating)
                             .accessibilityLabel("New conversation")
                     }
@@ -459,6 +462,13 @@ struct Composer: View {
                 .focused(focused)
                 .submitLabel(.send)
                 .onSubmit { if sendable { send() } }
+                // ⌘↩ while typing: the multi-line field (a UITextView) swallows the chord before the Send button's
+                // .keyboardShortcut sees it, so it is handled here too; a plain Return still inserts a newline.
+                .onKeyPress(.return, phases: .down) { press in
+                    guard press.modifiers.contains(.command) else { return .ignored }
+                    if sendable { send() }
+                    return .handled
+                }
                 .accessibilityLabel("Message")
             Group {
                 if generating {
@@ -466,6 +476,9 @@ struct Composer: View {
                         Image(systemName: "stop.fill").font(.callout.weight(.bold)).frame(width: side, height: side)
                             .background(Color.primary.opacity(0.85), in: Circle()).foregroundStyle(Color(.systemBackground))
                     }
+                    .keyboardShortcut(".", modifiers: .command)
+                    // UIKit delivers ⌘. as Escape before SwiftUI sees the chord — this companion catches it (and plain Esc).
+                    .background { Button("Stop", action: stop).keyboardShortcut(.escape, modifiers: []).opacity(0).accessibilityHidden(true) }
                     .accessibilityLabel("Stop generating")
                     .transition(.scale.combined(with: .opacity))
                 } else {
@@ -474,6 +487,7 @@ struct Composer: View {
                             .background(sendable ? LooplDesign.accent : Color(.tertiarySystemFill), in: Circle())
                             .foregroundStyle(sendable ? Color.white : Color.secondary)
                     }
+                    .keyboardShortcut(.return, modifiers: .command)
                     .disabled(!sendable)
                     .accessibilityLabel("Send")
                     .transition(.scale.combined(with: .opacity))
