@@ -374,16 +374,16 @@
       "runtime": "mlx",
       "family": "hermes",
       "params_b": 0.8,
-      "size_bytes": 625228929,
+      "size_bytes": 652036494,
       "ctx_nominal": 262144,
       "ctx_usable_8gb": 16384,
       "min_ram_gb": 2,
-      "gated": true,
+      "gated": false,
       "vision": true,
       "chat_template_kwargs": {
         "enable_thinking": false
       },
-      "notes": "loopl v1 — Qwen3.5-0.8B post-tuned by Cagatay Cali on cagataydev/loopl-train (agent loop, tools, robots, identity). Vision kept (mlx_vlm export: vision_tower + preprocessor_config, same layout as the mlx-community base). Private: needs the user's HF token."
+      "notes": "loopl v1.1 — Qwen3.5-0.8B post-tuned by Cagatay Cali on cagataydev/loopl-train (agent loop, tools, robots, identity + who Cagatay Cali is and his projects; trained on loopl-train v2.1 rev db6fa452). Vision kept (mlx_vlm export: vision_tower + preprocessor_config, same layout as the mlx-community base). Public — no token. bf16 base for Train your own: cagataydev/loopl-0.8b."
     },
     {
       "id": "loopl-0.8b-q4_k_m",
@@ -393,7 +393,7 @@
       "runtime": "gguf",
       "family": "hermes",
       "params_b": 0.8,
-      "size_bytes": 529297408,
+      "size_bytes": 529306380,
       "ctx_nominal": 262144,
       "ctx_usable_8gb": 8192,
       "min_ram_gb": 3,
@@ -402,7 +402,7 @@
       "chat_template_kwargs": {
         "enable_thinking": false
       },
-      "notes": "loopl v1 GGUF (llama.cpp b11401, --no-mtp). Private: needs the user's HF token."
+      "notes": "loopl v1.1 GGUF (text-only, llama.cpp b11401 --no-mtp; trained on loopl-train v2.1 rev db6fa452 — identity/bio family, file cards, repair trajectories). Private: needs the user's HF token."
     },
     {
       "id": "loopl-2b-4bit",
@@ -412,16 +412,16 @@
       "runtime": "mlx",
       "family": "hermes",
       "params_b": 2.0,
-      "size_bytes": 1722271227,
+      "size_bytes": 1749089013,
       "ctx_nominal": 262144,
       "ctx_usable_8gb": 12288,
       "min_ram_gb": 3,
-      "gated": true,
+      "gated": false,
       "vision": true,
       "chat_template_kwargs": {
         "enable_thinking": false
       },
-      "notes": "loopl v1 — Qwen3.5-2B post-tuned by Cagatay Cali on cagataydev/loopl-train (agent loop, tools, robots, identity). Vision kept (mlx_vlm export: vision_tower + preprocessor_config, same layout as the mlx-community base). Private: needs the user's HF token."
+      "notes": "loopl v1.1 — Qwen3.5-2B post-tuned by Cagatay Cali on cagataydev/loopl-train (agent loop, tools, robots, identity + who Cagatay Cali is and his projects; trained on loopl-train v2.1 rev db6fa452). Vision kept (mlx_vlm export: vision_tower + preprocessor_config, same layout as the mlx-community base). Public — no token. bf16 base for Train your own: cagataydev/loopl-2b."
     },
     {
       "id": "loopl-2b-q4_k_m",
@@ -431,7 +431,7 @@
       "runtime": "gguf",
       "family": "hermes",
       "params_b": 2.0,
-      "size_bytes": 1274396672,
+      "size_bytes": 1274405613,
       "ctx_nominal": 262144,
       "ctx_usable_8gb": 8192,
       "min_ram_gb": 4,
@@ -440,7 +440,7 @@
       "chat_template_kwargs": {
         "enable_thinking": false
       },
-      "notes": "loopl v1 GGUF (llama.cpp b11401, --no-mtp). Private: needs the user's HF token."
+      "notes": "loopl v1.1 GGUF (text-only, llama.cpp b11401 --no-mtp; trained on loopl-train v2.1 rev db6fa452 — identity/bio family, file cards, repair trajectories). Private: needs the user's HF token."
     },
     {
       "id": "loopl-4b-4bit",
@@ -450,16 +450,16 @@
       "runtime": "mlx",
       "family": "hermes",
       "params_b": 4.0,
-      "size_bytes": 3034299183,
+      "size_bytes": 3061137457,
       "ctx_nominal": 262144,
       "ctx_usable_8gb": 8192,
       "min_ram_gb": 6,
-      "gated": true,
+      "gated": false,
       "vision": true,
       "chat_template_kwargs": {
         "enable_thinking": false
       },
-      "notes": "loopl v1 — Qwen3.5-4B LoRA r64 post-tuned by Cagatay Cali on cagataydev/loopl-train. Vision kept (mlx_vlm export: vision_tower + preprocessor_config, same layout as the mlx-community base). Private: needs the user's HF token."
+      "notes": "loopl v1.1 — Qwen3.5-4B LoRA r64 post-tuned by Cagatay Cali on cagataydev/loopl-train. Vision kept (mlx_vlm export: vision_tower + preprocessor_config, same layout as the mlx-community base). Public — no token. bf16 base for Train your own: cagataydev/loopl-4b."
     },
     {
       "id": "loopl-4b-q4_k_m",
@@ -469,7 +469,7 @@
       "runtime": "gguf",
       "family": "hermes",
       "params_b": 4.0,
-      "size_bytes": 2708804512,
+      "size_bytes": 2708813464,
       "ctx_nominal": 262144,
       "ctx_usable_8gb": 4096,
       "min_ram_gb": 6,
@@ -478,7 +478,7 @@
       "chat_template_kwargs": {
         "enable_thinking": false
       },
-      "notes": "loopl v1 GGUF (llama.cpp b11401, --no-mtp). Private: needs the user's HF token."
+      "notes": "loopl v1.1 GGUF (text-only, llama.cpp b11401 --no-mtp; trained on loopl-train v2.1 rev db6fa452 — identity/bio family, file cards, repair trajectories). Private: needs the user's HF token."
     }
   ]
 }

@@ -7,19 +7,19 @@ hide:
 
 # Models
 
-The app's built-in catalog. Every entry is a public Hugging Face repo — no token — except the **loopl** rows (`gated: yes`), which are Cagatay's private post-tuned models and download with your own token (Settings › Hugging Face); any other public MLX or GGUF repo loads the same way. *Usable on 8 GB* is the context that fits beside the weights on an iPhone 16 Pro; it is the app's default.
+The app's built-in catalog. Every entry is a public Hugging Face repo — no token — including the **loopl** MLX models; only the loopl GGUF builds (`gated: yes`) are private and need your own token (Settings › Hugging Face). Any other public MLX or GGUF repo loads the same way. *Usable on 8 GB* is the context that fits beside the weights on an iPhone 16 Pro; it is the app's default.
 
 ## The loopl models
 
-Qwen3.5 0.8B, 2B and 4B post-tuned on [cagataydev/loopl-train](https://huggingface.co/datasets/cagataydev/loopl-train): the agent loop and how this runtime behaves, tool calls in both dialects loopl speaks, recovering from a tool error instead of repeating it, who they are. The vision tower is the base's, kept — the MLX exports read photos; the GGUF exports are text-only. Every repo lives in one place, **[the loopl collection on Hugging Face](https://huggingface.co/collections/cagataydev/loopl-on-device-agents-swift-6ac51395b13a9c41d4932eaf)** — MLX 4-bit, GGUF, bf16, the LoRA adapter, the dataset and two models trained *from the app*. Each card has the scores against the base, the recipe and how to run it in the app, with `mlx_vlm`, with `llama.cpp` or from Swift.
+Qwen3.5 0.8B, 2B and 4B post-tuned on [cagataydev/loopl-train](https://huggingface.co/datasets/cagataydev/loopl-train) (private): the agent loop and how this runtime behaves, tool calls in both dialects loopl speaks, recovering from a tool error instead of repeating it, who they are. The vision tower is the base's, kept — the MLX exports read photos; the GGUF exports are text-only. They are public, in one place: **[the loopl collection on Hugging Face](https://huggingface.co/collections/cagataydev/loopl-on-device-agents-swift-6ac51395b13a9c41d4932eaf)** — the three MLX 4-bit exports (what the app downloads) and the three bf16 checkpoints (the base for continual post-tuning with Models › Train your own). Each card has the scores against the base, the recipe and how to run it in the app, with `mlx_vlm` or from Swift. The GGUF builds, LoRA adapter and the training dataset stay private.
 
-| | MLX 4-bit · vision | GGUF Q4_K_M · text | bf16 |
+| | MLX 4-bit · vision · public | bf16 · post-tuning base · public | GGUF Q4_K_M · text · private |
 |---|---|---|---|
-| loopl 0.8B | [loopl-0.8b-4bit](https://huggingface.co/cagataydev/loopl-0.8b-4bit) | [loopl-0.8b-GGUF](https://huggingface.co/cagataydev/loopl-0.8b-GGUF) | [loopl-0.8b](https://huggingface.co/cagataydev/loopl-0.8b) |
-| loopl 2B | [loopl-2b-4bit](https://huggingface.co/cagataydev/loopl-2b-4bit) | [loopl-2b-GGUF](https://huggingface.co/cagataydev/loopl-2b-GGUF) | [loopl-2b](https://huggingface.co/cagataydev/loopl-2b) |
-| loopl 4B | [loopl-4b-4bit](https://huggingface.co/cagataydev/loopl-4b-4bit) | [loopl-4b-GGUF](https://huggingface.co/cagataydev/loopl-4b-GGUF) | [loopl-4b](https://huggingface.co/cagataydev/loopl-4b) |
+| loopl 0.8B | [loopl-0.8b-4bit](https://huggingface.co/cagataydev/loopl-0.8b-4bit) | [loopl-0.8b](https://huggingface.co/cagataydev/loopl-0.8b) | loopl-0.8b-GGUF (token) |
+| loopl 2B | [loopl-2b-4bit](https://huggingface.co/cagataydev/loopl-2b-4bit) | [loopl-2b](https://huggingface.co/cagataydev/loopl-2b) | loopl-2b-GGUF (token) |
+| loopl 4B | [loopl-4b-4bit](https://huggingface.co/cagataydev/loopl-4b-4bit) | [loopl-4b](https://huggingface.co/cagataydev/loopl-4b) | loopl-4b-GGUF (token) |
 
-In the app: Settings › Hugging Face › sign in, then Models › **Mine** (private) or **Browse** (public) → download. On a Mac: `pip install mlx-vlm` then `python -m mlx_vlm.generate --model cagataydev/loopl-2b-4bit --image photo.jpg --prompt "What is this?"`.
+In the app: Models › **loopl models** → download (no account). On a Mac: `pip install mlx-vlm` then `python -m mlx_vlm.generate --model cagataydev/loopl-2b-4bit --image photo.jpg --prompt "What is this?"`.
 
 ## The catalog
 
@@ -28,10 +28,10 @@ In the app: Settings › Hugging Face › sign in, then Models › **Mine** (pri
 | Model | Runtime | Params | 4-bit size | ctx max | usable on 8 GB | min RAM | gated | tool calls |
 |---|---|---|---|---:|---:|---|---|:-:|
 | [Qwen3.5 0.8B](https://huggingface.co/mlx-community/Qwen3.5-0.8B-4bit) | MLX | 0.8B | 652 MB | 262,144 | 16,384 | 2 GB | no | ✓ |
-| [loopl 0.8B](https://huggingface.co/cagataydev/loopl-0.8b-4bit) | MLX | 0.8B | 625 MB | 262,144 | 16,384 | 2 GB | yes | ✓ |
+| [loopl 0.8B](https://huggingface.co/cagataydev/loopl-0.8b-4bit) | MLX | 0.8B | 652 MB | 262,144 | 16,384 | 2 GB | no | ✓ |
 | [Qwen3-VL 2B](https://huggingface.co/mlx-community/Qwen3-VL-2B-Instruct-4bit) | MLX | 2.0B | 1.80 GB | 262,144 | 12,288 | 3 GB | no | ✓ |
 | [Qwen3.5 2B](https://huggingface.co/mlx-community/Qwen3.5-2B-4bit) | MLX | 2.0B | 1.75 GB | 262,144 | 12,288 | 3 GB | no | ✓ |
-| [loopl 2B](https://huggingface.co/cagataydev/loopl-2b-4bit) | MLX | 2.0B | 1.72 GB | 262,144 | 12,288 | 3 GB | yes | ✓ |
+| [loopl 2B](https://huggingface.co/cagataydev/loopl-2b-4bit) | MLX | 2.0B | 1.75 GB | 262,144 | 12,288 | 3 GB | no | ✓ |
 | [DeepSeek-R1-Distill-Qwen-1.5B (4-bit)](https://huggingface.co/mlx-community/DeepSeek-R1-Distill-Qwen-1.5B-4bit) | MLX | 1.8B | 1000 MB | 131,072 | 8,192 | 6 GB | no | — |
 | [Llama-3.2-1B Instruct (4-bit)](https://huggingface.co/mlx-community/Llama-3.2-1B-Instruct-4bit) | MLX | 1.2B | 695 MB | 131,072 | 8,192 | 6 GB | no | ✓ |
 | [Llama-3.2-3B Instruct (4-bit)](https://huggingface.co/mlx-community/Llama-3.2-3B-Instruct-4bit) | MLX | 3.2B | 1.81 GB | 131,072 | 8,192 | 8 GB | no | ✓ |
@@ -43,7 +43,7 @@ In the app: Settings › Hugging Face › sign in, then Models › **Mine** (pri
 | [SmolLM3-3B (4-bit)](https://huggingface.co/mlx-community/SmolLM3-3B-4bit) | MLX | 3.1B | 1.73 GB | 65,536 | 8,192 | 8 GB | no | ✓ |
 | [gemma-3-1b IT (4-bit)](https://huggingface.co/mlx-community/gemma-3-1b-it-4bit) | MLX | 1.0B | 733 MB | 32,768 | 8,192 | 6 GB | no | — |
 | [gemma-3-1b IT-qat (4-bit)](https://huggingface.co/mlx-community/gemma-3-1b-it-qat-4bit) | MLX | 1.0B | 733 MB | 32,768 | 8,192 | 6 GB | no | — |
-| [loopl 4B](https://huggingface.co/cagataydev/loopl-4b-4bit) | MLX | 4.0B | 3.03 GB | 262,144 | 8,192 | 6 GB | yes | ✓ |
+| [loopl 4B](https://huggingface.co/cagataydev/loopl-4b-4bit) | MLX | 4.0B | 3.06 GB | 262,144 | 8,192 | 6 GB | no | ✓ |
 | [gemma-3-4b IT-qat (4-bit)](https://huggingface.co/mlx-community/gemma-3-4b-it-qat-4bit) | MLX | 4.3B | 3.00 GB | 131,072 | 6,838 | 8 GB | no | — |
 | [gemma-3-4b IT (4-bit)](https://huggingface.co/mlx-community/gemma-3-4b-it-4bit) | MLX | 4.3B | 3.40 GB | 131,072 | 5,383 | 12 GB | no | — |
 | [Gemma 3 1B IT · Q4_K_M (llama.cpp)](https://huggingface.co/unsloth/gemma-3-1b-it-GGUF) | GGUF | 1.0B | 806 MB | 32,768 | 8,192 | 6 GB | no | — |
@@ -84,12 +84,12 @@ In the app: Settings › Hugging Face › sign in, then Models › **Mine** (pri
 - **Llama 3.2 3B Instruct · Q4_K_M (llama.cpp)** — Public mirror (no licence gate).
 - **Gemma 3 1B IT · Q4_K_M (llama.cpp)** — No tool template — manual JSON prompting.
 - **SmolLM2 1.7B Instruct · Q4_K_M (llama.cpp)** — Small and fast; manual JSON prompting.
-- **loopl 0.8B** — loopl v1 — Qwen3.5-0.8B post-tuned by Cagatay Cali on cagataydev/loopl-train (agent loop, tools, robots, identity). Vision kept (mlx_vlm export: vision_tower + preprocessor_config, same layout as the mlx-community base). Private: needs the user's HF token.
-- **loopl 0.8B · Q4_K_M (llama.cpp)** — loopl v1 GGUF (llama.cpp b11401, --no-mtp). Private: needs the user's HF token.
-- **loopl 2B** — loopl v1 — Qwen3.5-2B post-tuned by Cagatay Cali on cagataydev/loopl-train (agent loop, tools, robots, identity). Vision kept (mlx_vlm export: vision_tower + preprocessor_config, same layout as the mlx-community base). Private: needs the user's HF token.
-- **loopl 2B · Q4_K_M (llama.cpp)** — loopl v1 GGUF (llama.cpp b11401, --no-mtp). Private: needs the user's HF token.
-- **loopl 4B** — loopl v1 — Qwen3.5-4B LoRA r64 post-tuned by Cagatay Cali on cagataydev/loopl-train. Vision kept (mlx_vlm export: vision_tower + preprocessor_config, same layout as the mlx-community base). Private: needs the user's HF token.
-- **loopl 4B · Q4_K_M (llama.cpp)** — loopl v1 GGUF (llama.cpp b11401, --no-mtp). Private: needs the user's HF token.
+- **loopl 0.8B** — loopl v1.1 — Qwen3.5-0.8B post-tuned by Cagatay Cali on cagataydev/loopl-train (agent loop, tools, robots, identity + who Cagatay Cali is and his projects; trained on loopl-train v2.1 rev db6fa452). Vision kept (mlx_vlm export: vision_tower + preprocessor_config, same layout as the mlx-community base). Public — no token. bf16 base for Train your own: cagataydev/loopl-0.8b.
+- **loopl 0.8B · Q4_K_M (llama.cpp)** — loopl v1.1 GGUF (text-only, llama.cpp b11401 --no-mtp; trained on loopl-train v2.1 rev db6fa452 — identity/bio family, file cards, repair trajectories). Private: needs the user's HF token.
+- **loopl 2B** — loopl v1.1 — Qwen3.5-2B post-tuned by Cagatay Cali on cagataydev/loopl-train (agent loop, tools, robots, identity + who Cagatay Cali is and his projects; trained on loopl-train v2.1 rev db6fa452). Vision kept (mlx_vlm export: vision_tower + preprocessor_config, same layout as the mlx-community base). Public — no token. bf16 base for Train your own: cagataydev/loopl-2b.
+- **loopl 2B · Q4_K_M (llama.cpp)** — loopl v1.1 GGUF (text-only, llama.cpp b11401 --no-mtp; trained on loopl-train v2.1 rev db6fa452 — identity/bio family, file cards, repair trajectories). Private: needs the user's HF token.
+- **loopl 4B** — loopl v1.1 — Qwen3.5-4B LoRA r64 post-tuned by Cagatay Cali on cagataydev/loopl-train. Vision kept (mlx_vlm export: vision_tower + preprocessor_config, same layout as the mlx-community base). Public — no token. bf16 base for Train your own: cagataydev/loopl-4b.
+- **loopl 4B · Q4_K_M (llama.cpp)** — loopl v1.1 GGUF (text-only, llama.cpp b11401 --no-mtp; trained on loopl-train v2.1 rev db6fa452 — identity/bio family, file cards, repair trajectories). Private: needs the user's HF token.
 
 ## Picking one
 

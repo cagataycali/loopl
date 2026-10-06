@@ -59,23 +59,24 @@ def row(m):
 out = []
 out.append('---\ntitle: "Models"\ndescription: "The models the loopl app ships in its catalog, with size, context and whether they call tools. Any public Hugging Face repo works too."\nhide:\n  - navigation\n---\n')
 out.append("# Models\n")
-out.append("The app's built-in catalog. Every entry is a public Hugging Face repo — no token — except the **loopl** rows (`gated: yes`), "
-           "which are Cagatay's private post-tuned models and download with your own token (Settings › Hugging Face); any other "
+out.append("The app's built-in catalog. Every entry is a public Hugging Face repo — no token — including the **loopl** MLX models; "
+           "only the loopl GGUF builds (`gated: yes`) are private and need your own token (Settings › Hugging Face). Any other "
            "public MLX or GGUF repo loads the same way. *Usable on 8 GB* is the context that fits beside the weights on an "
            "iPhone 16 Pro; it is the app's default.\n")
 COLLECTION = "https://huggingface.co/collections/cagataydev/loopl-on-device-agents-swift-6ac51395b13a9c41d4932eaf"
 out.append("## The loopl models\n")
-out.append("Qwen3.5 0.8B, 2B and 4B post-tuned on [cagataydev/loopl-train](https://huggingface.co/datasets/cagataydev/loopl-train): "
+out.append("Qwen3.5 0.8B, 2B and 4B post-tuned on [cagataydev/loopl-train](https://huggingface.co/datasets/cagataydev/loopl-train) (private): "
            "the agent loop and how this runtime behaves, tool calls in both dialects loopl speaks, recovering from a tool error instead "
            "of repeating it, who they are. The vision tower is the base's, kept — the MLX exports read photos; the GGUF exports are text-only. "
-           f"Every repo lives in one place, **[the loopl collection on Hugging Face]({COLLECTION})** — MLX 4-bit, GGUF, bf16, the LoRA adapter, "
-           "the dataset and two models trained *from the app*. Each card has the scores against the base, the recipe and how to run it "
-           "in the app, with `mlx_vlm`, with `llama.cpp` or from Swift.\n")
-out.append("| | MLX 4-bit · vision | GGUF Q4_K_M · text | bf16 |\n|---|---|---|---|")
+           f"They are public, in one place: **[the loopl collection on Hugging Face]({COLLECTION})** — the three MLX 4-bit exports "
+           "(what the app downloads) and the three bf16 checkpoints (the base for continual post-tuning with Models › Train your own). "
+           "Each card has the scores against the base, the recipe and how to run it in the app, with `mlx_vlm` or from Swift. "
+           "The GGUF builds, LoRA adapter and the training dataset stay private.\n")
+out.append("| | MLX 4-bit · vision · public | bf16 · post-tuning base · public | GGUF Q4_K_M · text · private |\n|---|---|---|---|")
 for size in ("0.8b", "2b", "4b"):
     out.append(f"| loopl {size.upper()} | [loopl-{size}-4bit](https://huggingface.co/cagataydev/loopl-{size}-4bit) "
-               f"| [loopl-{size}-GGUF](https://huggingface.co/cagataydev/loopl-{size}-GGUF) | [loopl-{size}](https://huggingface.co/cagataydev/loopl-{size}) |")
-out.append("\nIn the app: Settings › Hugging Face › sign in, then Models › **Mine** (private) or **Browse** (public) → download. "
+               f"| [loopl-{size}](https://huggingface.co/cagataydev/loopl-{size}) | loopl-{size}-GGUF (token) |")
+out.append("\nIn the app: Models › **loopl models** → download (no account). "
            "On a Mac: `pip install mlx-vlm` then `python -m mlx_vlm.generate --model cagataydev/loopl-2b-4bit --image photo.jpg --prompt \"What is this?\"`.\n")
 out.append("## The catalog\n")
 out.append("<div class=\"loopl-models-table\" markdown>\n")
