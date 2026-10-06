@@ -45,4 +45,4 @@ Measured: 191 conversations, 0.8B LoRA, 2 epochs on an A10G — 8 min, $0.13, he
 
 ## For SDK users
 
-`TrainingPlan` → `TrainingEstimate`; `TrainingLaunch.jobSpec` builds the job body; `TrainingSession` uploads the script, creates the job through `HFHubClient` and polls `TrainingProgress` (the script's `[loopl] stage=…` lines). The token travels only as the job's HF_TOKEN secret. The training script lives in [loopl-train](https://github.com/cagataycali/loopl-train) (`train/loopl_sft.py`), bundled with the app byte-for-byte.
+`TrainingPlan` → `TrainingEstimate`; `TrainingLaunch.jobSpec` builds the job body; `TrainingSession` uploads the script, creates the job through `HFHubClient` and polls `TrainingProgress` (the script's `[loopl] stage=…` lines). The token travels only as the job's HF_TOKEN secret. The training script lives in [loopl-train](https://github.com/cagataycali/loopl-train) (`train/loopl_sft.py` ≥ 1.1.0 — the MLX export keeps the vision tower), bundled with the app byte-for-byte.

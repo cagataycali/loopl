@@ -30,7 +30,7 @@ What it does (stages are printed as `[loopl] stage=<name>` lines so a UI can sho
             epoch, keep the checkpoint with the lowest eval loss (TRAIN lane: 3 epochs over-fit at ~900 samples)
   eval      held-out eval loss base vs tuned + generation probes (tool-call validity, prose answers) → scorecard.json
   push      merged weights + scorecard + model card → <out>  (private by default)
-  mlx       mlx_lm.convert 4-bit (CPU, isolated uv env)      → <out>-4bit   (what the loopl app loads on iPhone/iPad/Mac)
+  mlx       mlx_vlm.convert 4-bit (CPU, isolated uv env)     → <out>-4bit   (what the loopl app loads; KEEPS the vision tower)
   gguf      llama.cpp <tag> convert (--no-mtp: transformers drops Qwen3.5's MTP head) + Q4_K_M → <out>-GGUF
   done      `[loopl] done {…json…}` with every repo id, counts and timings
 
@@ -53,7 +53,7 @@ import sys
 import time
 from pathlib import Path
 
-SCRIPT_VERSION = "1.0.3"
+SCRIPT_VERSION = "1.1.0"
 LLAMA_TAG_DEFAULT = "b11401"  # the llama.cpp build the loopl app vendors (scripts/fetch-llama-xcframework.sh)
 
 BASES = {"0.8b": "Qwen/Qwen3.5-0.8B", "2b": "Qwen/Qwen3.5-2B", "4b": "Qwen/Qwen3.5-4B"}
@@ -520,12 +520,42 @@ def run(cmd: list[str], env: dict | None = None, cwd: str | None = None, timeout
 
 
 def convert_mlx(merged_dir: Path, out_dir: Path, bits: int, group: int) -> None:
+    """MLX export WITH the vision tower. `mlx_lm.convert` is a text-only converter: it silently dropped every model.visual.*
+    tensor + vision_config from loopl v1 (owner, 2026-10-06: "loopl-4b downloaded as a text-only model, the photo button
+    disappeared"). `mlx_vlm.convert` is what mlx-community uses for Qwen3.5-*-4bit — same layout (language_model.model.*,
+    vision_tower.*), same byte size, preprocessor configs copied. merged_dir must be writable (it is: our own save)."""
     extra = "cpu" if platform.system() == "Linux" else ""
-    spec = f"mlx-lm[{extra}]>=0.32" if extra else "mlx-lm>=0.32"
+    lm_spec = f"mlx-lm[{extra}]>=0.32" if extra else "mlx-lm>=0.32"
     shutil.rmtree(out_dir, ignore_errors=True)
-    run(["uv", "run", "--no-project", "--python", "3.12", "--with", spec, "--with", "transformers>=5.7,<6",
-         "python", "-m", "mlx_lm", "convert", "--hf-path", str(merged_dir), "--mlx-path", str(out_dir),
+    for p_ in merged_dir.rglob("*"):  # mlx_vlm shutil.copy's sidecars; a read-only tokenizer.json makes save_pretrained die
+        if p_.is_file():
+            p_.chmod(p_.stat().st_mode | 0o200)
+    run(["uv", "run", "--no-project", "--python", "3.12", "--with", "mlx-vlm>=0.7.6", "--with", lm_spec,
+         "--with", "transformers>=5.7,<6",
+         "python", "-m", "mlx_vlm", "convert", "--hf-path", str(merged_dir), "--mlx-path", str(out_dir),
          "-q", "--q-bits", str(bits), "--q-group-size", str(group)])
+    for f in ("scorecard.json", "train_summary.json"):  # copied along with *.json; re-written by the caller
+        (out_dir / f).unlink(missing_ok=True)
+
+
+VISUAL_PREFIXES = ("model.visual.", "visual.", "vision_tower.", "model.vision_tower.")
+
+
+def vision_report(out_dir: Path) -> dict:
+    """vision_config ⇔ visual tensors ⇔ preprocessor_config.json — the triad every vision-capable export must satisfy."""
+    cfg = json.loads((out_dir / "config.json").read_text()) if (out_dir / "config.json").exists() else {}
+    names: list[str] = []
+    idx = out_dir / "model.safetensors.index.json"
+    if idx.exists():
+        names = list(json.loads(idx.read_text()).get("weight_map", {}))
+    else:
+        import struct
+        for shard in sorted(out_dir.glob("*.safetensors")):
+            with open(shard, "rb") as fh:
+                n = struct.unpack("<Q", fh.read(8))[0]
+                names += [k for k in json.loads(fh.read(n)) if k != "__metadata__"]
+    return {"vision_config": bool(cfg.get("vision_config")), "visual_tensors": sum(n.startswith(VISUAL_PREFIXES) for n in names),
+            "tensors": len(names), "preprocessor_config": (out_dir / "preprocessor_config.json").exists()}
 
 
 # ----------------------------------------------------------------------------- app-loadable tokenizer files
@@ -613,6 +643,13 @@ def check_app_loadable(out_dir: Path) -> list[str]:
         fails.append("no chat template (chat_template.jinja / tokenizer_config.chat_template)")
     elif "tools" not in template:
         fails.append("chat template never mentions `tools`")
+    v = vision_report(out_dir)
+    if v["vision_config"] and v["tensors"] and not v["visual_tensors"]:
+        fails.append("vision_config present but 0 visual tensors — the tower was dropped (text-only converter)")
+    if v["visual_tensors"] and not v["vision_config"]:
+        fails.append(f"{v['visual_tensors']} visual tensors but no vision_config")
+    if (v["vision_config"] or v["visual_tensors"]) and not v["preprocessor_config"]:
+        fails.append("vision model without preprocessor_config.json")
     return fails
 
 
@@ -626,7 +663,9 @@ def make_app_loadable(out_dir: Path, base: str, token: str | None, what: str) ->
     fails = check_app_loadable(out_dir)
     if fails:
         raise RuntimeError(f"{what} would not load in the loopl app: " + "; ".join(fails))
-    log(f"{what}: app-loadable ✓ (tokenizer_class {APP_TOKENIZER_CLASS}, chat template present)")
+    v = vision_report(out_dir)
+    log(f"{what}: app-loadable ✓ (tokenizer_class {APP_TOKENIZER_CLASS}, chat template present, "
+        f"vision {'kept: ' + str(v['visual_tensors']) + ' tensors' if v['visual_tensors'] else 'none (text-only base)'})")
 
 
 def convert_gguf(merged_dir: Path, work: Path, name: str, tag: str, quant: str) -> Path:
@@ -671,8 +710,9 @@ def convert_gguf(merged_dir: Path, work: Path, name: str, tag: str, quant: str) 
 def model_card(a, s: dict, kind: str, parent: str | None = None) -> str:
     n = s["data"]["train"] + s["data"]["eval"]
     name = (parent or a.out).split("/")[-1]
-    extra = {"merged": "", "mlx": f"\n\nMLX **{a.q_bits}-bit** (group {a.q_group}) conversion of `{parent}` — load it in the loopl app (Models › Mine).",
-             "gguf": f"\n\nGGUF **{a.gguf_quant}** of `{parent}`, llama.cpp **{a.llama_tag}** (the build the loopl app vendors)."}[kind]
+    extra = {"merged": "", "mlx": f"\n\nMLX **{a.q_bits}-bit** (group {a.q_group}) conversion of `{parent}` with mlx_vlm — the vision tower is kept, "
+                                 f"so it reads images like its base. Load it in the loopl app (Models › Mine).",
+             "gguf": f"\n\nGGUF **{a.gguf_quant}** of `{parent}`, llama.cpp **{a.llama_tag}** (the build the loopl app vendors). Text-only."}[kind]
     lib = {"merged": "transformers", "mlx": "mlx", "gguf": "gguf"}[kind]
     method = "full fine-tune" if s["method"] == "full" else f"LoRA r={a.lora_r} α={a.lora_alpha} → merged"
     sc = s.get("scorecard") or {}
