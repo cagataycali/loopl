@@ -58,6 +58,7 @@ public enum AppleTools {
          TranslateTool(), TranscribeTool(),
          FlashlightTool(), VibrateTool(), OpenAppTool(),
          ClipboardReadTool(), ClipboardWriteTool(),   // measured 2026-10-06: two tools beat one `action` tool on the 0.8B (ClipboardShapeMeasurement)
+         MusicTool(),                                  // on by default (owner asked); one `action` tool — measured (MusicToolMeasurement)
          CalendarEventsTool(), CalendarCreateTool(), RemindersDueTool(), RemindersCreateTool(),   // off by default
          LocationTool(), ContactsSearchTool(), PhotosRecentTool()]                                  // off by default
     }
