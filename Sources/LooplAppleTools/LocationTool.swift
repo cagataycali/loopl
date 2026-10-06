@@ -123,8 +123,11 @@ final class CoreLocationSource: NSObject, LocationSource, CLLocationManagerDeleg
 public struct LocationTool: AppleTool {
     public init() {}
     public let name = "location"
-    public let description = "Where the user is right now: place name (city, region, country), coordinates and time zone. Use when the user asks about their location, what is nearby, the local weather (then call http with the coordinates) or the local time."
-    public let parameters: JSONValue = ToolSchema.object([:])
+    public let description = "Where the user is right now: place name (city, region, country), coordinates and time zone. Call it whenever the user asks where they are, what is nearby, the local weather or the local time. purpose=weather also returns the exact http URL to call next for the current weather."
+    public let parameters: JSONValue = ToolSchema.object([
+        "purpose": ["type": "string", "enum": ["place", "weather", "time"], "description": "What the location is for: place (default), weather (adds the forecast URL for http), time (adds the local time)"],
+    ])
+    public static let purposes = ["place", "weather", "time"]
     public static let onDeviceCopy = "Tells the model your city and rough coordinates (about 1 km) when it asks. Asks for location access the first time."
     public static var defaultOn: Bool { false }
 
@@ -144,14 +147,30 @@ public struct LocationTool: AppleTool {
         #endif
     }
 
+    public static func parse(_ args: [String: JSONValue]) -> String {
+        let p = (args.string("purpose") ?? args.string("for") ?? "place").lowercased()
+        return purposes.contains(p) ? p : "place"
+    }
+
     /// The text the model reads. Coarse: 2 decimals (~1 km) and no altitude; precise: 5 decimals + accuracy.
-    public static func render(_ p: Place, precise: Bool) -> String {
+    /// `weather` appends the open-meteo URL for the next `http` call (measured: without it a 0.8B invents the weather);
+    /// `time` appends the local clock in the fix's time zone.
+    public static func render(_ p: Place, precise: Bool, purpose: String = "place", now: Date = Date()) -> String {
         let d = precise ? 5 : 2
+        let lat = LocationStore.round(p.latitude, decimals: d), lon = LocationStore.round(p.longitude, decimals: d)
         var lines = ["location: \(p.name ?? "unknown place")"]
-        lines.append("coordinates: \(LocationStore.round(p.latitude, decimals: d)), \(LocationStore.round(p.longitude, decimals: d))\(precise ? "" : " (about 1 km)")")
+        lines.append("coordinates: \(lat), \(lon)\(precise ? "" : " (about 1 km)")")
         if precise, let a = p.accuracy { lines.append("accuracy: ±\(Int(a)) m") }
         if precise, let alt = p.altitude { lines.append("altitude: \(Int(alt)) m") }
         if let tz = p.timeZone { lines.append("time zone: \(tz)") }
+        switch purpose {
+        case "weather":
+            lines.append("weather: call http GET https://api.open-meteo.com/v1/forecast?latitude=\(lat)&longitude=\(lon)&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m&timezone=auto")
+        case "time":
+            let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd HH:mm (EEEE)"; f.timeZone = p.timeZone.flatMap(TimeZone.init(identifier:)) ?? .current
+            lines.append("local time: \(f.string(from: now))")
+        default: break
+        }
         return lines.joined(separator: "\n")
     }
 
@@ -159,7 +178,7 @@ public struct LocationTool: AppleTool {
         let precise = Self.precise
         let a = Self.availability(); guard a.available else { throw ToolError("location is not available here: \(a.reason)") }
         let p = try await LocationStore.current.current(precise: precise)
-        return Self.render(p, precise: precise)
+        return Self.render(p, precise: precise, purpose: Self.parse(args))
     }
     public func callOutput(_ args: [String: JSONValue]) async throws -> ToolOutput { ToolOutput(text: try await call(args)) }
     public func call(_ args: [String: JSONValue], images: [ImageBlock]) async throws -> ToolOutput { try await callOutput(args) }

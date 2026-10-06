@@ -25,12 +25,23 @@ final class LocationToolTests: XCTestCase {
         XCTAssertTrue(out.contains("accuracy: ±35 m")); XCTAssertTrue(out.contains("altitude: 6 m"))
         XCTAssertEqual(src.requests, [false, true])
         guard case .object(let s) = LocationTool().parameters, case .object(let props)? = s["properties"] else { return XCTFail("schema") }
-        XCTAssertTrue(props.isEmpty, "no parameters — nothing for a small model to fill in wrongly")
+        XCTAssertNil(props["precise"], "precision is never the model's argument")
+        XCTAssertEqual(Array(props.keys), ["purpose"])
     }
 
     func testUnknownPlaceStillGivesCoordinates() {
         let out = LocationTool.render(Place(latitude: 41.0082, longitude: 28.9784), precise: false)
         XCTAssertEqual(out, "location: unknown place\ncoordinates: 41.01, 28.98 (about 1 km)")
+    }
+
+    func testPurposeWeatherAndTime() async throws {
+        let w = try await LocationTool().call(["purpose": .string("weather")])
+        XCTAssertTrue(w.hasSuffix("weather: call http GET https://api.open-meteo.com/v1/forecast?latitude=40.74&longitude=-74.03&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m&timezone=auto"), w)
+        let t = LocationTool.render(FixtureLocationSource().place, precise: false, purpose: "time", now: Date(timeIntervalSince1970: 1_791_000_000))
+        XCTAssertTrue(t.contains("local time: 2026-10-03 00:00 (Saturday)"), t)
+        XCTAssertEqual(LocationTool.parse(["purpose": .string("WEATHER")]), "weather")
+        XCTAssertEqual(LocationTool.parse(["purpose": .string("nearby")]), "place", "unknown purpose → plain fix, never an error")
+        XCTAssertEqual(LocationTool.parse([:]), "place")
     }
 
     func testRounding() {
