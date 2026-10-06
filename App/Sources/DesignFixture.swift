@@ -28,6 +28,46 @@ enum DesignFixture {
     /// The `tool` scene opens its tool rows so a screenshot shows the args/result card.
     static var expandTools: Bool { requested && scene == "tool" }
 
+    /// `--design-train form|running|done|failed` opens Models › Train your own on a pre-baked session (no network, no token).
+    static var trainScene: String? {
+        #if DEBUG
+        guard let i = CommandLine.arguments.firstIndex(of: "--design-train"), i + 1 < CommandLine.arguments.count,
+              !CommandLine.arguments[i + 1].hasPrefix("-") else { return nil }
+        return CommandLine.arguments[i + 1]
+        #else
+        return nil
+        #endif
+    }
+
+    /// Verbatim `[loopl]` lines of the first real app-path job (6ac4711f, a10g-small, 476 s).
+    static let trainLog: [String] = [
+        #"[loopl] stage=discover t=1s {"revision": "d91e2b68", "read": 191, "invalid": 0, "duplicates": 0, "denylisted": 0, "pii_scrubbed": 0, "train": 174, "eval": 17, "source": "cagataydev/loopl-app-smoke-data@d91e2b68"}"#,
+        "[loopl] stage=render t=1s",
+        #"[loopl] stage=train t=24s {"method": "lora", "steps": 24, "rows": 191}"#,
+        "  4%|▍         | 1/24 [00:55<21:27, 56.00s/it]",
+        "{'loss': 2.4321, 'grad_norm': 1.1, 'learning_rate': 9.6e-05, 'epoch': 0.08}",
+        " 58%|█████▊    | 14/24 [02:41<01:07,  6.75s/it]",
+        "{'loss': 2.2134, 'grad_norm': 0.9, 'learning_rate': 4.2e-05, 'epoch': 1.17}",
+    ]
+    static let trainLogDone: [String] = trainLog + [
+        "[loopl] stage=merge t=317s",
+        #"[loopl] stage=eval t=321s {"probes": 17}"#,
+        #"[loopl] stage=push t=420s {"repo": "cagataydev/loopl-app-smoke"}"#,
+        #"[loopl] stage=mlx t=428s {"repo": "cagataydev/loopl-app-smoke-4bit"}"#,
+        #"[loopl] stage=gguf t=446s {"repo": "cagataydev/loopl-app-smoke-GGUF"}"#,
+        #"[loopl] done {"out": {"merged": "cagataydev/loopl-app-smoke", "mlx": "cagataydev/loopl-app-smoke-4bit", "gguf": "cagataydev/loopl-app-smoke-GGUF", "gguf_file": "loopl-app-smoke-Q4_K_M.gguf"}, "eval_loss_base": 2.3794, "eval_loss_tuned": 2.1477, "tool_name_match": "7/9", "wall_s": 476, "script": "1.0.2"}"#,
+    ]
+
+    @MainActor static func trainSession() -> TrainingSession? {
+        guard let scene = trainScene, scene != "form" else { return nil }
+        let plan = TrainingPlan(dataset: "cagataydev/loopl-app-conversations", conversations: 191, withTools: 64, base: .b0_8, outputName: "loopl-app-smoke", hoursCap: 1)
+        switch scene {
+        case "done": return TrainingSession.preview(plan: plan, user: "cagataydev", logLines: trainLogDone, finished: true, startedAt: Date().addingTimeInterval(-476))
+        case "failed": return TrainingSession.preview(plan: plan, user: "cagataydev", logLines: trainLog + ["torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 1.2 GiB."], failed: "torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 1.2 GiB.")
+        default: return TrainingSession.preview(plan: plan, user: "cagataydev", logLines: trainLog)
+        }
+    }
+
     /// `--design-tab chat|models|settings` picks the pane the fixture opens on.
     static var initialPane: RootView.Pane {
         #if DEBUG

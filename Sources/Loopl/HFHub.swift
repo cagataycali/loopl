@@ -388,7 +388,8 @@ public struct HFHubClient: Sendable {
             "secrets": .object(spec.secrets.mapValues(JSONValue.string)),
             "flavor": .string(spec.flavor),
         ]
-        if let t = spec.timeoutSeconds { o["timeout"] = .number(Double(t)) }
+        // the API key is `timeoutSeconds` (huggingface_hub/_jobs_api.py); `timeout` is silently ignored → the job would run uncapped
+        if let t = spec.timeoutSeconds { o["timeoutSeconds"] = .number(Double(t)) }
         return Data(JSONValue.object(o).compact.utf8)
     }
 

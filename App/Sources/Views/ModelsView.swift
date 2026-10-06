@@ -11,6 +11,7 @@ struct ModelsView: View {
     @Bindable var settings: AppSettings
     @State private var confirmDelete: ModelSpec?
     @State private var mine = MineModel()
+    @State private var trainFixturePushed = DesignFixture.trainScene != nil
     @Namespace private var zoom
     @Namespace private var loadedMark
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -52,6 +53,17 @@ struct ModelsView: View {
                         .matchedTransitionSource(id: "browse", in: zoom)
                     }
                     .accessibilityIdentifier("models-browse-hub")
+                    NavigationLink {
+                        TrainView(engine: engine, store: store, settings: settings)
+                    } label: {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Train your own").font(.body.weight(.medium))
+                                Text("Post-tune Qwen3.5 on your conversations — on Hugging Face, in your account").font(.caption).foregroundStyle(.secondary)
+                            }
+                        } icon: { Image(systemName: "sparkles").foregroundStyle(LooplDesign.accent) }
+                    }
+                    .accessibilityIdentifier("models-train")
                 }
                 MineSection(engine: engine, store: store, settings: settings, hf: engine.hf, mine: mine)
                 ForEach(sections, id: \.0) { title, rows in
@@ -77,6 +89,9 @@ struct ModelsView: View {
                 }
             }
             .looplScrollClearance()
+            .navigationDestination(isPresented: $trainFixturePushed) {
+                TrainView(engine: engine, store: store, settings: settings, fixture: DesignFixture.trainSession(), fixtureSignedIn: DesignFixture.trainScene != nil)
+            }
             .accessibilityIdentifier("pane-models")
             .animation(LooplDesign.Motion.faded(LooplDesign.Motion.spring, reduceMotion), value: sections.map { $0.1.map(\.id) })
             .animation(LooplDesign.Motion.faded(LooplDesign.Motion.spring, reduceMotion), value: engine.loadedModel?.id)
