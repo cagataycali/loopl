@@ -151,7 +151,9 @@ body { font-family: var(--l-sans); -webkit-font-smoothing: antialiased; text-ren
 .md-header__topic:first-child { opacity: 1 !important; transform: none !important; pointer-events: auto !important; }
 .md-header__topic + .md-header__topic { display: none; }
 .md-header__button.md-logo { padding: .4rem; margin-right: 0; }
-.md-header__button.md-logo img, .md-header__button.md-logo svg { height: 1.05rem; width: auto; }
+.md-header__button.md-logo img, .md-header__button.md-logo svg { height: 1.05rem; width: 1.05rem; }
+.md-logo .l-mark--logo, .l-mark--logo { color: var(--l-fill) !important; fill: none; display: block; overflow: visible; }
+.md-logo .l-mark--logo .l-mark__flame path { fill: currentColor; }
 .md-header__button svg, .md-search__icon svg { fill: var(--l-ink-2); color: var(--l-ink-2); }
 .md-header__source { width: auto; max-width: none; margin-left: .6rem; }
 .md-source { font-size: .64rem; color: var(--l-ink-2); }
@@ -210,7 +212,7 @@ body { font-family: var(--l-sans); -webkit-font-smoothing: antialiased; text-ren
 }
 
 /* ───────── home ───────── */
-.l-home { --pad: clamp(1.1rem, 4vw, 2rem); max-width: 1080px; margin: 0 auto; padding: 0 var(--pad); }
+.l-home { --pad: clamp(1.1rem, 4vw, 2rem); max-width: 1080px; margin: 0 auto; padding: 0 var(--pad); overflow-x: clip; }  /* the phone glow bleeds past the viewport on phones; clip (not hidden) keeps the sticky story working */
 .l-home > h1:first-child { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 .md-content:has(.l-home) .md-content__inner { margin: 0; padding: 0; }
 .md-content:has(.l-home) .md-content__inner::before { display: none; }
@@ -395,7 +397,15 @@ html.l-js .l-reveal.is-on { opacity: 1; transform: none; }
   .l-js .l-reveal .l-mark__flame, .l-js .l-hero .l-mark__flame { opacity: 0; }
   .l-js .l-reveal.is-on .l-mark__flame, .l-js .l-hero .l-mark__flame { animation: l-fade .3s ease-out .75s forwards; }
   .l-btn--tf:hover .l-mark__flame { animation: l-pulse .9s ease-in-out infinite alternate !important; }
+  /* header: draw once at load (LooplMarkIntro); Material's instant navigation re-renders the header, so it replays per page */
+  .l-js .l-mark--logo .l-mark__loop { stroke-dasharray: 1; stroke-dashoffset: 1; animation: l-draw .7s ease-in-out .1s forwards; }
+  .l-js .l-mark--logo .l-mark__flame { opacity: 0; animation: l-fade .3s ease-out .7s forwards; }
+  /* CTA hover: a highlight sweeps along the loop (Motion.sweep 1.4 s linear) */
+  .l-mark__sweep { stroke-dasharray: .22 .78; stroke-dashoffset: 1.22; opacity: 0; mix-blend-mode: soft-light; }
+  .l-btn--tf:hover .l-mark__sweep { opacity: .9; animation: l-sweep 1.4s linear infinite; }
 }
+.l-mark__sweep { opacity: 0; }
+@keyframes l-sweep { to { stroke-dashoffset: -.78; } }
 @keyframes l-draw { to { stroke-dashoffset: 0; } }
 @keyframes l-fade { to { opacity: 1; } }
 @keyframes l-pulse { from { opacity: 1; } to { opacity: .5; } }
