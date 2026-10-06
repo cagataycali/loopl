@@ -113,18 +113,25 @@ public enum LooplDesign {
         public static func faded(_ a: Animation, _ reduceMotion: Bool) -> Animation { reduceMotion ? crossfade : a }
     }
 
+    /// Settings › Haptics. Off silences every `haptic()` / `success()` / `failure()` and the `HapticBus`;
+    /// the system's own control feedback (toggles, pickers) is untouched.
+    @MainActor public static var hapticsEnabled = true
+
     @MainActor public static func haptic(_ strength: Int = 0) {
+        guard hapticsEnabled else { return }
         #if canImport(UIKit) && !os(watchOS)
         UIImpactFeedbackGenerator(style: strength > 0 ? .medium : .soft).impactOccurred()
         #endif
     }
     /// Sensory feedback for "it finished" moments (tool done, model loaded).
     @MainActor public static func success() {
+        guard hapticsEnabled else { return }
         #if canImport(UIKit) && !os(watchOS)
         UINotificationFeedbackGenerator().notificationOccurred(.success)
         #endif
     }
     @MainActor public static func failure() {
+        guard hapticsEnabled else { return }
         #if canImport(UIKit) && !os(watchOS)
         UINotificationFeedbackGenerator().notificationOccurred(.error)
         #endif
@@ -197,6 +204,7 @@ public enum HapticEvent: Hashable, Sendable {
     public init() {}
 
     public func emit(_ e: HapticEvent) {
+        guard LooplDesign.hapticsEnabled else { return }
         let now = Date().timeIntervalSinceReferenceDate
         if now - lastAt >= LooplDesign.Motion.hapticGap {
             pending?.cancel(); pending = nil

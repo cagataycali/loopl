@@ -46,9 +46,13 @@ struct SettingsView: View {
                 HuggingFaceSection(hf: engine.hf, settings: settings)
 
                 Section {
+                    Picker(selection: $settings.appearance) {
+                        ForEach(AppSettings.Appearance.allCases, id: \.self) { Text($0.label).tag($0) }
+                    } label: { Label("Appearance", systemImage: "circle.lefthalf.filled") }
+                    Toggle(isOn: $settings.haptics) { Label("Haptics", systemImage: "hand.tap") }
                     Toggle("Show performance details", isOn: $settings.showPerformance)
-                } footer: {
-                    Text("A quiet line under the conversation: tokens per second, time to first token, context used.")
+                } header: { Text("Look & feel") } footer: {
+                    Text("Haptics: a soft tap when you send, when a tool starts and finishes, when a model is loaded. Performance: a quiet line under the conversation — tokens per second, time to first token, context used.")
                 }
 
                 Section {
