@@ -38,10 +38,13 @@ public final class AppleToolPrefs {
 /// copy, and an honest chip when the device cannot run it.
 struct AppleToolsSection: View {
     @Bindable var prefs = AppleToolPrefs.shared
+    /// The loaded model's runtime — a tool that merely wraps it is shown as "not offered".
+    var activeRuntime: RuntimeKind? = nil
     var body: some View {
         Section {
             ForEach(AppleTools.all, id: \.name) { tool in
                 let a = type(of: tool).availability()
+                let redundant = activeRuntime != nil && tool.redundantWithRuntime == activeRuntime
                 Toggle(isOn: Binding(
                     get: { prefs.enabled.contains(tool.name) },
                     set: { on in if on { prefs.enabled.insert(tool.name) } else { prefs.enabled.remove(tool.name) } }
@@ -56,6 +59,11 @@ struct AppleToolsSection: View {
                             }
                         }
                         Text(a.available ? type(of: tool).onDeviceCopy : a.reason).font(.caption).foregroundStyle(.secondary)
+                        if redundant {
+                            Text("Not offered to \(activeRuntime?.label ?? "this model") — it is \(activeRuntime?.label ?? "this model"). Other models get it.")
+                                .font(.caption2).foregroundStyle(.tertiary)
+                                .accessibilityIdentifier("appleTool.\(tool.name).notOffered")
+                        }
                     }
                 }
                 .tint(LooplDesign.accent)

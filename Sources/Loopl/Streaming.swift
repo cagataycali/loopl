@@ -60,6 +60,11 @@ public enum ContentBlockDelta: Sendable, Hashable {
     /// A partial JSON string of the tool input.
     case toolUse(input: String)
     case reasoning(String)
+    /// The text block's content so far is now exactly this (not a delta). Runtimes
+    /// that only see cumulative snapshots (Apple Foundation Models) use it when a
+    /// snapshot is not an extension of the previous one, and when a finished answer
+    /// turns out to be a JSON wrapper that is unwrapped into prose.
+    case textReplace(String)
 }
 
 /// Strands `StreamEvent` — what a `Model` emits. Exactly the Bedrock-shaped
@@ -79,6 +84,7 @@ public struct StreamAssembler: Sendable {
     public enum Event: Sendable {
         case chunk(StreamEvent)                 // ModelStreamChunkEvent
         case text(String)                       // TextStreamEvent
+        case textReplace(String)                // loopl: the streamed text so far is now exactly this
         case reasoning(String)                  // ReasoningTextStreamEvent
         case toolUse(name: String, toolUseId: String, partialInput: String)   // ToolUseStreamEvent
     }
@@ -109,6 +115,7 @@ public struct StreamAssembler: Sendable {
         case .contentBlockDelta(let delta):
             switch delta {
             case .text(let t): text += t; out.append(.text(t))
+            case .textReplace(let s): text = s; out.append(.textReplace(s))
             case .reasoning(let r): reasoningText += r; out.append(.reasoning(r))
             case .toolUse(let partial):
                 if currentToolUse == nil { currentToolUse = ("", "", "") }

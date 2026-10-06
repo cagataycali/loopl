@@ -9,13 +9,21 @@ import Foundation
 /// Text is forwarded live until the first character that could open a tool
 /// call; from there on it is withheld and resolved at `finish()` with
 /// `ToolCallParser`, so a UI never shows half a `<tool_call>` tag and the
-/// visible text never contains the markup. Not thread-safe: one per stream.
+/// visible text never contains the markup. A hold that turns out not to be a
+/// call — a ```swift code block, a fenced JSON object with no `"name"` key
+/// within its first 160 characters, a fence whose body is prose — is released
+/// as plain text as soon as that is clear, so an answer streams instead of
+/// appearing whole at the end. Not thread-safe: one per stream.
 public struct ToolCallStreamGate: Sendable {
     public let family: ToolFamily
     private var full = ""
     private var emitted = ""          // raw text consumed from `full` (incl. <think> parts never shown)
     private var emittedVisible = ""   // text actually sent as text deltas
     private var holding = false
+    /// Characters of `full` (absolute offset) already judged to be plain text — no opener check applies.
+    private var passthroughUntil = 0
+    /// A code fence released as plain text is open: its closing ``` is plain too.
+    private var plainFenceOpen = false
     private var started = false
     private var textBlockOpen = false
     private var reasoningOpen = false
@@ -24,6 +32,12 @@ public struct ToolCallStreamGate: Sendable {
     private let suppress: (@Sendable (ToolUse) -> Bool)?
     /// Calls `suppress` rejected at `finish()` — a provider may react (see `AppleFoundationModel`).
     public private(set) var suppressedCalls: [ToolUse] = []
+    /// A text content block is open (a provider replacing text mid-stream needs to know).
+    public var isTextBlockOpen: Bool { textBlockOpen }
+    /// Text sent as deltas so far.
+    public var visibleText: String { emittedVisible }
+    /// Characters of a fenced JSON body without a `"name"` key after which it is clearly not a call.
+    public static let heldJSONLimit = 160
 
     /// - Parameter suppress: optional veto on a parsed tool call, applied at
     ///   `finish()`. Providers that prompt tools manually use it to drop a call
@@ -43,7 +57,14 @@ public struct ToolCallStreamGate: Sendable {
         var out: [StreamEvent] = []
         if !started { started = true; out.append(.messageStart(role: .assistant)) }
         full += piece
-        guard !holding else { return out }
+        if holding {
+            let held = String(full.dropFirst(emitted.count))
+            guard Self.isClearlyNotACall(held) else { return out }
+            // Release: everything held so far is prose; keep its closing fence plain too.
+            holding = false
+            passthroughUntil = full.count
+            plainFenceOpen = held.hasPrefix("```") && !held.dropFirst(3).contains("```")
+        }
 
         // Qwen3 thinking: stream it as reasoning deltas, not text.
         let pending = String(full.dropFirst(emitted.count))
@@ -57,6 +78,18 @@ public struct ToolCallStreamGate: Sendable {
                 if rest.hasPrefix("</think>") { inThink = false; i = pending.index(i, offsetBy: 8); consumed = pending.distance(from: pending.startIndex, to: i); continue }
                 if Self.isPrefixOfAny(String(rest), ["</think>"]) { break scan }   // might be the closer — wait
                 reasoningToEmit.append(rest.first!); i = pending.index(after: i); consumed = pending.distance(from: pending.startIndex, to: i); continue
+            }
+            let offset = emitted.count + pending.distance(from: pending.startIndex, to: i)
+            if offset < passthroughUntil {
+                textToEmit.append(rest.first!); i = pending.index(after: i); consumed = pending.distance(from: pending.startIndex, to: i); continue
+            }
+            if plainFenceOpen {
+                if rest.hasPrefix("```") {
+                    plainFenceOpen = false
+                    textToEmit += "```"; i = pending.index(i, offsetBy: 3); consumed = pending.distance(from: pending.startIndex, to: i); continue
+                }
+                if Self.isPrefixOfAny(String(rest), ["```"]) { break scan }
+                textToEmit.append(rest.first!); i = pending.index(after: i); consumed = pending.distance(from: pending.startIndex, to: i); continue
             }
             if rest.hasPrefix("<think>") { inThink = true; i = pending.index(i, offsetBy: 7); consumed = pending.distance(from: pending.startIndex, to: i); continue }
             if Self.isPrefixOfAny(String(rest), ["<think>"]) && rest.count < 7 { break scan }
@@ -145,5 +178,25 @@ public struct ToolCallStreamGate: Sendable {
         return false
     }
     static func hasClosedMarkup(_ s: String) -> Bool { s.contains("</tool_call>") || s.contains("```\n") }
+
+    /// Fence languages a tool call may use (`ToolCallParser` rule 3).
+    static let callFenceLanguages: Set<String> = ["", "json", "JSON", "tool_call", "tool"]
+
+    /// Held text that can no longer be a tool call. Only code fences are ever
+    /// released: `<tool_call>`-style markup and a `{"name"` object are calls.
+    static func isClearlyNotACall(_ held: String) -> Bool {
+        guard held.hasPrefix("```") else { return false }
+        let afterFence = held.dropFirst(3)
+        guard let nl = afterFence.firstIndex(of: "\n") else { return false }          // language tag still arriving
+        let lang = afterFence[..<nl].trimmingCharacters(in: .whitespaces)
+        if !callFenceLanguages.contains(lang) { return true }                          // ```swift … — code, not a call
+        let body = afterFence[afterFence.index(after: nl)...]
+        let trimmed = body.drop(while: { $0.isWhitespace || $0.isNewline })
+        guard let first = trimmed.first else { return false }                           // body not started
+        if first != "{" { return true }                                                 // prose inside a fence
+        if trimmed.contains("\"name\"") { return false }                                 // a call — keep holding
+        let closed = trimmed.contains("```")
+        return closed || trimmed.count >= heldJSONLimit                                 // a JSON object that is not a call
+    }
     private func trimmedOrSelf(_ s: String) -> String { s.trimmingCharacters(in: .whitespacesAndNewlines) }
 }

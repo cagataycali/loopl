@@ -197,6 +197,7 @@ enum SelfTest {
                 switch e {
                 case .startEventLoop(let c): emit("cycle \(c)"); text = ""
                 case .text(let t): text += t
+                case .textReplace(let s): text = s
                 case .modelMessage(let m):
                     if m.hasToolUse { toolRounds += 1 }
                     emit("assistant: \(m.text.prefix(200))\(m.toolUses.isEmpty ? "" : "  → calls \(m.toolUses.map(\.name))")")

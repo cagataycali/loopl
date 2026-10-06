@@ -52,6 +52,12 @@ public struct Transcript: Sendable, Hashable {
             } else {
                 items.append(.init(kind: .assistant(t))); streamingIndex = items.count - 1
             }
+        case .textReplace(let s):
+            if let idx = streamingIndex, case .assistant = items[idx].kind {
+                items[idx].kind = .assistant(s)
+            } else if !s.isEmpty {
+                items.append(.init(kind: .assistant(s))); streamingIndex = items.count - 1
+            }
         case .reasoning(let r):
             if let idx = reasoningIndex, case .reasoning(let s) = items[idx].kind {
                 items[idx].kind = .reasoning(s + r)
