@@ -16,6 +16,7 @@ breaking change is called out under **Changed** with the old → new symbol.
 
 ## Unreleased — human in the loop & `http`
 
+- **Loopl / App**: a Hub row's **size is the size you download**. The listing only sends `safetensors.total`, and the old estimate multiplied every parameter by `bits/8 × 1.125` — so Models › Mine offered `cagataydev/loopl-0.8b-4bit` as **479.8 MB** while the Hub's file list says **625.2 MB**: `mlx_vlm` leaves the vision tower in bf16. `HubCatalog.mlxBytes(parameters:bits:groupSize:)` reads the Hub's per-dtype counts instead (a quantised parameter costs `bits/8` plus its share of the per-group scale and bias, `group_size` from config.json; everything else costs its own dtype) and lands within **0.02 %** of the real blob sizes on loopl 0.8B/2B/4B, `Qwen3-VL-2B-Instruct-4bit`, `Qwen3-1.7B-4bit`, `Qwen3-8B-8bit` and `Llama-3.2-1B-Instruct-4bit` — where the estimate was ‑23 %, ‑28 %, ‑16 %, ‑33 % and +6 % out. `estimateMLXBytes(params:bits:)` stays as the fallback for rows without a breakdown. `HubSizeTests` pins it on real Hub responses.
 - **Train your own keeps going** — *Continue a model* trains on top of one of your Mine models (bf16 twin, round badge, lineage in the card, replay of
   earlier shards by default); *Epochs: Auto (recommended)* with the measured guide (< 200 conversations 3–4 · 200–1 000 → 2 · > 1 000 → 1–2), best epoch kept,
   early stop; *Stitch related conversations* by day or topic into longer multi-turn samples; the result card draws held-out loss per epoch. `loopl_sft.py` 1.2.3.
