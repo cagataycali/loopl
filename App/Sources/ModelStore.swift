@@ -1,6 +1,9 @@
 import Foundation
 import Loopl
 import Observation
+import os
+
+private let log = Logger(subsystem: "technology.tiny.loopl", category: "download")
 
 /// Where models live and how they get there. `@MainActor` because the
 /// Models tab binds straight to its state; the byte-moving runs in
@@ -166,32 +169,105 @@ public final class ModelStore {
         diskUsed = used
     }
 
-    /// Downloads `spec` to `volume` (a drive id), or — `volume == nil` — to
-    /// `storage.suggestedTarget`: the chosen drive when it is connected and has
-    /// room, else the iPhone, else any connected drive that fits. A paused
-    /// download resumes where its .part files already are.
-    public func download(_ spec: ModelSpec, to volume: String?? = nil) {
-        guard spec.isDownloadable, tasks[spec.id] == nil else { return }
-        if NetworkPolicy.isOffline { states[spec.id] = .failed(HFDownloader.DLError.offline.localizedDescription); return }
-        if spec.gated, HFAccount.shared.token == nil { states[spec.id] = .failed(HFDownloader.DLError.signInRequired(spec.repo).localizedDescription); return }
+    /// Why a download cannot start RIGHT NOW — decided synchronously, before any
+    /// bytes move. Every case has a sentence the user can act on; `download(_:to:)`
+    /// returns it so a Download button can show the reason instead of dismissing.
+    public enum DownloadRefusal: Equatable, Sendable {
+        /// Apple Foundation Models and friends: nothing to download.
+        case notDownloadable
+        /// A download (or move) for this model is already in flight — not an error.
+        case alreadyRunning
+        case offline
+        /// Private/gated repo and no Hugging Face token on this device.
+        case signInRequired(repo: String)
+        /// The chosen drive is not connected (or its grant is gone).
+        case driveNotConnected(name: String)
+        /// The drive is mounted but iOS refuses loopl's folder grant — re-grant in Settings › Storage.
+        case driveUnreadable(name: String)
+        /// Nowhere connected can hold it. `drives` = the user's granted drives (connected or not), for the hint.
+        case notEnoughSpace(need: Int64, free: Int64, volume: String, drives: [String], anyDriveConnected: Bool)
+        /// The target directory could not be created (read-only stick, permission gone).
+        case cannotWrite(volume: String, reason: String)
+
+        /// True when the row/sheet should offer Settings › Storage.
+        public var suggestsStorageSettings: Bool {
+            switch self { case .notEnoughSpace, .driveNotConnected, .driveUnreadable, .cannotWrite: true; default: false }
+        }
+        /// True for the two non-failures (nothing to show the user).
+        public var isSilent: Bool { self == .notDownloadable || self == .alreadyRunning }
+
+        public var message: String {
+            switch self {
+            case .notDownloadable: return "This model runs from the system — nothing to download."
+            case .alreadyRunning: return "Already downloading."
+            case .offline: return HFDownloader.DLError.offline.localizedDescription
+            case .signInRequired(let repo): return HFDownloader.DLError.signInRequired(repo).localizedDescription
+            case .driveNotConnected(let name): return "\(name) is not plugged in — connect it, or pick another place under Settings › Storage."
+            case .driveUnreadable(let name): return "\(name) is connected but loopl can't read it — re-grant its folder in Settings › Storage"
+            case .notEnoughSpace(let need, let free, let volume, let drives, let connected):
+                let base = "Not enough space on \(volume): needs \(ByteSize.label(need)), \(ByteSize.label(free)) free."
+                if drives.isEmpty { return base + " Free up space, or add a USB-C drive under Settings › Storage." }
+                if connected { return base + " Your drive is full too — free up space on one of them." }
+                return base + " Plug in \(ListFormatter.localizedString(byJoining: drives)) to download there, or free up space."
+            case .cannotWrite(_, let reason): return reason + " — check the drive under Settings › Storage"
+            }
+        }
+    }
+
+    /// The synchronous checks `download` runs, without starting anything or touching
+    /// state. nil = a download would start now. Used by the Download button to
+    /// decide whether to dismiss, and by tests.
+    public func preflight(_ spec: ModelSpec, to volume: String?? = nil) -> DownloadRefusal? {
+        resolveTarget(spec, to: volume).refusal
+    }
+
+    private func resolveTarget(_ spec: ModelSpec, to volume: String??) -> (target: (location: ModelLocation, url: URL)?, chosen: String?, refusal: DownloadRefusal?) {
+        guard spec.isDownloadable else { return (nil, nil, .notDownloadable) }
+        guard tasks[spec.id] == nil else { return (nil, nil, .alreadyRunning) }
+        if NetworkPolicy.isOffline { return (nil, nil, .offline) }
+        if spec.gated, HFAccount.shared.token == nil { return (nil, nil, .signInRequired(repo: spec.repo)) }
         // Where the bytes go. Resuming keeps the existing location; a fresh download picks the target.
         let resuming: Bool = if case .paused = states[spec.id] ?? .notDownloaded { true } else { false }
         let chosen: String? = resuming ? storage.location(of: spec.id).volumeId : (volume ?? storage.suggestedTarget(need: spec.sizeBytes))
         guard let target = storage.target(chosen, for: spec) else {
-            let v = chosen.flatMap { storage.volume($0) }
-            states[spec.id] = .failed(v?.connected == true ? "\(storage.name(of: chosen)) is connected but loopl can't read it — re-grant its folder in Settings › Storage"
-                                                           : "\(storage.name(of: chosen)) is not plugged in"); return
+            // storage-fix (#64): a connected drive whose grant iOS refuses is "unreadable", not "unplugged".
+            if chosen.flatMap({ storage.volume($0) })?.connected == true { return (nil, chosen, .driveUnreadable(name: storage.name(of: chosen))) }
+            return (nil, chosen, .driveNotConnected(name: storage.name(of: chosen)))
         }
-        do {
-            // Prove the target takes a file BEFORE touching storage.json or the network (a refused grant makes
-            // `createFile` on the drive return false — the owner saw that as "config.json.part doesn't exist").
-            try ExternalStorage.ensureWritable(target.url, volumeName: storage.name(of: chosen))
-            let have = ExternalStorage.size(of: target.url)
-            try ExternalStorage.ensureSpace(need: max(0, spec.sizeBytes - have), at: target.url, volumeName: storage.name(of: chosen))
-        } catch {
-            storage.diagnostics.log("\(spec.id): download refused — \(error.localizedDescription)")
-            states[spec.id] = .failed(error.localizedDescription); return
+        // Prove the target takes a file BEFORE touching storage.json or the network (a refused grant makes
+        // `createFile` on the drive return false — the owner saw that as "config.json.part doesn't exist").
+        do { try ExternalStorage.ensureWritable(target.url, volumeName: storage.name(of: chosen)) }
+        catch { return (target, chosen, .cannotWrite(volume: storage.name(of: chosen), reason: error.localizedDescription)) }
+        let have = ExternalStorage.size(of: target.url)
+        let need = max(0, spec.sizeBytes - have) + ExternalStorage.headroom
+        let free = ExternalStorage.freeSpace(at: target.url)
+        if free < need {
+            return (target, chosen, .notEnoughSpace(need: need, free: free, volume: storage.name(of: chosen),
+                                                    drives: storage.volumes.map(\.name), anyDriveConnected: storage.volumes.contains(where: \.connected)))
         }
+        return (target, chosen, nil)
+    }
+
+    /// Downloads `spec` to `volume` (a drive id), or — `volume == nil` — to
+    /// `storage.suggestedTarget`: the chosen drive when it is connected and has
+    /// room, else the iPhone, else any connected drive that fits. A paused
+    /// download resumes where its .part files already are.
+    ///
+    /// Returns the reason when nothing started (also written to `states[spec.id]`
+    /// as `.failed`, except for the two silent cases) so the caller can show it
+    /// where the user is looking — a tap on Download must never do nothing.
+    @discardableResult
+    public func download(_ spec: ModelSpec, to volume: String?? = nil) -> DownloadRefusal? {
+        let (target, chosen, refusal) = resolveTarget(spec, to: volume)
+        if let refusal {
+            if !refusal.isSilent { states[spec.id] = .failed(refusal.message); storage.diagnostics.log("\(spec.id): download refused — \(refusal.message)") }
+            let volumesDesc = storage.volumes.map { "\($0.name):" + ($0.connected ? "connected free=\($0.free)" : "away") }.joined(separator: ",")
+            let tokenState = HFAccount.shared.token == nil ? "nil" : "set"
+            log.error("download refused for \(spec.id, privacy: .public) (\(spec.repo, privacy: .public)) → \(String(describing: refusal), privacy: .public); target=\(self.storage.name(of: chosen), privacy: .public) internalFree=\(self.storage.internalFree) volumes=[\(volumesDesc, privacy: .public)] token=\(tokenState, privacy: .public)")
+            return refusal
+        }
+        guard let target else { return nil }
+        log.info("download start \(spec.id, privacy: .public) (\(spec.repo, privacy: .public)) → \(self.storage.name(of: chosen), privacy: .public) \(target.url.path, privacy: .public) size=\(spec.sizeBytes)")
         storage.set(location: target.location, for: spec.id)
         states[spec.id] = .downloading(done: 0, total: spec.sizeBytes, filesDone: 0, files: 0)
         let dir = target.url
@@ -218,12 +294,14 @@ public final class ModelStore {
                 self.finish(spec, error: error.localizedDescription)
             }
         }
+        return nil
     }
 
     private func finish(_ spec: ModelSpec, error: String? = nil) {
         tasks[spec.id] = nil
         refresh()
-        if let error { states[spec.id] = .failed(error) }
+        if let error { states[spec.id] = .failed(error); log.error("download failed \(spec.id, privacy: .public): \(error, privacy: .public)") }
+        else { log.info("download finished \(spec.id, privacy: .public) → \(String(describing: self.states[spec.id]), privacy: .public)") }
     }
 
     public func pause(_ spec: ModelSpec) { tasks[spec.id]?.cancel() }

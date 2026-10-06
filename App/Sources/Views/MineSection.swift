@@ -35,8 +35,12 @@ struct MineSection: View {
     @Bindable var settings: AppSettings
     @Bindable var hf: HFSession
     @Bindable var mine: MineModel
-    @State private var selected: HubCatalog.Hit?
-    @Namespace private var zoom
+    /// The tapped repo. OWNED BY ModelsView, which presents the sheet from the List: a `.sheet` attached to a
+    /// `Section` inside a `List` never presented on iOS 26 (with the zoom transition it presented and was torn
+    /// down in the same frame — "Trying to dismiss the presentation controller while transitioning already",
+    /// SIGTRAP). Tapping a Mine row did nothing / crashed; the Download button was never reached.
+    @Binding var selected: HubCatalog.Hit?
+    var zoom: Namespace.ID
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -55,10 +59,45 @@ struct MineSection: View {
                     .accessibilityIdentifier("mine-empty")
                 } else {
                     ForEach(mine.hits) { hit in
-                        Button { LooplDesign.haptic(); selected = hit } label: { HubHitRow(hit: hit, added: isAdded(hit)) }
-                            .buttonStyle(.plain)
-                            .matchedTransitionSource(id: "mine-\(hit.id)", in: zoom)
-                            .accessibilityIdentifier("mine-hit-\(hit.id)")
+                        let row = rowSpec(hit)
+                        let state = row.flatMap { store.states[$0.id] }
+                        VStack(alignment: .leading, spacing: 6) {
+                            Button { LooplDesign.haptic(); selected = hit } label: { HubHitRow(hit: hit, added: isAdded(hit), state: state) }
+                                .buttonStyle(.plain)
+                                .matchedTransitionSource(id: "mine-\(hit.id)", in: zoom)
+                                .accessibilityIdentifier("mine-hit-\(hit.id)")
+                            // The same inline status the Models rows show — a Download tap from here must stay visible here.
+                            if let row, let state {
+                                switch state {
+                                case .downloading(let done, let total, let fd, let files):
+                                    DownloadProgressRow(done: done, total: total, fileIndex: fd, fileCount: files) { store.pause(row) }
+                                        .accessibilityIdentifier("mine-downloading-\(hit.id)")
+                                case .paused(let done, let total):
+                                    HStack {
+                                        Text("Paused · \(ByteSize.label(done)) of \(ByteSize.label(total))").font(.caption).foregroundStyle(.secondary)
+                                        Spacer()
+                                        Button("Resume") { Task { await engine.select(row) } }.font(.caption.weight(.semibold)).disabled(settings.offline)
+                                    }
+                                case .failed(let msg):
+                                    HStack(alignment: .top) {
+                                        Text(msg).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+                                            .accessibilityIdentifier("mine-failed-\(hit.id)")
+                                        Spacer(minLength: 8)
+                                        Button("Retry") { LooplDesign.haptic(1); Task { await engine.select(row) } }
+                                            .font(.caption.weight(.semibold)).disabled(settings.offline)
+                                            .accessibilityIdentifier("mine-retry-\(hit.id)")
+                                    }
+                                case .moving(let done, let total, let to):
+                                    Text("Moving to \(to) · \(ByteSize.label(done)) of \(ByteSize.label(total))").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                                case .needsDrive(let drive):
+                                    Label("Needs \(drive) — plug it in to use", systemImage: "externaldrive.badge.xmark").font(.caption).foregroundStyle(.orange)
+                                case .driveUnreadable(let drive, _):
+                                    Label("\(drive) is connected but loopl can't read it — re-grant its folder in Settings › Storage", systemImage: "externaldrive.badge.exclamationmark")
+                                        .font(.caption).foregroundStyle(.orange)
+                                case .downloaded, .notDownloaded: EmptyView()
+                                }
+                            }
+                        }
                     }
                 }
             } else {
@@ -84,13 +123,13 @@ struct MineSection: View {
         .animation(LooplDesign.Motion.faded(LooplDesign.Motion.spring, reduceMotion), value: mine.hits.map(\.id))
         .animation(LooplDesign.Motion.crossfade, value: mine.loading)
         .task(id: hf.author) { await mine.load(author: hf.author) }
-        .sheet(item: $selected) { hit in
-            HubRepoSheet(repoId: hit.id, hint: hit, engine: engine, store: store, settings: settings) {}
-                .navigationTransition(.zoom(sourceID: "mine-\(hit.id)", in: zoom))
-        }
     }
 
     private func isAdded(_ hit: HubCatalog.Hit) -> Bool {
         store.catalog.models.contains { $0.repo == hit.id && (store.states[$0.id]?.isDownloaded ?? false) }
+    }
+    /// The catalog row for this repo once the user added it (Download tapped at least once), else nil.
+    private func rowSpec(_ hit: HubCatalog.Hit) -> ModelSpec? {
+        store.catalog.models.first { $0.repo == hit.id && store.states[$0.id] != nil }
     }
 }

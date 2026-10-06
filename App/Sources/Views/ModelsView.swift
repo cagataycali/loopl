@@ -12,6 +12,8 @@ struct ModelsView: View {
     @State private var confirmDelete: ModelSpec?
     @State private var mine = MineModel()
     @State private var trainFixturePushed = DesignFixture.trainScene != nil
+    /// Mine row tapped → repo sheet. Presented HERE, from the List — see MineSection.selected.
+    @State private var mineSelected: HubCatalog.Hit?
     @Namespace private var zoom
     @Namespace private var loadedMark
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -65,7 +67,7 @@ struct ModelsView: View {
                     }
                     .accessibilityIdentifier("models-train")
                 }
-                MineSection(engine: engine, store: store, settings: settings, hf: engine.hf, mine: mine)
+                MineSection(engine: engine, store: store, settings: settings, hf: engine.hf, mine: mine, selected: $mineSelected, zoom: zoom)
                 ForEach(sections, id: \.0) { title, rows in
                     Section {
                         ForEach(rows) { spec in row(spec) }
@@ -99,6 +101,10 @@ struct ModelsView: View {
             .navigationTitle("Models")
             .refreshable { store.refresh(); await mine.load(author: engine.hf.author, force: true) }
             .onAppear { store.refresh() }
+            .sheet(item: $mineSelected) { hit in
+                HubRepoSheet(repoId: hit.id, hint: hit, engine: engine, store: store, settings: settings) {}
+                    .navigationTransition(.zoom(sourceID: "mine-\(hit.id)", in: zoom))
+            }
             .confirmationDialog("\(confirmDelete?.isFromHub == true ? "Remove" : "Delete") \(confirmDelete?.name ?? "") from this device?", isPresented: Binding(get: { confirmDelete != nil }, set: { if !$0 { confirmDelete = nil } }), titleVisibility: .visible) {
                 Button(confirmDelete?.isFromHub == true ? "Remove" : "Delete", role: .destructive) { if let s = confirmDelete { delete(s) } }
             }
@@ -137,7 +143,14 @@ struct ModelsView: View {
                     Button("Resume") { Task { await engine.select(spec) } }.font(.caption.weight(.semibold)).disabled(settings.offline)
                 }
             case .failed(let msg):
-                Text(msg).font(.caption).foregroundStyle(.red)
+                HStack(alignment: .top) {
+                    Text(msg).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("models-failed-\(spec.id)")
+                    Spacer(minLength: 8)
+                    Button("Retry") { LooplDesign.haptic(1); Task { await engine.select(spec) } }
+                        .font(.caption.weight(.semibold)).disabled(settings.offline || busy)
+                        .accessibilityIdentifier("models-retry-\(spec.id)")
+                }
             case .needsDrive(let drive):
                 Label("Needs \(drive) — plug it in to use", systemImage: "externaldrive.badge.xmark").font(.caption).foregroundStyle(.orange)
                     .accessibilityIdentifier("models-needs-drive-\(spec.id)")
