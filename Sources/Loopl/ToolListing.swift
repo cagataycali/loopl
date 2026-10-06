@@ -61,5 +61,6 @@ public struct ToolListing: Sendable, Hashable {
         "remember": "Keeps a note between conversations — on this device only.",
         "recall": "Reads those notes back.",
         "http": "Fetches a URL for the model. Refused while offline mode is on.",
+        "manage_messages": "Lets the model tidy its own context in a long chat — old tool results go, your messages stay. The chat on screen never changes.",
     ]
 }

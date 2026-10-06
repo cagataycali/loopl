@@ -802,7 +802,7 @@ public struct AgentTranscriptView<Empty: View, Banner: View>: View {
         case .reasoning(let r):
             // Folded to one quiet line ("Thinking…" while it streams, "Thought for a moment" after); tap to read.
             ReasoningRow(text: r, streaming: transcript.isRunning && item.id == transcript.items.last?.id)
-        case .note(let s): Text(s).font(.caption).foregroundStyle(.tertiary)
+        case .note(let s): Text(s).font(.caption).foregroundStyle(.tertiary).accessibilityIdentifier("transcript-note")
         }
     }
 }
