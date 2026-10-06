@@ -44,6 +44,8 @@ enum DesignFixture {
     }
     static var editing: Bool { flag("--design-editing") && scene == "edit" }
     static var share: String? { value("--design-share") }
+    /// `--design-history-delete select|confirm`: History in selection mode with the Delete bar; `confirm` raises the dialog.
+    static var historyDelete: String? { value("--design-history-delete") }
     static var settingsPane: String? { value("--design-settings") }
     static var mine: Bool { flag("--design-mine") }
     /// `--design-focus-composer`: focuses the Message field on appear so a screenshot shows the composer with the
