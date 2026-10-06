@@ -60,7 +60,10 @@ public enum PromptBuilder {
         for m in messages {
             switch m.role {
             case .user where m.hasToolResult:
-                let lines = m.toolResults.map { r in "<tool_response name=\"\(r.name)\" id=\"\(r.toolUseId)\">\n\(r.content)\n</tool_response>" }.joined(separator: "\n")
+                let lines = m.toolResults.map { r in
+                    let status = r.status == .error ? " status=\"error\"" : ""
+                    return "<tool_response name=\"\(r.name)\" id=\"\(r.toolUseId)\"\(status)>\n\(r.promptContent)\n</tool_response>"
+                }.joined(separator: "\n")
                 if let prev = out.last, prev.role == .user {
                     out[out.count - 1] = .user(prev.text + "\n" + lines)
                 } else {

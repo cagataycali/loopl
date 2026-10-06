@@ -40,7 +40,12 @@ public enum AppleFMPrompt {
     public static func build(messages: [Message], toolSpecs: [ToolSpec], systemPrompt: String?,
                             insisting: Bool = false) -> Built {
         let last = messages.last
-        let mode: Mode = (last?.role == .user && (last?.hasToolResult ?? false)) ? .answer : .call
+        // Answer mode only when every result of the last cycle succeeded: an `ERROR:` result
+        // keeps the model in call mode so it can read the error and call again with corrected
+        // arguments (or answer without the tool) — the owner's "no RepeatBreaker" rule means
+        // the error text is the ONLY thing standing between the model and an identical retry.
+        let results = (last?.role == .user) ? (last?.toolResults ?? []) : []
+        let mode: Mode = (!results.isEmpty && results.allSatisfy { $0.status == .success }) ? .answer : .call
         return Built(instructions: instructions(toolSpecs: toolSpecs, systemPrompt: systemPrompt, mode: mode),
                      prompt: prompt(messages: messages, mode: mode, insisting: insisting),
                      mode: mode)
@@ -137,7 +142,7 @@ public enum AppleFMPrompt {
             let question = history.last(where: { if case .user = $0 { return true }; return false })?.text ?? history.last?.text ?? ""
             out += "The user asked: \(question)\n\n"
             out += "Tools have already been run for you. Results:\n"
-            out += results.map { "\($0.name) -> \($0.content)" }.joined(separator: "\n")
+            out += results.map { "\($0.name) -> \($0.promptContent)" }.joined(separator: "\n")
             out += "\n\n"
             out += insisting
                 ? "Answer the user's question now, in plain text, using those results. Output no JSON, no code fence and no tool name — just the sentence the user should read."
@@ -168,7 +173,7 @@ public enum AppleFMPrompt {
         for m in messages {
             switch m.role {
             case .user where m.hasToolResult:
-                for r in m.toolResults { out.append(.toolResult("\(r.name) -> \(r.content)")) }
+                for r in m.toolResults { out.append(.toolResult("\(r.name) -> \(r.promptContent)")) }
             case .user:
                 let t = m.text.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !t.isEmpty { out.append(.user(t)) }
