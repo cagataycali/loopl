@@ -113,6 +113,7 @@ struct OnboardingView: View {
             case .story: story.transition(reduceMotion ? .opacity : .asymmetric(insertion: .opacity, removal: .move(edge: .leading).combined(with: .opacity)))
             case .pick, .download: pickAndDownload.transition(reduceMotion ? .opacity : .asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .opacity))
             }
+            hero
         }
         .animation(stageMotion, value: stage)
         .animation(stageMotion, value: started)
@@ -143,6 +144,28 @@ struct OnboardingView: View {
         }
     }
 
+    // MARK: the hero mark — ONE view that follows a placeholder in whichever stage is current
+
+    /// Each stage lays out an invisible `markSlot` where the mark belongs and is the matched-geometry SOURCE only while
+    /// it is the current stage; this single overlay follows, so the mark glides intro → header → pick → ring instead
+    /// of two copies crossfading. While downloading its content is the progress ring; `morphFromCard` parks it on the
+    /// chosen model card for one frame so the card is what grows into the ring.
+    @State private var morphFromCard = false
+    private var hero: some View {
+        Group {
+            if started { LooplProgressMark(progress: fraction) }
+            else if stage == .intro { LooplMarkDrawing(progress: introProgress) }
+            else { LooplMark() }
+        }
+        .matchedGeometryEffect(id: "mark", in: ns, isSource: false)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+    private func markSlot(_ side: CGFloat, source: Bool) -> some View {
+        Color.clear.frame(width: side, height: side)
+            .matchedGeometryEffect(id: "mark", in: ns, isSource: source)
+    }
+
     // MARK: intro — the mark draws itself, the word settles, one line
 
     @State private var introProgress: Double = 0
@@ -151,9 +174,7 @@ struct OnboardingView: View {
     private var intro: some View {
         VStack(spacing: 18) {
             Spacer()
-            LooplMarkDrawing(progress: introProgress)
-                .frame(width: 128, height: 128)
-                .matchedGeometryEffect(id: "mark", in: ns)
+            markSlot(128, source: stage == .intro)
                 .accessibilityIdentifier("onboarding-mark")
             Text("loopl")
                 .font(.system(size: 40, weight: .semibold, design: .rounded)).tracking(-1)
@@ -196,8 +217,7 @@ struct OnboardingView: View {
     private var story: some View {
         VStack(spacing: 0) {
             HStack {
-                LooplMark().frame(width: 28, height: 28).matchedGeometryEffect(id: "mark", in: ns)
-                    .accessibilityHidden(true)
+                markSlot(28, source: stage == .story)
                 Spacer()
                 skipButton
             }
@@ -249,7 +269,7 @@ struct OnboardingView: View {
             ScrollView {
                 VStack(spacing: 22) {
                     header
-                    if started { progress } else { picker }
+                    if started { progress.transition(.opacity) } else { picker.transition(reduceMotion ? .opacity : .scale(scale: 0.92, anchor: .top).combined(with: .opacity)) }
                 }
                 .padding(.horizontal, LooplDesign.gutter)
                 .padding(.top, 8)
@@ -277,16 +297,11 @@ struct OnboardingView: View {
 
     private var header: some View {
         VStack(spacing: 10) {
-            Group {
-                if started {
-                    LooplProgressMark(progress: fraction)
-                        .matchedGeometryEffect(id: "pick", in: ns)
-                } else {
-                    LooplMark().matchedGeometryEffect(id: "mark", in: ns)
-                }
-            }
-            .frame(width: started ? 128 : 56, height: started ? 128 : 56)
-            .accessibilityIdentifier("onboarding-mark")
+            markSlot(started ? 128 : 56, source: (stage == .pick || stage == .download) && !morphFromCard)
+                .accessibilityIdentifier("onboarding-mark")
+                .accessibilityElement()
+                .accessibilityLabel(started ? "Download progress" : "loopl")
+                .accessibilityValue(started ? (fraction.map { "\(Int(($0 * 100).rounded())) percent" } ?? "in progress") : "")
             Text(started ? title : "Pick your first model")
                 .font(.system(.title, design: .rounded, weight: .semibold)).multilineTextAlignment(.center)
                 .contentTransition(.opacity)
@@ -300,13 +315,18 @@ struct OnboardingView: View {
     private var picker: some View {
         VStack(spacing: 10) {
             ForEach(cards) { spec in
-                ModelCard(spec: spec, blurb: Onboarding.blurb(spec), recommended: spec.id == defaultId,
-                          selected: selection?.id == spec.id, downloaded: store.states[spec.id]?.isDownloaded == true) {
+                let card = ModelCard(spec: spec, blurb: Onboarding.blurb(spec), recommended: spec.id == defaultId,
+                                     selected: selection?.id == spec.id, downloaded: store.states[spec.id]?.isDownloaded == true) {
                     withAnimation(LooplDesign.Motion.reduced(LooplDesign.Motion.snappy, reduceMotion)) { chosen = spec }
                     LooplDesign.haptic()
                 }
-                // The selected card is what morphs into the ring when Download is tapped.
-                .matchedGeometryEffect(id: selection?.id == spec.id ? "pick" : "card-\(spec.id)", in: ns, isSource: true)
+                // The selected card is what morphs into the ring when Download is tapped (see `hero`). The effect is
+                // attached only for that frame — a card carrying it with isSource == false would FOLLOW the mark slot.
+                if morphFromCard, selection?.id == spec.id {
+                    card.matchedGeometryEffect(id: "mark", in: ns, isSource: true)
+                } else {
+                    card
+                }
             }
             networkLine.padding(.top, 4)
             Text("You can add, move or delete models any time in Models.")
@@ -441,7 +461,16 @@ struct OnboardingView: View {
         guard let spec else { return }
         Onboarding.markDone()
         LooplDesign.haptic(1)
-        withAnimation(stageMotion) { started = true; stage = .download }
+        if reduceMotion || stage != .pick || spec.id != selection?.id {
+            withAnimation(stageMotion) { started = true; stage = .download }
+        } else {
+            // Frame 1 (no animation): the hero parks on the chosen card. Frame 2: card and hero become the ring together.
+            var still = Transaction(); still.disablesAnimations = true
+            withTransaction(still) { morphFromCard = true }
+            DispatchQueue.main.async {
+                withAnimation(stageMotion) { morphFromCard = false; started = true; stage = .download }
+            }
+        }
         #if DEBUG
         if DesignFixture.requested { DesignFixture.playOnboarding(engine, spec); return }
         #endif
