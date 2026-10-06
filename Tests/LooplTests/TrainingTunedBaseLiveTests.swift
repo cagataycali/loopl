@@ -19,5 +19,11 @@ final class TrainingTunedBaseLiveTests: XCTestCase {
         XCTAssertEqual(sim.repo, "cagataydev/loopl-app-sim-4bit", "the MLX row is the face of the base even though Mine lists the GGUF first")
         XCTAssertEqual(sim.bf16Repo, "cagataydev/loopl-app-sim")
         XCTAssertTrue(sim.isTrainable)
+        // the round-2 output of job 6ac5234f (launched from the app) comes back as a round-2 base: card loopl_round → badge
+        if let r2 = bases.first(where: { $0.name == "loopl-app-sim-r2" }) {
+            XCTAssertEqual(r2.round, 2, "card loopl_round: 2 → 'round 2' badge; continuing it would be round 3")
+            XCTAssertEqual(r2.bf16Repo, "cagataydev/loopl-app-sim-r2")
+            XCTAssertEqual(TrainingPlan.defaultOutputName(continuing: r2), "loopl-app-sim-r3")
+        } else { XCTFail("loopl-app-sim-r2 (round-2 proof) not listed as a base") }
     }
 }
