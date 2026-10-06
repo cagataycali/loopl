@@ -22,7 +22,7 @@ public final class AppSettings {
     public var askBefore: ApprovalPolicy.Mode { didSet { UserDefaults.standard.set(askBefore.rawValue, forKey: Self.askBeforeKey) } }
     nonisolated public static let askBeforeKey = "loopl.askBefore"
 
-    public static let defaultSystemPrompt = "You are loopl, a helpful assistant running fully on this iPhone. Use tools when they help; answer concisely."
+    public static let defaultSystemPrompt = "You are loopl, a helpful assistant running fully on this device. Use tools when they help; answer concisely."
     public static let allToolNames = ["current_time", "calculator", "device_info", "remember", "recall", "http"]
 
     public init() {

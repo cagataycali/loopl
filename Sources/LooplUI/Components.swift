@@ -569,6 +569,9 @@ public struct AgentTranscriptView<Empty: View, Banner: View>: View {
                 }
                 .padding(.horizontal, LooplDesign.gutter)
                 .padding(.top, 12).padding(.bottom, 16)
+                // iPad / Mac: a reading measure, centred — not 100 characters a line across the whole detail column.
+                .frame(maxWidth: LooplDesign.readingWidth + 2 * LooplDesign.gutter)
+                .frame(maxWidth: .infinity)
                 .animation(reduceMotion ? nil : LooplDesign.spring, value: transcript.items.count)
                 .animation(LooplDesign.Motion.faded(LooplDesign.Motion.spring, reduceMotion), value: Self.showsPending(transcript))
             }
