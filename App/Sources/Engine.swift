@@ -143,18 +143,21 @@ public final class Engine {
         self.store = store
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         self.hub = SubAgentHub(directory: base.appendingPathComponent("agents", isDirectory: true))
+        let core: [any Tool] = [CurrentTimeTool(), CalculatorTool(), DeviceInfoTool(), RememberTool(), RecallTool(), HttpTool()]
+        registry = ToolRegistry(catalog: core, mounted: Array(settings.enabledTools), selfManaging: true)
+        mountedNow = core.map(\.name).filter { settings.enabledTools.contains($0) } + [ManageToolsTool.toolName]
         // A background child's events after the parent's turn ended: fold them into the card on screen.
         detachedTask = Task { [weak self] in
             guard let hub = self?.hub else { return }
             for await event in hub.detachedEvents() {
                 guard let self else { return }
                 if self.transcript.agentIndex(Self.childId(of: event)) != nil { self.transcript.apply(event); self.archiveCurrent() }
-                    let hub = self.hub
+            }
+        }
+        let hub = self.hub
         Task { [weak self] in
             await hub.setOnFinished { env in Task { @MainActor in self?.childFinished(env) } }
-            let core: [any Tool] = [CurrentTimeTool(), CalculatorTool(), DeviceInfoTool(), RememberTool(), RecallTool(), HttpTool()]
-        registry = ToolRegistry(catalog: core, mounted: Array(settings.enabledTools), selfManaging: true)
-        mountedNow = core.map(\.name).filter { settings.enabledTools.contains($0) } + [ManageToolsTool.toolName]
+        }
         let ref = WeakEngine(self)
         Task { [registry] in
             // On-device tools join the catalog with their availability (unavailable ones are listed, never offered).
