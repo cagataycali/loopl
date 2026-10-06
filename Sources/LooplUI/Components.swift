@@ -878,34 +878,11 @@ public struct ModelPickerRow: View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(spec.name).font(.body.weight(loaded ? .semibold : .regular))
-                HStack(spacing: 6) {
-                    if spec.isDownloadable { meta(spec.sizeLabel) } else { meta("built in") }
-                    meta("·"); meta("\(spec.paramsB.formatted(.number.precision(.fractionLength(0...1))))B")
-                    meta("·"); meta("ctx \(spec.ctxUsable8GB.formatted())")
-                    meta("·"); meta(spec.runtime.label)
-                    if spec.supportsVision {
-                        meta("·")
-                        Label("vision", systemImage: "eye").font(.caption2.weight(.semibold)).foregroundStyle(LooplDesign.accent)
-                            .labelStyle(.titleAndIcon).fixedSize().lineLimit(1).accessibilityLabel("sees pictures")
-                    }
-                    if spec.toolsUnverified == true {
-                        meta("·")
-                        Text("tools unverified").font(.caption2.weight(.semibold)).foregroundStyle(LooplDesign.amber)
-                            .accessibilityLabel("tool calls unverified for this model")
-                    }
-                }
+                // ONE Text so the facts stay on one line: on an SE or at AX sizes they shrink a little instead of wrapping "ctx / 12,288".
+                metaRow.lineLimit(1).minimumScaleFactor(0.72).accessibilityLabel(metaAccessibility)
             }
             Spacer()
-            if loaded {
-                let bolt = Image(systemName: LooplDesign.iconLoaded).foregroundStyle(LooplDesign.accent).accessibilityLabel("loaded")
-                if let loadedMark, !reduceMotion { bolt.matchedGeometryEffect(id: "loaded.bolt", in: loadedMark) } else { bolt.transition(.opacity) }
-            }
-            else if downloaded || !spec.isDownloadable { Image(systemName: "checkmark").foregroundStyle(.secondary).font(.footnote.weight(.semibold)).accessibilityLabel("on this device").transition(.opacity) }
-            else if let downloading {
-                ProgressView(value: min(max(downloading, 0), 1)).progressViewStyle(.circular).controlSize(.small).tint(LooplDesign.accent)
-                    .frame(width: 18, height: 18).accessibilityLabel("downloading").transition(.opacity)
-            }
-            else { Image(systemName: LooplDesign.iconDownload).foregroundStyle(.tertiary).accessibilityLabel("not downloaded").transition(.opacity) }
+            glyph
         }
         .padding(.horizontal, 8).padding(.vertical, 6)
         .background {
@@ -917,7 +894,37 @@ public struct ModelPickerRow: View {
         .padding(.horizontal, -8).padding(.vertical, -6)
         .contentShape(Rectangle())
     }
-    private func meta(_ s: String) -> some View { Text(s).font(.caption).foregroundStyle(.secondary) }
+    private var metaRow: Text {
+        var t = meta(spec.isDownloadable ? spec.sizeLabel : "built in")
+        t = t + meta(" · \(spec.paramsB.formatted(.number.precision(.fractionLength(0...1))))B · ctx \(spec.ctxUsable8GB.formatted()) · \(spec.runtime.label)")
+        if spec.supportsVision {
+            t = t + meta(" · ") + (Text(Image(systemName: "eye")) + Text(" vision")).font(.caption2.weight(.semibold)).foregroundColor(LooplDesign.accent)
+        }
+        if spec.toolsUnverified == true {
+            t = t + meta(" · ") + Text("tools unverified").font(.caption2.weight(.semibold)).foregroundColor(LooplDesign.amber)
+        }
+        return t
+    }
+    private var metaAccessibility: String {
+        var parts = [spec.isDownloadable ? spec.sizeLabel : "built in", "\(spec.paramsB.formatted(.number.precision(.fractionLength(0...1))))B", "context \(spec.ctxUsable8GB.formatted())", spec.runtime.label]
+        if spec.supportsVision { parts.append("sees pictures") }
+        if spec.toolsUnverified == true { parts.append("tool calls unverified for this model") }
+        return parts.joined(separator: ", ")
+    }
+    /// The row's single state glyph: in use ⚡ · on this device ✓ · downloading ○ · tap to download ↓.
+    @ViewBuilder private var glyph: some View {
+        if loaded {
+            let bolt = Image(systemName: LooplDesign.iconLoaded).foregroundStyle(LooplDesign.accent).accessibilityLabel("loaded")
+            if let loadedMark, !reduceMotion { bolt.matchedGeometryEffect(id: "loaded.bolt", in: loadedMark) } else { bolt.transition(.opacity) }
+        }
+        else if downloaded || !spec.isDownloadable { Image(systemName: "checkmark").foregroundStyle(.secondary).font(.footnote.weight(.semibold)).accessibilityLabel("on this device").transition(.opacity) }
+        else if let downloading {
+            ProgressView(value: min(max(downloading, 0), 1)).progressViewStyle(.circular).controlSize(.small).tint(LooplDesign.accent)
+                .frame(width: 18, height: 18).accessibilityLabel("downloading").transition(.opacity)
+        }
+        else { Image(systemName: LooplDesign.iconDownload).foregroundStyle(.tertiary).accessibilityLabel("not downloaded").transition(.opacity) }
+    }
+    private func meta(_ s: String) -> Text { Text(s).font(.caption).foregroundColor(.secondary) }
 }
 
 public struct DownloadProgressRow: View {
