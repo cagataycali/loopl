@@ -1,5 +1,5 @@
 # App/Resources/train/loopl_sft.py == cagataycali/loopl-train train/loopl_sft.py at this revision. Written by scripts/sync-train-script.sh.
-revision=c872574252853a26ea5871f33a9873a94524df55
-script_version=1.2.3
-sha256=58a5ad671e6077ae142c0bd3af23cc1a9d9c95a29f89d70ec6f700b24a28fd7e
-synced=2026-10-06T17:06:48Z
+revision=ebe4a591e12a4010635cb453c4aa016575465c6e
+script_version=1.2.4
+sha256=495e7206871445609bcc48e30f62687a6d4649384937300041396d801d4f378f
+synced=2026-10-06T20:05:08Z

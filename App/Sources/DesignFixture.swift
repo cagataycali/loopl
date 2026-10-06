@@ -105,7 +105,7 @@ enum DesignFixture {
         // round 2 of loopl-app-sim: the fixture mirrors a continual job (tuned base, epochs auto, stitched by day)
         let tuned = TrainingTunedBase(repo: "cagataydev/loopl-app-sim-4bit", bf16Repo: "cagataydev/loopl-app-sim", round: 1, size: .b0_8)
         let plan = TrainingPlan(dataset: "cagataydev/loopl-app-conversations", conversations: 191, withTools: 64, base: .b0_8, tunedBase: tuned,
-                                epochs: .auto, stitch: .day, outputName: "loopl-app-smoke", hoursCap: 1)
+                                epochs: .auto, outputName: "loopl-app-smoke")
         switch scene {
         case "done": return TrainingSession.preview(plan: plan, user: "cagataydev", logLines: trainLogDone, finished: true, startedAt: Date().addingTimeInterval(-476))
         case "failed": return TrainingSession.preview(plan: plan, user: "cagataydev", logLines: trainLog + ["torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 1.2 GiB."], failed: "torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 1.2 GiB.")

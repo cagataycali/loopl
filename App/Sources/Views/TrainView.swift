@@ -2,8 +2,9 @@ import SwiftUI
 import Loopl
 import LooplUI
 
-/// Models › Train your own: pick a dataset the user pushed to their Hugging Face account, a Qwen3.5 base and a GPU,
-/// see an honest cost estimate, confirm on the same ApprovalCard the agent uses for HITL, then watch the job's
+/// Models › Train your own: pick the conversations the user pushed to their Hugging Face account and a base (stock Qwen3.5 size or
+/// one of their own tuned models); epochs/GPU/method are Auto unless "Fine-tune manually" is opened; the cost guard is automatic
+/// (2× the estimate, ≥ 15 min) and lives in the estimate sentence. See an honest cost estimate, confirm on the same ApprovalCard the agent uses for HITL, then watch the job's
 /// `[loopl] stage=` ladder. The resulting private model lands under Models › Mine (HF-ACCOUNT lane) → download → default.
 struct TrainView: View {
     @Bindable var engine: Engine
@@ -25,13 +26,11 @@ struct TrainView: View {
     @State private var base: TrainingBase = .b0_8
     @State private var tunedBases: [TrainingTunedBase] = []
     @State private var tuned: TrainingTunedBase?          // nil = start from the stock Qwen3.5 size
-    @State private var method: TrainingMethod = .lora
-    @State private var flavor: TrainingFlavor = .a10gSmall
+    @State private var method: TrainingMethod? = nil        // nil = Auto (the size's default)
+    @State private var flavor: TrainingFlavor? = nil        // nil = Auto (the cheapest GPU the size trains well on)
     @State private var epochsChoice = 0                     // 0 = Auto, 1…4 fixed
     @State private var includeAllShards = true
-    @State private var stitch: TrainingStitch = .none
-    @State private var stitchPreview: (groups: Int, keyed: Int, rows: Int)?   // from the shards inspect() read
-    @State private var hoursCap = 2.0
+    @State private var manual = false                       // "Fine-tune manually" disclosure
     @State private var outputName = ""
     @State private var confirming = false
     @State private var session: TrainingSession?
@@ -46,11 +45,16 @@ struct TrainView: View {
     /// A read-only token can list datasets but `POST /api/jobs` needs write — say so before the user fills the form.
     private var canRunJobs: Bool { fixture != nil || fixtureSignedIn || (engine.hf.identity?.scopes.contains(.jobs) ?? true) }
 
+    /// What Auto resolves to right now (shown next to the pickers so "Auto" is never a mystery).
+    private var size: TrainingBase { tuned?.size ?? base }
+    private var autoFlavor: TrainingFlavor { size.recommendedFlavor }
+    private var autoMethod: TrainingMethod { tuned != nil ? .lora : size.defaultMethod }
+
     private var plan: TrainingPlan? {
         guard let ds = dataset else { return nil }
-        return TrainingPlan(dataset: ds.id, conversations: max(conversations, 1), withTools: conversations / 3, base: base, tunedBase: tuned, method: method,
-                            flavor: flavor, epochs: epochsChoice == 0 ? .auto : .fixed(epochsChoice), includeAllShards: includeAllShards, stitch: stitch,
-                            outputName: outputName.isEmpty ? nil : TrainingPlan.repoSafe(outputName), hoursCap: hoursCap)
+        return TrainingPlan(dataset: ds.id, conversations: max(conversations, 1), withTools: conversations / 3, base: base, tunedBase: tuned, method: method ?? autoMethod,
+                            flavor: flavor ?? autoFlavor, epochs: epochsChoice == 0 ? .auto : .fixed(epochsChoice), includeAllShards: includeAllShards,
+                            outputName: outputName.isEmpty ? nil : TrainingPlan.repoSafe(outputName))
     }
 
     var body: some View {
@@ -68,7 +72,6 @@ struct TrainView: View {
                 dataset = datasets.first; conversations = 191; shardBytes = 812_000; base = .b0_8
                 tunedBases = [TrainingTunedBase(repo: "cagataydev/loopl-app-sim-4bit", bf16Repo: "cagataydev/loopl-app-sim", round: 1, size: .b0_8),
                               TrainingTunedBase(repo: "cagataydev/loopl-old-GGUF", bf16Repo: nil, round: 1, size: .b0_8)]
-                stitchPreview = (groups: 9, keyed: 179, rows: 191)
             } else if fixture == nil { await loadDatasets(); await loadTunedBases() }
         }
         .animation(LooplDesign.Motion.faded(LooplDesign.Motion.spring, reduceMotion), value: confirming)
@@ -114,7 +117,7 @@ struct TrainView: View {
                         if let e = inspectError { Text(e).font(.footnote).foregroundStyle(.orange) }
                     }
                 }
-            } header: { Text("Dataset") } footer: {
+            } header: { Text("Your conversations") } footer: {
                 if canRunJobs {
                     Text("Private, in your account (@\(user)). The training script is committed next to the shards as train/loopl_sft.py.")
                 } else {
@@ -138,45 +141,46 @@ struct TrainView: View {
                     }
                     .accessibilityIdentifier("train-continue")
                     if let t = tuned {
-                        Label("Round \(t.round + 1): LoRA on top of \(t.bf16Repo ?? t.repo) — your earlier rounds stay in.", systemImage: "arrow.triangle.branch")
+                        Label("Round \(t.round + 1): builds on \(t.name) — what it already learned stays in.", systemImage: "arrow.triangle.branch")
                             .font(.footnote).foregroundStyle(.secondary)
                             .accessibilityIdentifier("train-continue-note")
-                        Toggle("Include all previous shards", isOn: $includeAllShards)
+                        Toggle("Learn from everything I've shared so far", isOn: $includeAllShards)
                             .accessibilityIdentifier("train-replay")
                     }
                 }
-                Picker("Method", selection: $method) { ForEach(TrainingMethod.allCases, id: \.self) { Text($0.label).tag($0) } }
-                Picker("GPU", selection: $flavor) {
-                    ForEach(TrainingFlavor.gpuChoices) { f in Text("\(f.label) · \(f.priceLabel)").tag(f) }
-                }
-                .accessibilityIdentifier("train-flavor")
-                Picker("Epochs", selection: $epochsChoice) {
-                    Text("Auto (recommended)").tag(0)
-                    ForEach(1...4, id: \.self) { Text("\($0)").tag($0) }
-                }
-                .accessibilityIdentifier("train-epochs")
-                Text(epochsFootnote).font(.footnote).foregroundStyle(.secondary).accessibilityIdentifier("train-epochs-note")
-                Picker("Stitch related conversations", selection: $stitch) {
-                    ForEach(TrainingStitch.allCases) { Text($0.label).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .accessibilityIdentifier("train-stitch")
-                Text(stitchFootnote).font(.footnote).foregroundStyle(.secondary).accessibilityIdentifier("train-stitch-note")
-                HStack {
-                    Text("Stop after")
-                    Spacer()
-                    Text(TrainingEstimate.duration(hoursCap * 3600)).foregroundStyle(.secondary).monospacedDigit()
-                }
-                Slider(value: $hoursCap, in: 0.25...8, step: 0.25).accessibilityIdentifier("train-cap")
+                LabeledContent("Epochs", value: epochsChoice == 0 ? "Auto (recommended)" : "\(epochsChoice)")
+                    .accessibilityIdentifier("train-epochs")
                 TextField("Model name", text: $outputName, prompt: Text(plan.map(\.outputName) ?? "loopl-mine-0-8b"))
                     .textInputAutocapitalization(.never).autocorrectionDisabled()
                     .accessibilityIdentifier("train-name")
+                DisclosureGroup(isExpanded: $manual) {
+                    Picker("Epochs", selection: $epochsChoice) {
+                        Text("Auto (recommended)").tag(0)
+                        ForEach(1...4, id: \.self) { Text("\($0)").tag($0) }
+                    }
+                    .accessibilityIdentifier("train-epochs-picker")
+                    Text(epochsFootnote).font(.footnote).foregroundStyle(.secondary).accessibilityIdentifier("train-epochs-note")
+                    Picker("GPU", selection: $flavor) {
+                        Text("Auto · \(autoFlavor.label)").tag(Optional<TrainingFlavor>.none)
+                        ForEach(TrainingFlavor.gpuChoices) { f in Text("\(f.label) · \(f.priceLabel)").tag(Optional(f)) }
+                    }
+                    .accessibilityIdentifier("train-flavor")
+                    Picker("Method", selection: $method) {
+                        Text("Auto · \(autoMethod.label)").tag(Optional<TrainingMethod>.none)
+                        ForEach(TrainingMethod.allCases, id: \.self) { Text($0.label).tag(Optional($0)) }
+                    }
+                    .accessibilityIdentifier("train-method")
+                } label: {
+                    Label("Fine-tune manually", systemImage: "slider.horizontal.3")
+                        .accessibilityIdentifier("train-manual")
+                }
             } header: { Text("Recipe") } footer: {
-                VStack(alignment: .leading, spacing: 4) {
-                    if tuned == nil {
-                        Text(base == TrainingBase.recommended(forConversations: conversations)
-                             ? "\(base.label) is the suggested size for \(conversations) conversations."
-                             : "Suggested for \(conversations) conversations: \(TrainingBase.recommended(forConversations: conversations).label).")
+                VStack(alignment: .leading, spacing: 6) {
+                    if let plan {
+                        Text(plan.summary(user: user)).accessibilityIdentifier("train-summary")
+                    }
+                    if tuned == nil, base != TrainingBase.recommended(forConversations: conversations) {
+                        Text("Suggested for \(conversations) conversations: \(TrainingBase.recommended(forConversations: conversations).label).")
                     }
                     let blocked = tunedBases.filter { !$0.isTrainable }
                     if !blocked.isEmpty {
@@ -184,10 +188,6 @@ struct TrainView: View {
                             .accessibilityIdentifier("train-continue-blocked")
                     }
                 }
-            }
-            .onChange(of: base) { _, b in if tuned == nil { method = b.defaultMethod; flavor = b.recommendedFlavor } }
-            .onChange(of: tuned) { _, t in
-                if let t { base = t.size; method = .lora; flavor = t.size.recommendedFlavor } else { method = base.defaultMethod; flavor = base.recommendedFlavor }
             }
 
             if let plan {
@@ -213,7 +213,7 @@ struct TrainView: View {
                     }
                 } footer: {
                     Text(settings.offline ? "Offline mode is on — turn it off in Settings to start a job." :
-                         "You confirm the exact job before anything is billed. Hugging Face charges your account per minute of GPU time, and stops at the cap.")
+                         "You confirm the exact job before anything is billed.")
                 }
             }
         }
@@ -227,33 +227,21 @@ struct TrainView: View {
         return epochsChoice == 0 ? "Auto runs up to \(h.autoMax), keeps the best-scoring epoch and stops as soon as held-out loss rises. \(guide)" : guide
     }
 
-    private var stitchFootnote: String {
-        switch stitch {
-        case .none: return TrainingStitch.none.footnote
-        case .day:
-            if let p = stitchPreview {
-                let unkeyed = p.rows - p.keyed
-                return "≈ \(p.groups) stitched samples from \(p.keyed) dated conversations" + (unkeyed > 0 ? " · \(unkeyed) without a date stay separate." : ".") + " Originals train too."
-            }
-            return TrainingStitch.day.footnote
-        case .topic: return TrainingStitch.topic.footnote + " The count shows in the job plan."
-        }
-    }
-
     private func estimateCard(_ e: TrainingEstimate, plan: TrainingPlan) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
                 Text(e.usdLabel).font(.system(.title, design: .rounded).weight(.semibold)).monospacedDigit()
-                Text("· about \(e.durationLabel)").foregroundStyle(.secondary)
+                Text("· about \(TrainingEstimate.spoken(e.totalSeconds))").foregroundStyle(.secondary)
                 Spacer()
             }
-            Text("\(e.steps) steps on \(plan.flavor.label) at \(plan.flavor.priceLabel), then merge, score, and convert for iPhone (MLX 4-bit) and GGUF. An estimate, not a quote.")
+            Text("Stops by itself if it runs past \(TrainingEstimate.spoken(Double(e.capSeconds))) — Hugging Face bills your account per minute until then.")
                 .font(.footnote).foregroundStyle(.secondary)
-            if e.exceedsCap {
-                Label("Likely longer than the \(TrainingEstimate.duration(Double(plan.timeoutSeconds))) cap — the job would stop unfinished. Raise the cap or pick a faster GPU.", systemImage: LooplDesign.iconWarning)
-                    .font(.footnote).foregroundStyle(.orange)
-            }
+                .accessibilityIdentifier("train-cap")
+            Text("\(e.steps) steps on \(plan.flavor.label) at \(plan.flavor.priceLabel), then merge, score, and convert for iPhone\(plan.skipGGUF ? "" : " and GGUF"). An estimate, not a quote.")
+                .font(.footnote).foregroundStyle(.tertiary)
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(e.sentence)
         .accessibilityIdentifier("train-estimate")
     }
 
@@ -265,7 +253,7 @@ struct TrainView: View {
             title: "Start a training job on Hugging Face",
             method: "POST", url: "https://huggingface.co/api/jobs/\(user)",
             bodyPreview: "flavor \(plan.flavor.id) · timeout \(TrainingEstimate.duration(Double(plan.timeoutSeconds)))\nloopl_sft.py \(args)",
-            detail: "\(plan.estimate.usdLabel) (\(plan.estimate.durationLabel), billed per minute, stops at the cap). Output: \(plan.outputRepo(user: user)), -4bit, -GGUF — private.",
+            detail: "\(plan.estimate.sentence) Output: \(plan.outputRepo(user: user)), -4bit, -GGUF — private.",
             risk: .high)
     }
 
@@ -463,33 +451,18 @@ struct TrainView: View {
             }
             let bytes = shards.reduce(Int64(0)) { $0 + ($1.size ?? 0) }
             var n = Int(bytes / 4096)
-            var preview: (groups: Int, keyed: Int, rows: Int)?
             if shards.count <= 3, bytes < 3_000_000 {
-                var exact = 0, days: [String: Int] = [:], keyed = 0
+                var exact = 0
                 for s in shards {
                     guard let data = try? await client.fileData(repo: d.id, type: .dataset, path: s.path) else { continue }
-                    for line in data.split(separator: UInt8(ascii: "\n")) where !line.isEmpty {
-                        exact += 1
-                        // `"ts": "2026-10-06T14:…"` inside gen — a cheap byte scan, no JSON parse per row
-                        if let day = Self.day(inRow: line) { keyed += 1; days[day, default: 0] += 1 }
-                    }
+                    exact += data.split(separator: UInt8(ascii: "\n")).filter { !$0.isEmpty }.count
                 }
-                if exact > 0 { n = exact; preview = (groups: days.values.filter { $0 >= 2 }.count, keyed: keyed, rows: exact) }
+                if exact > 0 { n = exact }
             }
             guard dataset?.id == d.id else { return }
             shardBytes = bytes; conversations = shards.isEmpty ? 0 : max(n, 1)
-            stitchPreview = preview
             if tuned == nil { base = TrainingBase.recommended(forConversations: conversations) }
         } catch { inspectError = error.localizedDescription }
-    }
-
-    /// "YYYY-MM-DD" of the row's `"ts": "…"` (ConversationExport writes gen.ts), nil when absent.
-    static func day(inRow line: Data.SubSequence) -> String? {
-        guard let s = String(data: Data(line), encoding: .utf8), let r = s.range(of: "\"ts\": \"") ?? s.range(of: "\"ts\":\"") else { return nil }
-        let rest = s[r.upperBound...]
-        guard rest.count >= 10 else { return nil }
-        let day = String(rest.prefix(10))
-        return day.count == 10 && day[day.index(day.startIndex, offsetBy: 4)] == "-" ? day : nil
     }
 
     private func launch(_ plan: TrainingPlan) {

@@ -66,7 +66,7 @@ import sys
 import time
 from pathlib import Path
 
-SCRIPT_VERSION = "1.2.3"
+SCRIPT_VERSION = "1.2.4"
 LLAMA_TAG_DEFAULT = "b11401"  # the llama.cpp build the loopl app vendors (scripts/fetch-llama-xcframework.sh)
 
 BASES = {"0.8b": "Qwen/Qwen3.5-0.8B", "2b": "Qwen/Qwen3.5-2B", "4b": "Qwen/Qwen3.5-4B"}
@@ -1024,8 +1024,10 @@ def main():
                     help="round ≥ 2: train only on shards the base has not seen (default = REPLAY every shard of the dataset)")
     ap.add_argument("--replay-from", default=None, metavar="DATASET",
                     help="mix in another dataset's conversations (e.g. the previous round's data after switching datasets)")
-    ap.add_argument("--stitch", choices=["none", "day", "topic"], default="none",
-                    help="add multi-thread samples: related conversations (same day / same keyword cluster) concatenated under the context budget")
+    ap.add_argument("--stitch", choices=["none", "day", "topic"], default="day",
+                    help="add multi-thread samples: related conversations (same day / same keyword cluster) concatenated under the context budget. "
+                         "Default day since 1.2.4 (A/B 2026-10-06, 0.8B LoRA 2 ep on loopl-e2e-vision-20261006: eval 0.2814 vs 0.2970 for none); "
+                         "the app has no control for this — pass --stitch none to opt out")
     ap.add_argument("--batch", type=int, default=None)
     ap.add_argument("--grad-accum", type=int, default=None)
     ap.add_argument("--max-length", type=int, default=4096)

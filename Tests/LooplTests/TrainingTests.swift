@@ -40,23 +40,53 @@ final class TrainingTests: XCTestCase {
         // measured: 191 conversations ran 476 s ≈ $0.13 (job 6ac4711f); the guide says ~15 min ≈ $0.30 — the estimate must sit between, leaning long
         XCTAssertEqual(small.totalSeconds / 60, 13, accuracy: 3)
         XCTAssertEqual(small.usd, 0.25, accuracy: 0.1)
-        XCTAssertFalse(small.exceedsCap)
-        // 4B LoRA, 5 000 conversations on a100-large ≈ 5 h ≈ $12 → exceeds a 2 h cap, billed only up to the cap
-        let big = TrainingPlan(dataset: "u/d", conversations: 5000, base: .b4, hoursCap: 2).estimate
-        XCTAssertTrue(big.exceedsCap)
-        XCTAssertEqual(big.usd, 5.0, accuracy: 0.01, "2 h × $2.50/h is the most HF can bill before the timeout")
-        XCTAssertEqual(TrainingPlan(dataset: "u/d", conversations: 5000, base: .b4, hoursCap: 8).estimate.usd, 12, accuracy: 3)
+        // the automatic cost guard: 2× the estimate, never under 15 min, whole minutes — and the bill follows the estimate, not the cap
+        XCTAssertEqual(small.capSeconds, TrainingEstimate.cap(forEstimatedSeconds: small.totalSeconds))
+        XCTAssertEqual(small.capSeconds % 60, 0)
+        XCTAssertGreaterThanOrEqual(Double(small.capSeconds), 2 * small.totalSeconds)
+        XCTAssertLessThan(Double(small.capSeconds), 2 * small.totalSeconds + 60)
+        XCTAssertEqual(TrainingEstimate.cap(forEstimatedSeconds: 100), 900, "a tiny job still gets 15 minutes")
+        XCTAssertEqual(TrainingEstimate.cap(forEstimatedSeconds: 540), 1080, "9 min → 18 min")
+        XCTAssertEqual(TrainingEstimate.cap(forEstimatedSeconds: 541), 1140, "rounded UP to the minute")
+        // 4B LoRA, 5 000 conversations on a100-large ≈ 5 h ≈ $12 → the cap grows with the data (≈ 10 h), nothing to raise by hand
+        let big = TrainingPlan(dataset: "u/d", conversations: 5000, base: .b4).estimate
+        XCTAssertEqual(big.usd, 12, accuracy: 3)
+        XCTAssertEqual(Double(big.capSeconds) / 3600, 2 * big.totalSeconds / 3600, accuracy: 0.02)
+        XCTAssertEqual(TrainingPlan(dataset: "u/d", conversations: 5000, base: .b4).timeoutSeconds, big.capSeconds, "the plan's HF timeoutSeconds IS the automatic cap")
         // tool conversations render in two dialects → more steps
         XCTAssertGreaterThan(TrainingPlan(dataset: "u/d", conversations: 200, withTools: 200, base: .b0_8).estimate.steps, small.steps)
         // a faster flavor is fewer seconds but not necessarily cheaper
-        let h200 = TrainingPlan(dataset: "u/d", conversations: 5000, base: .b4, flavor: .h200, hoursCap: 8).estimate
-        XCTAssertLessThan(h200.totalSeconds, TrainingPlan(dataset: "u/d", conversations: 5000, base: .b4, hoursCap: 8).estimate.totalSeconds)
+        let h200 = TrainingPlan(dataset: "u/d", conversations: 5000, base: .b4, flavor: .h200).estimate
+        XCTAssertLessThan(h200.totalSeconds, TrainingPlan(dataset: "u/d", conversations: 5000, base: .b4).estimate.totalSeconds)
         XCTAssertEqual(TrainingEstimate.usd(0.004), "< $0.01"); XCTAssertEqual(TrainingEstimate.usd(0.3), "$0.30"); XCTAssertEqual(TrainingEstimate.usd(12.4), "$12")
         XCTAssertEqual(TrainingEstimate.duration(900), "15 min"); XCTAssertEqual(TrainingEstimate.duration(5400), "1.5 h")
+        // the one sentence the Train screen and the ApprovalCard share
+        XCTAssertEqual(TrainingEstimate.spoken(45), "a minute"); XCTAssertEqual(TrainingEstimate.spoken(540), "9 minutes")
+        XCTAssertEqual(TrainingEstimate.spoken(3600), "1 hour"); XCTAssertEqual(TrainingEstimate.spoken(5400), "1.5 hours"); XCTAssertEqual(TrainingEstimate.spoken(7200), "2 hours")
+        XCTAssertTrue(small.sentence.hasPrefix("≈ $0."), small.sentence)
+        XCTAssertTrue(small.sentence.contains(" · about ") && small.sentence.contains(" minutes · stops by itself if it runs past ") && small.sentence.hasSuffix(" minutes."), small.sentence)
+        let capMinutes = Int(String(small.sentence.split(separator: "past ").last!.split(separator: " ").first!))!
+        XCTAssertEqual(capMinutes, small.capSeconds / 60)
+    }
+
+    func testPlanSummaryReadsInPlainWords() {
+        let fresh = TrainingPlan(dataset: "me/loopl-app-conversations", conversations: 191, base: .b0_8)
+        let s = fresh.summary(user: "me")
+        XCTAssertTrue(s.hasPrefix("Starts from Qwen3.5 0.8B and learns from your 191 conversations in up to 3 passes, keeping the one that scores best"), s)
+        XCTAssertTrue(s.contains("A small LoRA adapter is trained and merged in on an A10G 24 GB at Hugging Face"), s)
+        XCTAssertTrue(TrainingPlan(dataset: "me/d", conversations: 10, base: .b0_8, flavor: .t4Small).summary(user: "me").contains("on a T4 16 GB"))
+        XCTAssertTrue(TrainingPlan(dataset: "me/d", conversations: 10, base: .b0_8, flavor: .h200).summary(user: "me").contains("on an H200"))
+        XCTAssertTrue(s.contains("saved privately as me/loopl-app-0-8b, ready for your iPhone and as GGUF."), s)
+        let tuned = TrainingTunedBase(repo: "me/loopl-app-sim-4bit", bf16Repo: "me/loopl-app-sim", round: 1, size: .b0_8)
+        var r2 = TrainingPlan(dataset: "me/d", conversations: 40, base: .b0_8, tunedBase: tuned, epochs: .fixed(1))
+        XCTAssertTrue(r2.summary(user: "me").hasPrefix("Continues loopl-app-sim (round 2) and learns from everything you have shared so far (40 conversations) in 1 pass."), r2.summary(user: "me"))
+        r2.includeAllShards = false
+        XCTAssertTrue(r2.summary(user: "me").contains("shared since the last round"), r2.summary(user: "me"))
+        XCTAssertFalse(r2.summary(user: "me").contains("stitch"), "stitching is the script's decision, never a word on the screen")
     }
 
     func testJobSpecIsTheLaunchContract() throws {
-        let plan = TrainingPlan(dataset: "cagataydev/loopl-app-smoke-data", conversations: 191, base: .b0_8, epochs: .fixed(2), outputName: "loopl-app-smoke", hoursCap: 1)
+        let plan = TrainingPlan(dataset: "cagataydev/loopl-app-smoke-data", conversations: 191, base: .b0_8, epochs: .fixed(2), outputName: "loopl-app-smoke")
         let spec = TrainingLaunch.jobSpec(plan: plan, user: "cagataydev", token: "hf_secret")
         XCTAssertEqual(spec.dockerImage, "ghcr.io/astral-sh/uv:python3.12-bookworm")
         XCTAssertEqual(spec.command, ["bash", "-lc",
@@ -65,7 +95,8 @@ final class TrainingTests: XCTestCase {
         XCTAssertEqual(spec.environment, ["LOOPL_SCRIPT_URL": "https://huggingface.co/datasets/cagataydev/loopl-app-smoke-data/resolve/main/train/loopl_sft.py"])
         XCTAssertEqual(spec.secrets, ["HF_TOKEN": "hf_secret"])
         XCTAssertEqual(spec.flavor, "a10g-small")
-        XCTAssertEqual(spec.timeoutSeconds, 3600)
+        XCTAssertEqual(spec.timeoutSeconds, plan.estimate.capSeconds, "the automatic cap is what HF enforces")
+        XCTAssertGreaterThanOrEqual(spec.timeoutSeconds ?? 0, 900)
         // the body HFHubClient posts carries the token ONLY under secrets
         let body = String(decoding: HFHubClient.createJobBody(spec), as: UTF8.self)
         XCTAssertEqual(body.components(separatedBy: "hf_secret").count - 1, 1)
@@ -146,7 +177,7 @@ final class TrainingTests: XCTestCase {
 
     func testContinualPlanArgumentsAndDefaults() {
         let tuned = TrainingTunedBase(repo: "me/loopl-app-sim-4bit", bf16Repo: "me/loopl-app-sim", round: 1, size: .b0_8)
-        let plan = TrainingPlan(dataset: "me/loopl-app-conversations", conversations: 120, base: .b2, tunedBase: tuned, stitch: .day, hoursCap: 0.25)
+        let plan = TrainingPlan(dataset: "me/loopl-app-conversations", conversations: 120, base: .b2, tunedBase: tuned, stitch: .day)
         XCTAssertEqual(plan.base, .b0_8, "the tuned base's Qwen root wins over the stock pick")
         XCTAssertEqual(plan.method, .lora, "round ≥ 2 defaults to LoRA, like the script")
         XCTAssertEqual(plan.round, 2)
