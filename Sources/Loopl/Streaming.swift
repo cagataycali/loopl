@@ -11,6 +11,9 @@ public enum StopReason: String, Sendable, Codable, Hashable {
     case stopSequence = "stop_sequence"
     case contentFiltered = "content_filtered"
     case cancelled
+    /// Strands: a hook or a tool raised an interrupt and `InterruptMode.stop` ended the loop.
+    /// `AgentResult.interrupts` carries them; answer and call `agent.resume(_:)`.
+    case interrupt
 }
 
 /// Strands `Usage`.

@@ -106,17 +106,48 @@ public struct AfterModelCallEvent: HookEvent {
 }
 
 /// Strands `BeforeToolsEvent`: the assistant message with all its toolUse blocks, before any runs.
-public struct BeforeToolsEvent: HookEvent {
+/// A hook may raise an interrupt here (`try event.interrupt("…")`) — see `Interrupt.swift`.
+public struct BeforeToolsEvent: HookEvent, InterruptibleEvent {
     public var message: Message
     public var cancel: String? = nil
+    public var interruptContext = InterruptContext()
     public init(message: Message) { self.message = message }
 }
 
 /// Strands `AfterToolsEvent`: the toolResult user message, before it is appended.
+/// Guaranteed to fire once for every `BeforeToolsEvent` — including when a BeforeTools hook
+/// throws, a tool throws, the cycle is cancelled, or an interrupt stops the loop (Strands
+/// builds and invokes it in a `finally`).
 public struct AfterToolsEvent: HookEvent {
     public static var shouldReverseCallbacks: Bool { true }
     public var message: Message
-    public init(message: Message) { self.message = message }
+    /// Strands `after_tools_event.end_turn`: set it and the loop ends the turn *without*
+    /// calling the model again — the content below becomes the final assistant message.
+    public var endTurn: EndTurn?
+    /// Strands `invocation_state["request_state"]`: shared scratch space. Setting
+    /// `requestState["stopEventLoop"] = true` stops the loop after this tool cycle,
+    /// keeping the cycle's own stop reason (`tool_use`).
+    public var requestState: [String: JSONValue]
+
+    /// What `endTurn` puts in the final assistant message (Strands accepts `True`, a string, or content blocks).
+    public enum EndTurn: Sendable, Hashable {
+        /// A neutral one-liner ("Turn ended early by hook after tool execution").
+        case flag
+        case text(String)
+        case content([ContentBlock])
+
+        public var content: [ContentBlock] {
+            switch self {
+            case .flag: [.text("Turn ended early by hook after tool execution")]
+            case .text(let t): [.text(t)]
+            case .content(let c): c
+            }
+        }
+    }
+
+    public init(message: Message, requestState: [String: JSONValue] = [:]) {
+        self.message = message; self.requestState = requestState
+    }
 }
 
 /// Strands `BeforeToolCallEvent`: per tool. A hook may swap `toolUse`, replace
@@ -124,11 +155,12 @@ public struct AfterToolsEvent: HookEvent {
 /// loopl adds `approval`: pre-filled from `tool.requiresApproval(for:)`; a hook
 /// sets it to `nil` to auto-approve (`ApprovalPolicy`) or sets one to demand a
 /// human decision — the agent suspends the call until `resolve(approval:)`.
-public struct BeforeToolCallEvent: HookEvent {
+public struct BeforeToolCallEvent: HookEvent, InterruptibleEvent {
     public var toolUse: ToolUse
     public var selectedTool: (any Tool)?
     public var cancelTool: String? = nil
     public var approval: ApprovalRequest? = nil
+    public var interruptContext = InterruptContext()
     public init(toolUse: ToolUse, selectedTool: (any Tool)?, approval: ApprovalRequest? = nil) {
         self.toolUse = toolUse; self.selectedTool = selectedTool; self.approval = approval
     }

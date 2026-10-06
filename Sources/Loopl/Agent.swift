@@ -17,6 +17,8 @@ public enum AgentEvent: Sendable {
     case throttle(delay: TimeInterval)                           // EventLoopThrottleEvent (retry backoff)
     case approvalRequested(ApprovalRequest)                      // loopl: a tool call is suspended until `resolve(approval:)` (HITL)
     case approvalResolved(id: String, ApprovalDecision)          // loopl: the human (or the timeout) answered
+    case interruptRaised(Interrupt)                              // Strands interrupt: a hook or a tool wants a human (approval is one of these)
+    case interruptResolved(id: String, response: JSONValue)      // the human (or the timeout) answered the interrupt
     case toolStarted(ToolUse)                                    // loopl: the tool is about to run (after BeforeToolCall hooks + approval)
     case toolResult(ToolResult)                                  // ToolResultEvent
     case toolResultMessage(Message)                              // ToolResultMessageEvent (appended)
@@ -37,6 +39,10 @@ public struct EventLoopMetrics: Sendable, Hashable, Codable {
     public var contextReductionCount = 0
     /// The last runtime report (tok/s, TTFT, context) — for the debug sheet.
     public var last = Metrics()
+    /// Strands' usage baseline: the real prompt+output token count the runtime reported for the
+    /// most recent model call. The next cycle's projected input is this plus an estimate of the
+    /// messages added since, instead of re-estimating the whole transcript (0 before the first call).
+    public var usageBaselineTokens = 0
     public init() {}
     mutating func update(_ m: Metrics) {
         accumulatedUsage += m.usage
@@ -49,8 +55,11 @@ public struct AgentResult: Sendable, Hashable {
     public var stopReason: StopReason
     public var message: Message
     public var metrics: EventLoopMetrics
-    public init(stopReason: StopReason, message: Message, metrics: EventLoopMetrics) {
-        self.stopReason = stopReason; self.message = message; self.metrics = metrics
+    /// Strands `AgentResult.interrupts`: set when `stopReason == .interrupt` (only possible
+    /// with `InterruptMode.stop`) — answer them and call `agent.resume(_:)`.
+    public var interrupts: [Interrupt]
+    public init(stopReason: StopReason, message: Message, metrics: EventLoopMetrics, interrupts: [Interrupt] = []) {
+        self.stopReason = stopReason; self.message = message; self.metrics = metrics; self.interrupts = interrupts
     }
     /// Strands `str(result)`: the text blocks of the final message.
     public var text: String { message.text }
@@ -76,11 +85,32 @@ public actor Agent {
     public let toolExecutor: any ToolExecutor
     public let retryStrategy: ModelRetryStrategy?
     public private(set) var eventLoopMetrics = EventLoopMetrics()
+    /// Strands `invocation_state["request_state"]`: scratch space hooks share across a cycle.
+    /// `stopEventLoop = true` after tools ends the loop without calling the model again.
+    public private(set) var requestState: [String: JSONValue] = [:]
+    /// Strands `_estimate_input_tokens`: the last assistant message whose usage the runtime
+    /// actually measured, and that measurement. Only the messages after it need estimating —
+    /// the system prompt and the tool specs are already inside the number.
+    private var usageBaseline: (messageID: UUID, tokens: Int)?
     /// Human-in-the-loop: how long a suspended tool call waits for `resolve(approval:)` before it is denied.
     public let approvalTimeout: TimeInterval
-    private var pending: [String: (request: ApprovalRequest, continuation: CheckedContinuation<ApprovalDecision, Never>)] = [:]
-    /// Tool calls waiting for a human right now (a UI restores its cards from this).
-    public var pendingApprovals: [ApprovalRequest] { pending.values.map(\.request).sorted { $0.id < $1.id } }
+    /// What a raised interrupt does: suspend the raising call (default) or stop the loop the way Strands does.
+    public let interruptMode: InterruptMode
+    /// Strands `agent._interrupt_state`.
+    private var interruptState = InterruptState()
+    /// The `.suspend` half of the interrupt system — one continuation per unanswered interrupt.
+    private var gate = InterruptGate()
+    /// Interrupts waiting for a human right now (a UI restores its cards from this).
+    public var pendingInterrupts: [Interrupt] { gate.pending }
+    /// Tool calls waiting for an approval decision right now (a UI restores its cards from this).
+    public var pendingApprovals: [ApprovalRequest] {
+        gate.pending.compactMap { interrupt in
+            guard interrupt.name == Agent.approvalInterruptName, let reason = interrupt.reason else { return nil }
+            return ApprovalRequest(interruptReason: reason)
+        }.sorted { $0.id < $1.id }
+    }
+    /// `.stop` mode only: tool calls that raised an interrupt instead of producing a result.
+    private var interrupted = InterruptedToolUses()
 
     /// - Parameters:
     ///   - conversationManager: default `SlidingWindowConversationManager()` — the only limiter.
@@ -88,6 +118,8 @@ public actor Agent {
     ///   - toolExecutor: default `ConcurrentToolExecutor()`.
     ///   - retryStrategy: default `ModelRetryStrategy()` (6 attempts, 4 s → 240 s). Pass `nil` to disable.
     ///   - approvalTimeout: a tool call waiting for `resolve(approval:)` is denied after this (default 120 s).
+    ///   - interruptMode: `.suspend` (default — the raising call waits inside the agent) or `.stop` (Strands:
+    ///     the loop returns `stopReason .interrupt` and the caller answers with `resume(_:)`).
     public init(model: any Model,
                 tools: [any Tool] = [],
                 systemPrompt: String? = nil,
@@ -96,9 +128,11 @@ public actor Agent {
                 hooks: [any HookProvider] = [],
                 toolExecutor: any ToolExecutor = ConcurrentToolExecutor(),
                 retryStrategy: ModelRetryStrategy? = ModelRetryStrategy(),
-                approvalTimeout: TimeInterval = 120) {
+                approvalTimeout: TimeInterval = 120,
+                interruptMode: InterruptMode = .suspend) {
         self.model = model
         self.approvalTimeout = approvalTimeout
+        self.interruptMode = interruptMode
         self.tools = tools
         self.systemPrompt = systemPrompt
         self.messages = messages
@@ -118,45 +152,114 @@ public actor Agent {
     public func setMessages(_ messages: [Message]) { self.messages = messages }
     /// Put accumulated metrics back (restoring an `AgentCheckpoint` — see Checkpoint.swift).
     public func setEventLoopMetrics(_ metrics: EventLoopMetrics) { eventLoopMetrics = metrics }
-    public func reset() { messages.removeAll(); eventLoopMetrics = EventLoopMetrics() }
+    public func reset() {
+        messages.removeAll()
+        eventLoopMetrics = EventLoopMetrics()
+        interruptState.deactivate()
+        gate = InterruptGate()
+        interrupted = InterruptedToolUses()
+        requestState = [:]
+    }
 
-    // MARK: human-in-the-loop
+    // MARK: interrupts (Strands `interrupt.py`) + human-in-the-loop
+
+    /// The interrupt name an approval request is raised under.
+    static let approvalInterruptName = "approval"
+    static func approvalInterruptId(_ toolUseId: String) -> String { "tool:\(toolUseId):\(approvalInterruptName)" }
+
+    /// Answer a raised interrupt (`AgentEvent.interruptRaised`). Returns false when nothing
+    /// with that id is waiting (already answered, timed out, or cancelled).
+    @discardableResult
+    public func resolve(interrupt id: String, response: JSONValue) -> Bool {
+        interruptState.interrupts[id]?.response = response
+        return gate.resolve(id, response)
+    }
 
     /// Answer a suspended tool call (`AgentEvent.approvalRequested`). Returns false when nothing
     /// with that id is waiting (already answered, timed out, or cancelled).
+    /// `id` is the `toolUseId`, exactly as in the request.
     @discardableResult
     public func resolve(approval id: String, _ decision: ApprovalDecision) -> Bool {
-        guard let entry = pending.removeValue(forKey: id) else {
-            // Answered before the call reached its suspension point (a very fast UI): keep it for `awaitDecision`.
-            if awaiting.contains(id) { early[id] = decision; return true }
-            return false
-        }
-        entry.continuation.resume(returning: decision)
-        return true
+        resolve(interrupt: Agent.approvalInterruptId(id), response: decision.interruptResponse)
     }
-    private var awaiting: Set<String> = []
-    private var early: [String: ApprovalDecision] = [:]
 
-    /// Suspend the current tool call until `resolve(approval:)`, the timeout, or task cancellation.
-    /// Awaiting the continuation releases the actor, so the other tools of the message keep running.
-    private func awaitDecision(_ request: ApprovalRequest) async -> ApprovalDecision {
-        let id = request.id
-        let timeout = approvalTimeout
-        awaiting.remove(id)
-        if let d = early.removeValue(forKey: id) { return d }
-        let timer = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64(max(0, timeout) * 1_000_000_000))
-            guard !Task.isCancelled else { return }
-            await self?.resolve(approval: id, .deny(reason: "no answer within \(Int(timeout)) s"))
+    /// Strands resume: fold answers into the interrupt state and continue the loop
+    /// from the pending tool execution (already-completed tool results are kept).
+    public func resume(_ responses: [InterruptResponse]) async throws -> AgentResult {
+        try await invoke(.interruptResponses(responses))
+    }
+
+    /// Suspend the current call until the interrupt is resolved, the timeout fires, or the task
+    /// is cancelled. Awaiting the continuation releases the actor, so the other tools of the
+    /// message keep running. `onTimeout` is the response substituted when nobody answers.
+    private func suspend(_ interrupt: Interrupt, timeout: TimeInterval?, onTimeout: JSONValue) async -> JSONValue {
+        let id = interrupt.id
+        if let early = gate.take(interrupt) { return early }
+        let timer: Task<Void, Never>? = timeout.map { t in
+            Task { [weak self] in
+                try? await Task.sleep(nanoseconds: UInt64(max(0, t) * 1_000_000_000))
+                guard !Task.isCancelled else { return }
+                await self?.resolve(interrupt: id, response: onTimeout)
+            }
         }
-        defer { timer.cancel() }
+        defer { timer?.cancel() }
         return await withTaskCancellationHandler {
-            await withCheckedContinuation { (c: CheckedContinuation<ApprovalDecision, Never>) in
-                pending[id] = (request, c)
+            await withCheckedContinuation { (c: CheckedContinuation<JSONValue, Never>) in
+                gate.park(id, c)
             }
         } onCancel: {
-            Task { [weak self] in await self?.resolve(approval: id, .deny(reason: "cancelled")) }
+            Task { [weak self] in await self?.resolve(interrupt: id, response: onTimeout) }
         }
+    }
+
+    /// Invoke an interruptible hook event, Strands-style: the agent injects the interrupts it
+    /// already knows about, and a callback that raises one either suspends here (`.suspend`) and
+    /// the whole chain is re-run with the answer available, or unwinds (`.stop`).
+    ///
+    /// One interrupt per pass (Strands collects every callback's interrupts in one go; here the
+    /// chain is simply re-entered until no callback raises, which answers them one at a time).
+    private func invokeInterruptible<E: InterruptibleEvent>(_ event: E, scope: String,
+                                                            timeout: TimeInterval?,
+                                                            _ yield: @Sendable @escaping (AgentEvent) -> Void) async throws -> E {
+        var e = event
+        while true {
+            e.interruptContext = InterruptContext(scope: scope, known: interruptState.interrupts)
+            do {
+                return try await hooks.invoke(e)
+            } catch let raised as InterruptException {
+                interruptState.register([raised.interrupt])
+                guard interruptMode == .suspend else { throw raised }
+                let answer = await awaitAnswer(raised.interrupt, timeout: timeout, onTimeout: .null, yield)
+                interruptState.interrupts[raised.interrupt.id]?.response = answer
+            }
+        }
+    }
+
+    /// `.suspend`: announce the interrupt, park until it is answered, announce the answer.
+    private func awaitAnswer(_ interrupt: Interrupt, timeout: TimeInterval?, onTimeout: JSONValue,
+                             _ yield: @Sendable @escaping (AgentEvent) -> Void) async -> JSONValue {
+        gate.arm(interrupt.id)
+        if interrupt.name == Agent.approvalInterruptName, let reason = interrupt.reason,
+           let request = ApprovalRequest(interruptReason: reason) {
+            yield(.approvalRequested(request))
+        } else {
+            yield(.interruptRaised(interrupt))
+        }
+        let answer = await suspend(interrupt, timeout: timeout, onTimeout: onTimeout)
+        if interrupt.name == Agent.approvalInterruptName, let decision = ApprovalDecision(interruptResponse: answer) {
+            yield(.approvalResolved(id: ApprovalRequest.toolUseId(fromInterruptId: interrupt.id), decision))
+        } else {
+            yield(.interruptResolved(id: interrupt.id, response: answer))
+        }
+        return answer
+    }
+
+    /// Strands `_stop_for_interrupts`: persist what is needed to resume, then stop the loop.
+    private func stopForInterrupts(_ message: Message, _ completed: [ToolResult], _ raised: [Interrupt]) -> AgentResult {
+        interruptState.pendingToolExecution = PendingToolExecution(assistantMessage: message,
+                                                                   completedToolResults: completed)
+        interruptState.activate()
+        return AgentResult(stopReason: .interrupt, message: message, metrics: eventLoopMetrics, interrupts: raised)
     }
 
     // MARK: Strands `__call__` / `invoke_async`
@@ -169,7 +272,11 @@ public actor Agent {
     /// e.g. after `MaxTokensReachedError`).
     public func callAsFunction() async throws -> AgentResult { try await invoke(.continue) }
 
-    public enum Input: Sendable { case text(String), messages([Message]), `continue` }
+    public enum Input: Sendable {
+        case text(String), messages([Message]), `continue`
+        /// Strands resume-from-interrupt: `agent([{"interruptResponse": …}])`.
+        case interruptResponses([InterruptResponse])
+    }
 
     public func invoke(_ input: Input) async throws -> AgentResult {
         var result: AgentResult?
@@ -206,6 +313,11 @@ public actor Agent {
         case .text(let t): newMessages = [.user(t)]
         case .messages(let m): newMessages = m
         case .continue: newMessages = []
+        case .interruptResponses(let responses):
+            // Strands `_InterruptState.resume`: the answers go into the interrupt state and the
+            // loop picks the pending tool execution back up — no new user turn, no model call.
+            try interruptState.resume(responses)
+            newMessages = []
         }
         var before = BeforeInvocationEvent(messages: newMessages)
         before = try await hooks.invoke(before)
@@ -269,7 +381,11 @@ public actor Agent {
 
         let stopReason: StopReason
         let message: Message
-        if let last = messages.last, last.role == .assistant, last.hasToolUse {
+        if interruptState.activated, let pending = interruptState.pendingToolExecution {
+            // Resuming an interrupted tool cycle: replay the stored assistant message
+            // (Strands `event_loop_cycle` — "Resume a tool interrupt by replaying its stored message").
+            stopReason = .toolUse; message = pending.assistantMessage
+        } else if let last = messages.last, last.role == .assistant, last.hasToolUse {
             // A previous run was cut off before its tools ran — resume there (Strands `_has_tool_use_in_latest_message`).
             stopReason = .toolUse; message = last
         } else {
@@ -299,7 +415,7 @@ public actor Agent {
             let specs = tools.map(\.toolSpec)
             let contextWindow = await model.contextWindow     // per-runtime: Apple FM 4096, MLX/GGUF their real ctx
             var before = BeforeModelCallEvent(messages: messages, systemPrompt: systemPrompt,
-                                              projectedInputTokens: TokenEstimator.estimate(messages: messages, systemPrompt: systemPrompt, toolSpecs: specs),
+                                              projectedInputTokens: projectedInputTokens(toolSpecs: specs),
                                               contextWindow: contextWindow)
             before = try await hooks.invoke(before)
             if before.messages != messages { messages = before.messages }     // e.g. the sliding window trimmed
@@ -346,6 +462,7 @@ public actor Agent {
                 if stopReason == .maxTokens { message = recoverMessageOnMaxTokensReached(message) }
                 try await appendMessage(message)
                 eventLoopMetrics.update(stop.metrics)
+                recordUsageBaseline(stop.metrics, for: message)
                 return (stopReason, message)
             } catch {
                 var after = AfterModelCallEvent(stopResponse: nil, error: error)
@@ -363,42 +480,115 @@ public actor Agent {
     // MARK: Strands `_handle_tool_execution`
 
     private func handleToolExecution(_ message: Message, _ yield: @Sendable @escaping (AgentEvent) -> Void) async throws -> AgentResult {
-        let toolUses = message.toolUses
-        var before = BeforeToolsEvent(message: message)
-        before = try await hooks.invoke(before)
-        let cancelMessage: String? = before.cancel.map { $0.isEmpty ? "Tool cancelled by hook" : $0 } ?? (Task.isCancelled ? "Tool execution cancelled" : nil)
+        var toolUses = message.toolUses
+        /// Results carried over from an interrupted cycle — kept, never re-run (Strands merges
+        /// `pending_tool_execution.completed_tool_results` and filters the tool uses that have one).
+        var results: [ToolResult] = []
+        if interruptState.activated, let pending = interruptState.pendingToolExecution {
+            results = pending.completedToolResults
+            let done = Set(results.map(\.toolUseId))
+            toolUses = toolUses.filter { !done.contains($0.toolUseId) }
+        }
+        let interrupted = InterruptedToolUses()
+        self.interrupted = interrupted
 
-        var results: [ToolResult]
-        if let cancelMessage {
-            results = toolUses.map { ToolResult.error($0, cancelMessage) }
-            results.forEach { yield(.toolResult($0)) }
-        } else {
-            results = await toolExecutor.execute(toolUses,
-                                                 run: { [self] use in await self.runTool(use, yield) },
-                                                 emit: { yield(.toolResult($0)) })
+        // Strands pairs BeforeToolsEvent with AfterToolsEvent in a `finally`. Swift's `defer`
+        // cannot `await`, so the pairing is spelled out: every exit from the block below goes
+        // through `fireAfterTools`, including the throwing ones.
+        var before = BeforeToolsEvent(message: message)
+        do {
+            before = try await invokeInterruptible(before, scope: "tools:\(message.id.uuidString)",
+                                                   timeout: approvalTimeout, yield)
+        } catch let raised as InterruptException {
+            // `.stop`: a BeforeTools hook interrupted before anything ran.
+            _ = try? await fireAfterTools(results, append: false, yield)
+            return stopForInterrupts(message, results, [raised.interrupt])
+        } catch {
+            _ = try? await fireAfterTools(results, append: false, yield)
+            throw error
         }
 
-        var after = AfterToolsEvent(message: .toolResults(results))
-        after = try await hooks.invoke(after)
-        try await appendMessage(after.message)
-        yield(.toolResultMessage(after.message))
+        let cancelMessage: String? = before.cancel.map { $0.isEmpty ? "Tool cancelled by hook" : $0 } ?? (Task.isCancelled ? "Tool execution cancelled" : nil)
+
+        if let cancelMessage {
+            let cancelled = toolUses.map { ToolResult.error($0, cancelMessage) }
+            cancelled.forEach { yield(.toolResult($0)) }
+            results += cancelled
+        } else {
+            // Strands `validate_and_prepare_tools`: a toolUse the model broke never reaches a tool —
+            // it gets an error result and keeps its place in the result list.
+            let validation = ToolValidation.validateAndPrepare(toolUses: toolUses, tools: tools)
+            validation.results.forEach { yield(.toolResult($0)) }
+            results += validation.results
+            let executed = await toolExecutor.execute(validation.valid,
+                                                      run: { [self] use in await self.runTool(use, yield) },
+                                                      emit: { r in if !interrupted.contains(r.toolUseId) { yield(.toolResult(r)) } })
+            results += executed.filter { !interrupted.contains($0.toolUseId) }
+        }
+
+        let raised = interruptMode == .stop ? interruptState.unanswered : []
+        if !raised.isEmpty {
+            // Strands: AfterTools still fires (finally), then the loop stops with the interrupts.
+            _ = try? await fireAfterTools(results, append: false, yield)
+            return stopForInterrupts(message, results, raised)
+        }
+
+        let after = try await fireAfterTools(results, append: true, yield)
         eventLoopMetrics.toolCallCount += toolUses.count
+        // Strands: a completed tool cycle starts the next one clean.
+        if !Task.isCancelled { interruptState.endToolCycle() } else { interruptState.setPendingToolResults(results) }
 
         if Task.isCancelled {
             return AgentResult(stopReason: .cancelled, message: message, metrics: eventLoopMetrics)
         }
+
+        // Strands `after_tools_event.end_turn`: a hook ends the turn without calling the model again.
+        if let endTurn = after.endTurn {
+            let endMessage = Message(role: .assistant, content: endTurn.content)
+            try await appendMessage(endMessage)
+            yield(.modelMessage(endMessage))
+            return AgentResult(stopReason: .endTurn, message: endMessage, metrics: eventLoopMetrics)
+        }
+        // Strands `invocation_state["request_state"]["stop_event_loop"]`: stop with this cycle's stop reason.
+        requestState = after.requestState
+        if requestState["stopEventLoop"] == .bool(true) || requestState["stop_event_loop"] == .bool(true) {
+            return AgentResult(stopReason: .toolUse, message: message, metrics: eventLoopMetrics)
+        }
+
         return try await recurseEventLoop(yield)
     }
 
+    /// Strands' `finally` block: build the toolResult message, run the AfterToolsEvent hooks, and
+    /// (unless the loop is stopping for an interrupt) append it + announce it.
+    @discardableResult
+    private func fireAfterTools(_ results: [ToolResult], append: Bool,
+                                _ yield: @Sendable @escaping (AgentEvent) -> Void) async throws -> AfterToolsEvent {
+        var after = AfterToolsEvent(message: .toolResults(results), requestState: requestState)
+        after = try await hooks.invoke(after)
+        if append {
+            try await appendMessage(after.message)
+            yield(.toolResultMessage(after.message))
+        }
+        return after
+    }
+
     /// Strands `ToolExecutor._stream`: BeforeToolCall → run → AfterToolCall, never throws (errors become error results).
+    /// A hook or the tool itself may raise an interrupt here: in `.suspend` it parks this one call
+    /// (the others keep running), in `.stop` it marks the id and the cycle stops without a result.
     private func runTool(_ use: ToolUse, _ yield: @Sendable @escaping (AgentEvent) -> Void) async -> ToolResult {
         let t0 = Date()
+        let scope = "tool:\(use.toolUseId)"
         let selected = tools.first { $0.name == use.name }
         var approval = selected?.requiresApproval(for: use.input)
         approval?.id = use.toolUseId; approval?.toolName = use.name
         if approval?.input.isEmpty == true { approval?.input = use.input }
         var before = BeforeToolCallEvent(toolUse: use, selectedTool: selected, approval: approval)
-        do { before = try await hooks.invoke(before) } catch {
+        do {
+            before = try await invokeInterruptible(before, scope: scope, timeout: approvalTimeout, yield)
+        } catch let raised as InterruptException {
+            interrupted.insert(use.toolUseId)      // `.stop`: no result for this tool use
+            return .error(use, "interrupted: \(raised.interrupt.name)")
+        } catch {
             return .error(use, "hook error: \((error as? LocalizedError)?.errorDescription ?? "\(error)")")
         }
         var toolUse = before.toolUse
@@ -412,14 +602,28 @@ public actor Agent {
             return after.result
         }
         if var request = before.approval {
-            // Human-in-the-loop: suspend this call (and only this call) until a decision arrives.
+            // Human-in-the-loop, as one interrupt: suspend this call (and only this call) until a decision arrives.
             request.id = toolUse.toolUseId; request.toolName = toolUse.name
             if request.input.isEmpty { request.input = toolUse.input }
-            awaiting.insert(request.id)
-            yield(.approvalRequested(request))
-            let decision = await awaitDecision(request)
-            yield(.approvalResolved(id: request.id, decision))
-            switch decision {
+            let interrupt = Interrupt(id: Agent.approvalInterruptId(toolUse.toolUseId),
+                                      name: Agent.approvalInterruptName,
+                                      reason: request.interruptReason)
+            interruptState.register([interrupt])
+            if interruptMode == .stop, interruptState.interrupts[interrupt.id]?.response == nil {
+                yield(.approvalRequested(request))
+                interrupted.insert(toolUse.toolUseId)
+                return .error(toolUse, "awaiting approval")
+            }
+            let answer: JSONValue
+            if let existing = interruptState.interrupts[interrupt.id]?.response {
+                answer = existing                                  // resumed: the human already answered
+            } else {
+                answer = await awaitAnswer(interrupt, timeout: approvalTimeout,
+                                           onTimeout: ApprovalDecision.deny(reason: "no answer within \(Int(approvalTimeout)) s").interruptResponse,
+                                           yield)
+                interruptState.interrupts[interrupt.id]?.response = answer
+            }
+            switch ApprovalDecision(interruptResponse: answer) ?? .deny(reason: "unreadable decision") {
             case .approve: break
             case .approveEdited(let edited): toolUse.input = edited
             case .deny(let reason):
@@ -432,15 +636,32 @@ public actor Agent {
         }
         yield(.toolStarted(toolUse))
         if let tool = before.selectedTool {
-            do {
-                let out = try await tool.call(toolUse.input, images: messages.last(where: { $0.role == .user })?.images ?? [])
-                result = ToolResult(toolUseId: toolUse.toolUseId, name: toolUse.name, status: .success, content: out.text,
-                                    durationMs: Date().timeIntervalSince(t0) * 1000, images: out.images)
-            } catch {
-                thrown = error
-                result = ToolResult(toolUseId: toolUse.toolUseId, name: toolUse.name, status: .error,
-                                    content: "Error: \((error as? LocalizedError)?.errorDescription ?? "\(error)")",
-                                    durationMs: Date().timeIntervalSince(t0) * 1000)
+            // The tool may raise an interrupt of its own (`InterruptScope.interrupt`): in `.suspend`
+            // it is answered and the tool runs again with the answer in its context.
+            while true {
+                let context = InterruptContext(scope: scope, known: interruptState.interrupts)
+                do {
+                    let out = try await InterruptScope.$context.withValue(context) {
+                        try await tool.call(toolUse.input, images: messages.last(where: { $0.role == .user })?.images ?? [])
+                    }
+                    result = ToolResult(toolUseId: toolUse.toolUseId, name: toolUse.name, status: .success, content: out.text,
+                                        durationMs: Date().timeIntervalSince(t0) * 1000, images: out.images)
+                    break
+                } catch let raised as InterruptException {
+                    interruptState.register([raised.interrupt])
+                    guard interruptMode == .suspend else {
+                        interrupted.insert(toolUse.toolUseId)
+                        return .error(toolUse, "interrupted: \(raised.interrupt.name)")
+                    }
+                    let answer = await awaitAnswer(raised.interrupt, timeout: approvalTimeout, onTimeout: .null, yield)
+                    interruptState.interrupts[raised.interrupt.id]?.response = answer
+                } catch {
+                    thrown = error
+                    result = ToolResult(toolUseId: toolUse.toolUseId, name: toolUse.name, status: .error,
+                                        content: "Error: \((error as? LocalizedError)?.errorDescription ?? "\(error)")",
+                                        durationMs: Date().timeIntervalSince(t0) * 1000)
+                    break
+                }
             }
         } else {
             result = .error(toolUse, "Unknown tool: \(toolUse.name). Available tools: \(tools.map(\.name).sorted().joined(separator: ", "))",
@@ -449,6 +670,36 @@ public actor Agent {
         var after = AfterToolCallEvent(toolUse: toolUse, selectedTool: before.selectedTool, result: result, error: thrown)
         after = (try? await hooks.invoke(after)) ?? after
         return after.result
+    }
+
+    // MARK: Strands `_estimate_input_tokens` (usage baseline, not a re-count)
+
+    /// Strands reads the last assistant message's `usage` as a known baseline and estimates only
+    /// the messages added after it; a cold start (or a baseline the sliding window has trimmed
+    /// away) falls back to estimating everything, system prompt and tool specs included.
+    ///
+    /// loopl's `Message` carries no metadata, so the baseline lives here, keyed by the id of the
+    /// assistant message the runtime reported it for. Both halves are ESTIMATES in the sense that
+    /// matters: the baseline is the runtime's own count (real for MLX/llama.cpp, `estimated` for
+    /// Apple FM), the tail is `TokenEstimator`'s chars/4 — never a tokenizer.
+    func projectedInputTokens(toolSpecs specs: [ToolSpec]) -> Int {
+        guard let baseline = usageBaseline,
+              let index = messages.lastIndex(where: { $0.id == baseline.messageID }) else {
+            return TokenEstimator.estimate(messages: messages, systemPrompt: systemPrompt, toolSpecs: specs)
+        }
+        let newMessages = messages[(index + 1)...]
+        guard !newMessages.isEmpty else { return baseline.tokens }
+        return baseline.tokens + newMessages.reduce(0) { $0 + TokenEstimator.estimate($1) }
+    }
+
+    /// Fold a model call's measured usage in as the new baseline (Strands: the assistant
+    /// message's `metadata.usage`). `promptTokens + generatedTokens` is what the next prompt
+    /// will carry, so that is the baseline, exactly as in `_estimate_input_tokens`.
+    private func recordUsageBaseline(_ metrics: Metrics, for message: Message) {
+        let tokens = metrics.promptTokens + metrics.generatedTokens
+        guard tokens > 0 else { return }       // a runtime that reports nothing cannot be a baseline
+        usageBaseline = (message.id, tokens)
+        eventLoopMetrics.usageBaselineTokens = tokens
     }
 
     // MARK: Strands `_append_messages` (+ MessageAddedEvent)

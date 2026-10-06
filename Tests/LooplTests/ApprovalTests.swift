@@ -119,8 +119,14 @@ final class ApprovalTests: XCTestCase {
             return .approve
         }
         let k = kinds(events)
-        XCTAssertEqual(k.firstIndex(of: "result:c1")!, k.firstIndex(of: "ask:g1")! + 2, "the calculator ran and finished while the guarded call waited: \(k)")
-        XCTAssertLessThan(k.firstIndex(of: "result:c1")!, k.firstIndex(of: "answer:g1:ok")!)
+        // The invariant is the suspend releasing the actor — NOT an exact interleaving: whether
+        // `start:c1` is emitted just before or just after `ask:g1` is a race between two
+        // concurrent tool tasks, and asserting the exact index made this test flaky on the
+        // simulator (it passed under `swift test` on the same commit).
+        XCTAssertLessThan(k.firstIndex(of: "result:c1")!, k.firstIndex(of: "answer:g1:ok")!,
+                          "the calculator ran and finished while the guarded call waited: \(k)")
+        XCTAssertGreaterThan(k.firstIndex(of: "start:g1")!, k.firstIndex(of: "answer:g1:ok")!,
+                             "the guarded tool only starts once the human answered: \(k)")
         let msgs = await agent.messages
         XCTAssertEqual(msgs[2].toolResults.map(\.toolUseId), ["g1", "c1"], "toolResult message keeps toolUse order")
         XCTAssertEqual(msgs[2].toolResults.map(\.content), ["ran write", "2+2 = 4"])

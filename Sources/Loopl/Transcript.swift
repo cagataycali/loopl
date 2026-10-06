@@ -79,6 +79,11 @@ public struct Transcript: Sendable, Hashable {
                case .approval(let r, _) = items[idx].kind {
                 items[idx].kind = .approval(r, decision: decision)
             }
+        case .interruptRaised(let interrupt):
+            // A non-approval interrupt (a hook or a tool asking the human something):
+            // show it as a note so no event is silently dropped from the transcript.
+            items.append(.init(kind: .note("waiting for input: \(interrupt.name)")))
+        case .interruptResolved: break
         case .toolStarted(let use):
             if !items.contains(where: { if case .toolUse(let u, _) = $0.kind { return u.toolUseId == use.toolUseId }; return false }) {
                 items.append(.init(kind: .toolUse(use, result: nil)))

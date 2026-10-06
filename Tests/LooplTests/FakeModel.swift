@@ -41,6 +41,8 @@ public actor FakeModel: Model {
 
     public nonisolated static func availability() -> RuntimeAvailability { .ok }
     public func updateConfig(_ params: GenerationParams) { self.params = params }
+    /// Queue more turns on a model the agent already holds (multi-invocation tests).
+    public func appendTurns(_ more: [Turn]) { turns.append(contentsOf: more) }
     public func load(_ spec: ModelSpec, from directory: URL?, progress: @Sendable @escaping (Double) -> Void) async throws {
         loadedModelId = spec.id; progress(1)
     }
