@@ -1,15 +1,15 @@
 import Foundation
 
-// Strands `types/content.py` + `types/tools.py` (ToolUse / ToolResult), in Swift.
+// `types/content.py` + `types/tools.py` (ToolUse / ToolResult), in Swift.
 // A conversation is `[Message]`; a message is a role plus content blocks; the
-// system prompt is NOT a message (it travels beside the array, as in Strands).
+// system prompt is NOT a message (it travels beside the array).
 
-/// Strands `Role` — only user/assistant appear in the message array.
+/// `Role` — only user/assistant appear in the message array.
 public enum Role: String, Sendable, Codable, Hashable {
     case user, assistant
 }
 
-/// Strands `ToolUse`: the model asked for a tool, with JSON input.
+/// `ToolUse`: the model asked for a tool, with JSON input.
 public struct ToolUse: Sendable, Hashable, Codable, Identifiable {
     public var toolUseId: String
     public var name: String
@@ -25,11 +25,11 @@ public struct ToolUse: Sendable, Hashable, Codable, Identifiable {
     public var arguments: [String: JSONValue] { input }
 }
 
-/// 0.1 name. `ToolUse` is the Strands name; this alias goes away in the next commit.
+/// 0.1 name. `ToolUse` is the name; this alias goes away in the next commit.
 @available(*, deprecated, renamed: "ToolUse")
 public typealias ToolCall = ToolUse
 
-/// Strands `ToolResult`: what a tool produced for one `ToolUse`.
+/// `ToolResult`: what a tool produced for one `ToolUse`.
 public struct ToolResult: Sendable, Hashable, Codable, Identifiable {
     public enum Status: String, Sendable, Codable, Hashable { case success, error }
     public var toolUseId: String
@@ -100,7 +100,7 @@ public struct ToolResult: Sendable, Hashable, Codable, Identifiable {
     }
 }
 
-/// Strands `ContentBlock.image` (`{"image": {"format", "source": {"bytes"}}}`): an
+/// `ContentBlock.image` (`{"image": {"format", "source": {"bytes"}}}`): an
 /// encoded picture — a user attachment, or something a tool produced.
 public struct ImageBlock: Sendable, Hashable, Codable {
     /// Encoded bytes (PNG / JPEG / HEIC / WebP / GIF). Never raw pixels.
@@ -121,7 +121,7 @@ public struct ImageBlock: Sendable, Hashable, Codable {
         self.init(data: data, mime: ImageBlock.detectMime(data) ?? "image/png", width: width, height: height, alt: alt)
     }
 
-    /// Strands `ImageFormat` (`png`, `jpeg`, `gif`, `webp`) — derived from `mime`.
+    /// `ImageFormat` (`png`, `jpeg`, `gif`, `webp`) — derived from `mime`.
     public var format: String {
         switch mime.lowercased() {
         case "image/jpeg", "image/jpg": "jpeg"
@@ -150,7 +150,7 @@ public struct ImageBlock: Sendable, Hashable, Codable {
     }
 }
 
-/// Strands `ContentBlock` — the union of things a message can carry.
+/// `ContentBlock` — the union of things a message can carry.
 public enum ContentBlock: Sendable, Hashable, Codable {
     case text(String)
     case toolUse(ToolUse)
@@ -172,7 +172,7 @@ public enum ContentBlock: Sendable, Hashable, Codable {
     public var isToolResult: Bool { toolResult != nil }
 }
 
-/// Strands `Message`: `{role, content: [ContentBlock]}`.
+/// `Message`: `{role, content: [ContentBlock]}`.
 public struct Message: Sendable, Hashable, Codable, Identifiable {
     public var id: UUID
     public var role: Role
@@ -196,12 +196,12 @@ public struct Message: Sendable, Hashable, Codable, Identifiable {
         blocks += toolUses.map(ContentBlock.toolUse)
         return Message(role: .assistant, content: blocks)
     }
-    /// The user turn that carries tool results back to the model (Strands: `{"role": "user", "content": [{"toolResult": …}]}`).
+    /// The user turn that carries tool results back to the model (`{"role": "user", "content": [{"toolResult": …}]}`).
     public static func toolResults(_ results: [ToolResult]) -> Message {
         Message(role: .user, content: results.map(ContentBlock.toolResult))
     }
 
-    /// All text blocks joined (Strands `AgentResult.__str__` semantics).
+    /// All text blocks joined (`AgentResult.__str__` semantics).
     public var text: String { content.compactMap(\.text).joined(separator: "\n") }
     public var reasoning: String { content.compactMap { if case .reasoning(let r) = $0 { return r }; return nil }.joined() }
     public var toolUses: [ToolUse] { content.compactMap(\.toolUse) }

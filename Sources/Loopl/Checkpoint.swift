@@ -1,6 +1,6 @@
 import Foundation
 
-// Checkpoints — Strands' session managers (`session/`) reduced to the one thing
+// Checkpoints — session managers (`session/`) reduced to the one thing
 // an on-device agent needs: a snapshot it can write to disk and come back to.
 // Everything in here is `Codable` and versioned; nothing depends on anything
 // beyond Foundation, and nothing in the event loop had to change to support it.

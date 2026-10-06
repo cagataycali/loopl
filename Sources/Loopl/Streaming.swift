@@ -1,8 +1,8 @@
 import Foundation
 
-// Strands `types/streaming.py` + `event_loop/streaming.py` + `_recover_message_on_max_tokens_reached.py`.
+// `types/streaming.py` + `event_loop/streaming.py` + `_recover_message_on_max_tokens_reached.py`.
 
-/// Strands `StopReason`. (Checkpoint/interrupt/guardrail/limit_* variants have no
+/// `StopReason`. (Checkpoint/interrupt/guardrail/limit_* variants have no
 /// edge equivalent and are intentionally absent — loopl has no caps.)
 public enum StopReason: String, Sendable, Codable, Hashable {
     case endTurn = "end_turn"
@@ -11,12 +11,12 @@ public enum StopReason: String, Sendable, Codable, Hashable {
     case stopSequence = "stop_sequence"
     case contentFiltered = "content_filtered"
     case cancelled
-    /// Strands: a hook or a tool raised an interrupt and `InterruptMode.stop` ended the loop.
+    /// A hook or a tool raised an interrupt and `InterruptMode.stop` ended the loop.
     /// `AgentResult.interrupts` carries them; answer and call `agent.resume(_:)`.
     case interrupt
 }
 
-/// Strands `Usage`.
+/// `Usage`.
 public struct Usage: Sendable, Hashable, Codable {
     public var inputTokens: Int = 0
     public var outputTokens: Int = 0
@@ -47,14 +47,14 @@ public struct Metrics: Sendable, Hashable, Codable {
     public var usage: Usage { Usage(inputTokens: promptTokens, outputTokens: generatedTokens, totalTokens: promptTokens + generatedTokens) }
 }
 
-/// Strands `ContentBlockStart` — the toolUse variant carries id + name.
+/// `ContentBlockStart` — the toolUse variant carries id + name.
 public enum ContentBlockStart: Sendable, Hashable {
     case text
     case toolUse(toolUseId: String, name: String)
     case reasoning
 }
 
-/// Strands `ContentBlockDelta`.
+/// `ContentBlockDelta`.
 public enum ContentBlockDelta: Sendable, Hashable {
     case text(String)
     /// A partial JSON string of the tool input.
@@ -67,8 +67,8 @@ public enum ContentBlockDelta: Sendable, Hashable {
     case textReplace(String)
 }
 
-/// Strands `StreamEvent` — what a `Model` emits. Exactly the Bedrock-shaped
-/// union Strands' `process_stream` consumes.
+/// `StreamEvent` — what a `Model` emits. Exactly the Bedrock-shaped
+/// union `process_stream` consumes.
 public enum StreamEvent: Sendable, Hashable {
     case messageStart(role: Role)
     case contentBlockStart(ContentBlockStart)
@@ -78,7 +78,7 @@ public enum StreamEvent: Sendable, Hashable {
     case metadata(Metrics)
 }
 
-/// Strands `event_loop.streaming.process_stream`: fold `StreamEvent`s into
+/// `event_loop.streaming.process_stream`: fold `StreamEvent`s into
 /// the assistant `Message`, yielding typed events for the UI as it goes.
 public struct StreamAssembler: Sendable {
     public enum Event: Sendable {
@@ -126,7 +126,7 @@ public struct StreamAssembler: Sendable {
             contentBlockStop()
         case .messageStop(let reason):
             sawMessageStop = true
-            // Some models return end_turn even with tool calls present — Strands overrides to tool_use.
+            // Some models return end_turn even with tool calls present — override to tool_use.
             stopReason = (reason == .endTurn && message.hasToolUse) ? .toolUse : reason
         case .metadata(let m):
             metrics = m
@@ -134,14 +134,14 @@ public struct StreamAssembler: Sendable {
         return out
     }
 
-    /// Strands `handle_content_block_stop`.
+    /// `handle_content_block_stop`.
     private mutating func contentBlockStop() {
         if let cur = currentToolUse {
             var input: [String: JSONValue] = [:]
             let raw = cur.input.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !raw.isEmpty { input = JSONValue.parse(raw)?.objectValue ?? [:] }   // unparsable → {} (logged in Strands)
+            if !raw.isEmpty { input = JSONValue.parse(raw)?.objectValue ?? [:] }   // unparsable → {}
             if cur.id.isEmpty || cur.name.isEmpty {
-                currentToolUse = nil                       // incomplete block → skipped, as Strands does
+                currentToolUse = nil                       // incomplete block → skipped
                 return
             }
             message.content.append(.toolUse(ToolUse(toolUseId: cur.id, name: cur.name, input: input)))
@@ -163,7 +163,7 @@ public struct StreamAssembler: Sendable {
     }
 }
 
-/// Strands `recover_message_on_max_tokens_reached`: a message cut off by the
+/// `recover_message_on_max_tokens_reached`: a message cut off by the
 /// token limit may carry a half-written tool use — replace every toolUse block
 /// with a text block saying so, so the model sees what happened and no tool runs
 /// on garbage input.

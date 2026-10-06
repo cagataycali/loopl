@@ -1,25 +1,25 @@
 import Foundation
 
-// Strands `agent/conversation_manager/*`.
+// `agent/conversation_manager/*`.
 
-/// Strands `ConversationManager`. Operates on the message array by value
-/// (Swift) where Strands mutates `agent.messages` in place; the agent writes
+/// `ConversationManager`. Operates on the message array by value
+/// (Swift) instead of mutating `agent.messages` in place; the agent writes
 /// the result back.
 public protocol ConversationManager: Sendable {
-    /// Strands `apply_management`: after every event-loop run.
+    /// `apply_management`: after every event-loop run.
     func applyManagement(_ messages: inout [Message])
-    /// Strands `reduce_context`: on `ContextWindowOverflowError` (error set) or
+    /// `reduce_context`: on `ContextWindowOverflowError` (error set) or
     /// proactively (error nil). Throws `ContextWindowOverflowError` when nothing
     /// more can be removed and an overflow error was given.
     func reduceContext(_ messages: inout [Message], error: (any Error)?) throws
-    /// Strands `register_hooks` (optional).
+    /// `register_hooks` (optional).
     func registerHooks(_ registry: HookRegistry)
 }
 public extension ConversationManager {
     func registerHooks(_ registry: HookRegistry) {}
 }
 
-/// Strands `NullConversationManager`: never trims; an overflow is re-thrown.
+/// `NullConversationManager`: never trims; an overflow is re-thrown.
 public struct NullConversationManager: ConversationManager {
     public init() {}
     public func applyManagement(_ messages: inout [Message]) {}
@@ -28,7 +28,7 @@ public struct NullConversationManager: ConversationManager {
     }
 }
 
-/// Strands `context_compression.find_valid_trim_point`: the first index ≥
+/// `context_compression.find_valid_trim_point`: the first index ≥
 /// `startIndex` that is a plain user message (no toolResult), so the kept
 /// tail starts with a user turn and no toolUse is orphaned from its result.
 public func findValidTrimPoint(_ messages: [Message], startIndex: Int) -> Int {
@@ -42,7 +42,7 @@ public func findValidTrimPoint(_ messages: [Message], startIndex: Int) -> Int {
     return i
 }
 
-/// Strands `SlidingWindowConversationManager`, plus the edge-specific piece
+/// `SlidingWindowConversationManager`, plus the edge-specific piece
 /// loopl needs: the window is sized from the **runtime's** context window, not
 /// from a constant. Apple Foundation Models offers 4096 tokens; an MLX or GGUF
 /// Qwen3 offers 8k–32k. One manager serves all of them because it asks the
@@ -63,12 +63,12 @@ public func findValidTrimPoint(_ messages: [Message], startIndex: Int) -> Int {
 /// a tokenizer count — the threshold default of 0.7 is the slack that buys.
 public final class SlidingWindowConversationManager: ConversationManager, HookProvider, @unchecked Sendable {
     /// Upper bound on kept messages — the window never grows past this even on
-    /// a 128k model (default 40, Strands' default).
+    /// a 128k model (default 40).
     public let windowSize: Int
     public let shouldTruncateResults: Bool
-    /// Fraction of the context window at which proactive trimming kicks in (Strands default 0.7).
+    /// Fraction of the context window at which proactive trimming kicks in (default 0.7).
     public let compressionThreshold: Double
-    /// Messages at the start of the conversation that are never evicted (Strands `pin_first`).
+    /// Messages at the start of the conversation that are never evicted (`pin_first`).
     public let pinFirst: Int
     /// Estimated history cost of one message, used to turn a context window
     /// into a message count. 256 ≈ a short turn plus one tool result after
@@ -186,7 +186,7 @@ public final class SlidingWindowConversationManager: ConversationManager, HookPr
         return true
     }
 
-    /// Strands `_find_tool_pair_trim_point`: an assistant(toolUse) followed by its user(toolResult) is a valid start too.
+    /// `_find_tool_pair_trim_point`: an assistant(toolUse) followed by its user(toolResult) is a valid start too.
     func toolPairTrimPoint(_ messages: [Message], startIndex: Int) -> Int? {
         var i = max(0, startIndex)
         while i < messages.count {
@@ -213,7 +213,7 @@ public final class SlidingWindowConversationManager: ConversationManager, HookPr
         return false
     }
 
-    /// Strands `_truncate_tool_results`: keep the first/last `keep` chars of
+    /// `_truncate_tool_results`: keep the first/last `keep` chars of
     /// each big result. Monotone — a result is only rewritten when that makes
     /// it meaningfully shorter, so calling this repeatedly terminates.
     @discardableResult

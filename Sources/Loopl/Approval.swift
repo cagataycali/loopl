@@ -1,6 +1,6 @@
 import Foundation
 
-// Human-in-the-loop. Strands has no built-in approval step — the closest is a
+// Human-in-the-loop. Without a dedicated approval step the closest primitive is a
 // `BeforeToolCallEvent` hook that cancels the tool. loopl keeps that hook as
 // the policy surface and adds the missing half: the event loop can SUSPEND one
 // tool call inside the actor until a human answers, while the other tools of

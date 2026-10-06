@@ -1,18 +1,18 @@
 import Foundation
 
-// Strands `tools/executors/*`.
+// `tools/executors/*`.
 
-/// Strands `ToolExecutor`: how the toolUse blocks of one assistant message run.
+/// `ToolExecutor`: how the toolUse blocks of one assistant message run.
 /// `run` is the agent's per-tool pipeline (hooks → tool → hooks); `emit`
 /// publishes a result the moment it exists. The returned array is in
-/// `toolUses` order whatever the completion order (Strands collects per task id).
+/// `toolUses` order whatever the completion order (collects per task id).
 public protocol ToolExecutor: Sendable {
     func execute(_ toolUses: [ToolUse],
                  run: @Sendable @escaping (ToolUse) async -> ToolResult,
                  emit: @Sendable @escaping (ToolResult) -> Void) async -> [ToolResult]
 }
 
-/// Strands `ConcurrentToolExecutor` — the default: every tool of the message at once.
+/// `ConcurrentToolExecutor` — the default: every tool of the message at once.
 public struct ConcurrentToolExecutor: ToolExecutor {
     public init() {}
     public func execute(_ toolUses: [ToolUse],
@@ -33,7 +33,7 @@ public struct ConcurrentToolExecutor: ToolExecutor {
     }
 }
 
-/// Strands `SequentialToolExecutor`: one after another, in message order.
+/// `SequentialToolExecutor`: one after another, in message order.
 public struct SequentialToolExecutor: ToolExecutor {
     public init() {}
     public func execute(_ toolUses: [ToolUse],

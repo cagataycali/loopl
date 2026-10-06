@@ -1,6 +1,6 @@
 import Foundation
 
-// Strands `interrupt.py` + `types/interrupt.py` + the interrupt paths of
+// `interrupt.py` + `types/interrupt.py` + the interrupt paths of
 // `event_loop/event_loop.py` (`_stop_for_interrupts`, the pending-tool-execution
 // replay, `_handle_tool_execution`'s merge/filter), in Swift.
 //
@@ -12,7 +12,7 @@ import Foundation
 //    or cancellation. The stream stays alive and the other tools of the same
 //    message keep running — the phone has a UI right there, so there is no
 //    reason to unwind to the caller.
-//  * `.stop` (Strands' shape): the loop stops, `AgentResult.stopReason` is
+// * `.stop` (stop shape): the loop stops, `AgentResult.stopReason` is
 //    `.interrupt`, the raised interrupts come back on the result, and the caller
 //    resumes with `agent.resume(_:)`. Tool results already produced are kept in
 //    `PendingToolExecution` and are NOT re-run.
@@ -20,7 +20,7 @@ import Foundation
 // Approval (the `ApprovalRequest`/`ApprovalDecision` API) is one user of this —
 // see `Approval.swift`.
 
-/// Strands `Interrupt`: something a hook or a tool needs a human to answer.
+/// `Interrupt`: something a hook or a tool needs a human to answer.
 public struct Interrupt: Sendable, Hashable, Codable, Identifiable {
     /// Unique, derived from the scope that raised it (`"tool:<toolUseId>:approval"`).
     public var id: String
@@ -36,14 +36,14 @@ public struct Interrupt: Sendable, Hashable, Codable, Identifiable {
     }
 }
 
-/// Strands `InterruptException`: thrown by `InterruptContext.interrupt` /
+/// `InterruptException`: thrown by `InterruptContext.interrupt` /
 /// `InterruptScope.interrupt` when there is no answer yet.
 public struct InterruptException: Error, Sendable {
     public let interrupt: Interrupt
     public init(_ interrupt: Interrupt) { self.interrupt = interrupt }
 }
 
-/// Strands `InterruptResponse`: one answer, by interrupt id.
+/// `InterruptResponse`: one answer, by interrupt id.
 public struct InterruptResponse: Sendable, Hashable, Codable {
     public var interruptId: String
     public var response: JSONValue
@@ -52,7 +52,7 @@ public struct InterruptResponse: Sendable, Hashable, Codable {
     }
 }
 
-/// Strands `PendingToolExecution`: enough state to resume an interrupted tool
+/// `PendingToolExecution`: enough state to resume an interrupted tool
 /// cycle WITHOUT calling the model again, keeping the results already produced.
 public struct PendingToolExecution: Sendable, Hashable, Codable {
     /// The assistant message whose toolUse blocks were being executed.
@@ -69,16 +69,16 @@ public struct PendingToolExecution: Sendable, Hashable, Codable {
 public enum InterruptMode: String, Sendable, Codable, Hashable, CaseIterable {
     /// Suspend the raising call inside the actor until it is resolved (default).
     case suspend
-    /// Strands: stop the event loop, return the interrupts on the result, resume with `agent.resume(_:)`.
+    /// Stop the event loop, return the interrupts on the result, resume with `agent.resume(_:)`.
     case stop
 }
 
 // MARK: - Raising an interrupt
 
-/// Strands `_InterruptState.interrupts` as seen from inside a hook callback or a
+/// `_InterruptState.interrupts` as seen from inside a hook callback or a
 /// tool: the answers that already exist, plus somewhere to record a new question.
 ///
-/// `interrupt(_:)` has Strands' exact semantics — the FIRST call raises
+/// `interrupt(_:)` has these semantics — the FIRST call raises
 /// (`setdefault` + `raise InterruptException`), and the call after the human
 /// answered returns the response, so the hook/tool body is written once and runs
 /// twice:
@@ -102,7 +102,7 @@ public struct InterruptContext: Sendable {
 
     public func id(for name: String) -> String { scope.isEmpty ? name : "\(scope):\(name)" }
 
-    /// Strands `_Interruptible.interrupt`. Returns the human's response when one
+    /// `_Interruptible.interrupt`. Returns the human's response when one
     /// exists; otherwise records the interrupt and throws `InterruptException`.
     @discardableResult
     public mutating func interrupt(_ name: String, reason: JSONValue? = nil, response: JSONValue? = nil) throws -> JSONValue {
@@ -122,7 +122,7 @@ public protocol InterruptibleEvent: HookEvent {
 }
 
 public extension InterruptibleEvent {
-    /// Strands `event.interrupt(name, reason=…)`.
+    /// `event.interrupt(name, reason=…)`.
     @discardableResult
     mutating func interrupt(_ name: String, reason: JSONValue? = nil, response: JSONValue? = nil) throws -> JSONValue {
         try interruptContext.interrupt(name, reason: reason, response: response)
@@ -131,7 +131,7 @@ public extension InterruptibleEvent {
 
 /// Raising an interrupt from inside a tool. The `Tool` protocol is unchanged —
 /// the agent publishes the context as a task-local around `tool.call(_:)`, which
-/// is how a tool body reaches it (Strands threads a `ToolContext` instead).
+/// is how a tool body reaches it (threads a `ToolContext` instead).
 ///
 ///     func call(_ args: [String: JSONValue]) async throws -> String {
 ///         let ok = try InterruptScope.interrupt("confirm", reason: .string("rm -rf /"))
@@ -141,7 +141,7 @@ public extension InterruptibleEvent {
 public enum InterruptScope {
     @TaskLocal public static var context: InterruptContext?
 
-    /// Strands `ToolContext.interrupt`. Throws `InterruptException` the first
+    /// `ToolContext.interrupt`. Throws `InterruptException` the first
     /// time, returns the human's answer when the tool runs again with it.
     /// Throws `ToolError` when the tool is called outside an agent (no context).
     @discardableResult
@@ -156,10 +156,10 @@ public enum InterruptScope {
     public static var isAvailable: Bool { context != nil }
 }
 
-// MARK: - Interrupt state (Strands `_InterruptState`)
+// MARK: - Interrupt state (`_InterruptState`)
 
-/// Strands `_InterruptState`. Lives inside the `Agent` actor, so it needs no
-/// lock; every mutation bumps `version` the way Strands bumps `_version`.
+/// `_InterruptState`. Lives inside the `Agent` actor, so it needs no
+/// lock; every mutation bumps `version` so observers can tell.
 struct InterruptState: Sendable {
     var interrupts: [String: Interrupt] = [:]
     var context: [String: JSONValue] = [:]
@@ -169,17 +169,17 @@ struct InterruptState: Sendable {
 
     mutating func activate() { activated = true; version += 1 }
 
-    /// Strands `deactivate`: everything cleared.
+    /// `deactivate`: everything cleared.
     mutating func deactivate() {
         interrupts = [:]; context = [:]; activated = false; pendingToolExecution = nil; version += 1
     }
 
-    /// Strands `end_tool_cycle`: a completed tool cycle starts the next one clean.
+    /// `end_tool_cycle`: a completed tool cycle starts the next one clean.
     mutating func endToolCycle() {
         interrupts = [:]; context = [:]; activated = false; pendingToolExecution = nil; version += 1
     }
 
-    /// Strands `resume`: fold the human's answers into the known interrupts.
+    /// `resume`: fold the human's answers into the known interrupts.
     /// Throws when an answer names an interrupt that was never raised.
     mutating func resume(_ responses: [InterruptResponse]) throws {
         guard activated else { return }
@@ -195,14 +195,14 @@ struct InterruptState: Sendable {
         version += 1
     }
 
-    /// Strands `set_pending_tool_results`: the replay filter must skip tools that already ran.
+    /// `set_pending_tool_results`: the replay filter must skip tools that already ran.
     mutating func setPendingToolResults(_ results: [ToolResult]) {
         guard pendingToolExecution != nil else { return }
         pendingToolExecution?.completedToolResults = results
         version += 1
     }
 
-    /// Record a raised interrupt (Strands `setdefault` — never overwrite an answer).
+    /// Record a raised interrupt (`setdefault` — never overwrite an answer).
     mutating func register(_ raised: [Interrupt]) {
         for i in raised where interrupts[i.id] == nil {
             interrupts[i.id] = i

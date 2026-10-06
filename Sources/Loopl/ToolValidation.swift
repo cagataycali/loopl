@@ -3,32 +3,32 @@ import os
 
 private let log = Logger(subsystem: "technology.tiny.loopl", category: "ToolValidation")
 
-// Strands `tools/_validator.py` (`validate_and_prepare_tools`) + `tools/tools.py`
+// `tools/_validator.py` (`validate_and_prepare_tools`) + `tools/tools.py`
 // (`validate_tool_use_name`), plus what a 0.6B model on a phone actually breaks
 // and a cloud API never sends.
 //
-// The contract is Strands': an invalid toolUse is NOT executed and NOT removed
+// The contract: an invalid toolUse is NOT executed and NOT removed
 // from the message — it gets an error `ToolResult` in its place, so the toolUse
 // list and the toolResult list stay 1:1 and the next prompt still renders
 // (hermes folding and every chat template depend on that pairing). The model
 // reads the error and usually fixes its own call on the next cycle.
 
-/// Strands `validate_and_prepare_tools`, Swift-shaped: pure, synchronous, testable.
+/// `validate_and_prepare_tools`, Swift-shaped: pure, synchronous, testable.
 public enum ToolValidation {
 
     /// What the agent needs after validation.
     public struct Outcome: Sendable, Hashable {
         /// Tool uses that may run (in message order).
         public var valid: [ToolUse]
-        /// Error results for the ones that may not (Strands' `tool_results` + `invalid_tool_use_ids`).
+        /// Error results for the ones that may not (`tool_results` + `invalid_tool_use_ids`).
         public var results: [ToolResult]
         public init(valid: [ToolUse], results: [ToolResult]) { self.valid = valid; self.results = results }
     }
 
-    /// Strands tool-name rule: present, `^[a-zA-Z0-9_-]+$`, at most 64 characters.
+    /// Tool-name rule: present, `^[a-zA-Z0-9_-]+$`, at most 64 characters.
     public static let maxNameLength = 64
 
-    /// Strands `validate_tool_use_name`. Returns the complaint, or `nil` when the name is fine.
+    /// `validate_tool_use_name`. Returns the complaint, or `nil` when the name is fine.
     public static func nameProblem(_ name: String) -> String? {
         if name.isEmpty { return "tool name missing" }
         let allowed = Set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-")
@@ -51,7 +51,7 @@ public enum ToolValidation {
         let byName = Dictionary(tools.map { ($0.name, $0) }, uniquingKeysWith: { a, _ in a })
 
         for use in toolUses {
-            // 1. Strands: the name.
+            // 1. the name.
             if let problem = nameProblem(use.name) {
                 log.debug("rejected tool call \(use.name, privacy: .public) \(JSONValue.object(use.input).compact, privacy: .public): \(problem, privacy: .public)")
                 results.append(.error(use, "Error: \(problem)"))
