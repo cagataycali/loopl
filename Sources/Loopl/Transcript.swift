@@ -29,6 +29,9 @@ public struct Transcript: Sendable, Hashable {
     public var cycle = 0
     public var isRunning = false
     public var lastResult: AgentResult?
+    /// Phase 6: the tool names the agent is offered in this conversation, as last announced by `.toolsChanged`
+    /// (`nil` until the agent said anything — the host then shows its own defaults).
+    public var toolsMounted: [String]?
     /// Approval cards still waiting for an answer.
     public var pendingApprovals: [ApprovalRequest] {
         items.compactMap { if case .approval(let r, nil) = $0.kind { return r }; return nil }
@@ -109,6 +112,7 @@ public struct Transcript: Sendable, Hashable {
         case .toolResultMessage: break
         case .historyEdited(let edit): items.append(.init(kind: .note(edit.summary)))   // quiet marker; the rows above stay — the user's record is untouched
         case .forceStop(let why): items.append(.init(kind: .note("stopped: \(why)")))
+        case .toolsChanged(let mounted): toolsMounted = mounted            // Phase 6: the host shows "mounted for this conversation"
         case .result(let r):
             isRunning = false; lastResult = r
             if r.stopReason == .cancelled { items.append(.init(kind: .note("cancelled"))) }

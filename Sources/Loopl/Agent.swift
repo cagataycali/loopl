@@ -26,6 +26,7 @@ public indirect enum AgentEvent: Sendable {
     case historyEdited(HistoryEdit)                              // loopl: the agent edited its own working context (manage_messages) — a UI shows a quiet marker
     case metrics(Metrics)                                        // loopl: runtime numbers (debug sheet)
     case forceStop(String)                                       // ForceStopEvent
+    case toolsChanged(mounted: [String])                         // loopl Phase 6: the tool list the model is offered changed (manage_tools / registry) — effective for the next model call
     case result(AgentResult)                                     // AgentResultEvent — always the last event
     // Sub-agents (`use_agent`, SubAgent.swift): a child's lifecycle and its own events, nested under the parent's call.
     case childStarted(SubAgentInfo)                              // once per child, before any of its events
@@ -84,7 +85,18 @@ public struct AgentResult: Sendable, Hashable {
 /// honest tool results (including errors) and decide what to call next.
 public actor Agent {
     public let model: any Model
+    /// The tools offered to the model. With a `registry`, this is a mirror of `registry.mounted`, refreshed before every
+    /// model request and before every tool execution (`syncTools`) — so `manage_tools mount` inside a turn is effective
+    /// for the very next model call of that same turn (Phase 6).
     public private(set) var tools: [any Tool]
+    /// Phase 6: the catalog of known tools + the mounted set. `nil` → `tools` is whatever `init`/`setTools` gave.
+    public let registry: ToolRegistry?
+    /// `registry.version` the last sync saw — a sync is a no-op when nothing changed.
+    private var registryVersion: Int = -1
+    /// Tools handed to `init`/`setTools` that still have to reach the registry (applied by the next `syncTools`, so the
+    /// order is deterministic — no detached Task racing the first model call).
+    private var pendingSessionTools: [any Tool] = []
+    private var pendingMounted: Set<String>?
     public private(set) var systemPrompt: String?
     /// The conversation (`agent.messages`): user/assistant turns only, system prompt beside it.
     public private(set) var messages: [Message]
@@ -138,6 +150,8 @@ public actor Agent {
     ///   - approvalTimeout: a tool call waiting for `resolve(approval:)` is denied after this (default 120 s).
     /// - interruptMode: `.suspend` (default — the raising call waits inside the agent) or `.stop` (
     ///     the loop returns `stopReason .interrupt` and the caller answers with `resume(_:)`).
+    ///   - registry: Phase 6 — when set, the agent reads `registry.mounted` for every model request (`tools` becomes a
+    ///     mirror). `tools` passed here are REGISTERED into it as pinned session tools (e.g. `ManageToolsTool`).
     public init(model: any Model,
                 tools: [any Tool] = [],
                 systemPrompt: String? = nil,
@@ -147,11 +161,14 @@ public actor Agent {
                 toolExecutor: any ToolExecutor = ConcurrentToolExecutor(),
                 retryStrategy: ModelRetryStrategy? = ModelRetryStrategy(),
                 approvalTimeout: TimeInterval = 120,
-                interruptMode: InterruptMode = .suspend) {
+                interruptMode: InterruptMode = .suspend,
+                registry: ToolRegistry? = nil) {
         self.model = model
         self.approvalTimeout = approvalTimeout
         self.interruptMode = interruptMode
         self.tools = tools
+        self.registry = registry
+        if registry != nil { pendingSessionTools = tools }       // registered (pinned) by the first `syncTools`
         self.systemPrompt = systemPrompt
         self.messages = messages
         self.conversationManager = conversationManager
@@ -164,7 +181,35 @@ public actor Agent {
 
     // MARK: configuration
 
-    public func setTools(_ tools: [any Tool]) { self.tools = tools }
+    /// Replace the tool list. With a `registry` the names become its mounted set (unknown tools are registered as
+    /// session tools) — the next model request reads it back.
+    public func setTools(_ tools: [any Tool]) {
+        self.tools = tools
+        if registry != nil { pendingSessionTools = tools; pendingMounted = Set(tools.map(\.name)) }
+    }
+
+    /// Phase 6: pull `registry.mounted` into `tools` when it changed, and announce it. Called before every model request
+    /// and before every tool execution, so a mount inside a turn is both OFFERED and RUNNABLE on the next step.
+    private func syncTools(_ yield: (@Sendable (AgentEvent) -> Void)?) async {
+        guard let registry else { return }
+        if !pendingSessionTools.isEmpty || pendingMounted != nil {
+            let pin = pendingMounted == nil                       // init's tools are pinned (manage_tools itself); setTools' are not
+            for t in pendingSessionTools {
+                if await registry.entry(t.name) == nil { await registry.register(t, source: .session, mounted: true, pinned: pin) }
+            }
+            if pin { for t in pendingSessionTools { _ = await registry.mount([t.name]) } }
+            if let m = pendingMounted { await registry.setMounted(m) }
+            pendingSessionTools = []; pendingMounted = nil
+            registryVersion = -1
+        }
+        let version = await registry.version
+        guard version != registryVersion else { return }
+        registryVersion = version
+        let before = tools.map(\.name)
+        tools = await registry.mounted
+        let after = tools.map(\.name)
+        if before != after { yield?(.toolsChanged(mounted: after)) }
+    }
     public func setModelGate(_ gate: ModelGate?) { modelGate = gate }
     public func setSystemPrompt(_ prompt: String?) { systemPrompt = prompt }
     /// Replace the history (a host restoring a session). No hooks fire.
@@ -451,6 +496,7 @@ public actor Agent {
     private func handleModelExecution(_ yield: @Sendable @escaping (AgentEvent) -> Void) async throws -> (StopReason, Message) {
         while true {
             try Task.checkCancellation()
+            await syncTools(yield)                                 // Phase 6: the request-time tool list
             let specs = offeredTools.map(\.toolSpec)
             let contextWindow = await model.contextWindow     // per-runtime: Apple FM 4096, MLX/GGUF their real ctx
             var before = BeforeModelCallEvent(messages: messages, systemPrompt: systemPrompt,
@@ -561,6 +607,7 @@ public actor Agent {
         } else {
             // `validate_and_prepare_tools`: a toolUse the model broke never reaches a tool —
             // it gets an error result and keeps its place in the result list.
+            await syncTools(yield)                                 // Phase 6: a tool mounted by a hook/host since the request is runnable
             let validation = ToolValidation.validateAndPrepare(toolUses: toolUses, tools: offeredTools)
             validation.results.forEach { yield(.toolResult($0)) }
             results += validation.results
@@ -621,7 +668,13 @@ public actor Agent {
     private func runTool(_ use: ToolUse, _ yield: @Sendable @escaping (AgentEvent) -> Void) async -> ToolResult {
         let t0 = Date()
         let scope = "tool:\(use.toolUseId)"
-        let selected = offeredTools.first { $0.name == use.name }
+        var selected = offeredTools.first { $0.name == use.name }
+        var mountedOnCall = false
+        if selected == nil, let registry, await registry.mountOnCall, let e = await registry.entry(use.name), e.available, !e.mounted {
+            // Phase 6 `mountOnCall`: calling an unmounted tool by name IS the model's decision to use it.
+            _ = await registry.mount([use.name]); await syncTools(yield)
+            selected = offeredTools.first { $0.name == use.name }; mountedOnCall = selected != nil
+        }
         var approval = selected?.requiresApproval(for: use.input)
         approval?.id = use.toolUseId; approval?.toolName = use.name
         if approval?.input.isEmpty == true { approval?.input = use.input }
@@ -696,7 +749,8 @@ public actor Agent {
                         }
                     }
                     flushHistoryEdits(yield)
-                    result = ToolResult(toolUseId: toolUse.toolUseId, name: toolUse.name, status: .success, content: out.text,
+                    result = ToolResult(toolUseId: toolUse.toolUseId, name: toolUse.name, status: .success,
+                                        content: (mountedOnCall ? "(\(toolUse.name) was not mounted — mounted it for this conversation.)\n" : "") + out.text,
                                         durationMs: Date().timeIntervalSince(t0) * 1000, images: out.images)
                     break
                 } catch let raised as InterruptException {
@@ -717,12 +771,35 @@ public actor Agent {
                 }
             }
         } else {
-            result = .error(toolUse, "Unknown tool: \(toolUse.name). Available tools: \(offeredTools.map(\.name).sorted().joined(separator: ", "))",
-                            durationMs: Date().timeIntervalSince(t0) * 1000)
+            result = .error(toolUse, await unknownToolMessage(toolUse.name), durationMs: Date().timeIntervalSince(t0) * 1000)
         }
         var after = AfterToolCallEvent(toolUse: toolUse, selectedTool: before.selectedTool, result: result, error: thrown)
         after = (try? await hooks.invoke(after)) ?? after
         return after.result
+    }
+
+    /// The result for a call to a tool that is not offered. With a registry (Phase 6) the message is the repair path:
+    /// a KNOWN but unmounted tool says exactly how to mount it, and a wrong name lists what can be mounted — measured
+    /// on loopl-0.8b (ManageToolsMeasurement): the model calls the tool it wants by name first, so this error is where
+    /// it learns about `manage_tools`.
+    func unknownToolMessage(_ name: String) async -> String {
+        let offered = offeredTools.map(\.name).sorted().joined(separator: ", ")
+        guard let registry else { return "Unknown tool: \(name). Available tools: \(offered)" }
+        let listing = await registry.list()
+        let canManage = listing.contains { $0.name == ManageToolsTool.toolName && $0.mounted }
+        let mountable = listing.filter { !$0.mounted && $0.available }.map(\.name)
+        if canManage, mountable.contains(name) {
+            return "\(name) exists but is not mounted. Call \(ManageToolsTool.toolName) with {\"action\": \"mount\", \"names\": [\"\(name)\"]} first, then call \(name) again."
+        }
+        if let e = listing.first(where: { $0.name == name }), !e.available {
+            let reason = e.reason.hasSuffix(".") ? String(e.reason.dropLast()) : e.reason
+            return "\(name) cannot run on this device: \(reason). Available tools: \(offered)"
+        }
+        var msg = "Unknown tool: \(name). Available tools: \(offered)"
+        if canManage, !mountable.isEmpty {
+            msg += ". Tools you can mount: \(mountable.joined(separator: ", ")) — call \(ManageToolsTool.toolName) with {\"action\": \"mount\", \"names\": [\"<one of them>\"]}, then call it."
+        }
+        return msg
     }
 
     // MARK: `_estimate_input_tokens` (usage baseline, not a re-count)
