@@ -148,7 +148,7 @@ func ask(_ model: any Model) async throws -> String {
 <h2>Free on iPhone. Nothing collected.</h2>
 <p class="l-app__lead">The SDK's showcase, open source. Pick a model, then talk to an agent that uses the phone — with the network off if you like.</p>
 <ul>
-<li><b>No account.</b> Public models, anonymous download.</li>
+<li><b>No account needed.</b> Public models, anonymous download — your own Hugging Face token is optional, for private repos.</li>
 <li><b>No analytics.</b> App Store label: Data Not Collected.</li>
 <li><b>Offline mode.</b> One switch refuses every network call.</li>
 </ul>

@@ -15,7 +15,7 @@ hide:
 
 | Connection | When | What is sent |
 |---|---|---|
-| `huggingface.co` | when **you** pick a model | an anonymous request for a public repo's files |
+| `huggingface.co` | when **you** pick a model | an anonymous request for a public repo's files — or, if you pasted a Hugging Face token in Settings, a Bearer request to this host only (Keychain, dropped on the CDN redirect) |
 | a URL the agent asks for | only with the `http` tool on, online, and after you approve writes | that request, shown in the tool row |
 | anything else | never | — |
 

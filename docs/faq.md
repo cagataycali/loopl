@@ -26,7 +26,7 @@ hide:
     The catalog sets `enable_thinking: false`; remove it from `chatTemplateKwargs` if you want the reasoning.
 
 ??? question "Do I need a Hugging Face token?"
-    No. Downloads are anonymous, public repos only.
+    Not for public models — downloads are anonymous by default. Paste one under **Settings › Hugging Face** (verified, kept in this device's Keychain, sent only to `huggingface.co`) and your private repos download too; **Models › Mine** lists them.
 
 ??? question "Can I use the SwiftUI pieces alone?"
     Yes — `LooplUI` is its own product: transcript, tool rows, approval card, model picker.
