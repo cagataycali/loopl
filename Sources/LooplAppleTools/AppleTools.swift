@@ -24,6 +24,13 @@ public protocol AppleTool: Tool {
     static var onDeviceCopy: String { get }
     /// Call-time check — Settings shows the reason as a chip; the Engine filters unavailable tools out.
     static func availability() -> ToolAvailability
+    /// Whether a fresh install (or an update that first ships this tool) switches it ON. Fewer tools help
+    /// small models, so only the everyday set is on by default; the rest wait in Settings › Tools.
+    static var defaultOn: Bool { get }
+}
+
+extension AppleTool {
+    public static var defaultOn: Bool { true }
 }
 
 /// Short reasons shared by several tools.
@@ -49,9 +56,13 @@ public enum AppleTools {
     public static var all: [any AppleTool] {
         [GenerateImageTool(), GenerateVoiceTool(), DescribeImageTool(),
          TranslateTool(), TranscribeTool(),
-         FlashlightTool(), VibrateTool(), OpenAppTool()]
+         FlashlightTool(), VibrateTool(), OpenAppTool(),
+         ClipboardReadTool(), ClipboardWriteTool()]   // measured 2026-10-06: two tools beat one `action` tool on the 0.8B (ClipboardShapeMeasurement)
     }
     public static var names: [String] { all.map(\.name) }
+    /// Names switched on by default (`defaultOn`) — the everyday set.
+    public static var defaultOnNames: [String] { all.filter { type(of: $0).defaultOn }.map(\.name) }
+    public static func isDefaultOn(_ name: String) -> Bool { defaultOnNames.contains(name) }
     /// Tools whose `availability()` is OK right now — what the Engine should expose to the model.
     public static var available: [any AppleTool] { all.filter { type(of: $0).availability().available } }
     public static func availability(of name: String) -> ToolAvailability {
