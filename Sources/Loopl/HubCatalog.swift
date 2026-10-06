@@ -297,7 +297,14 @@ public struct HubCatalog: Sendable {
             var params: Double? = nil
             if let total = (st?["total"] as? NSNumber)?.doubleValue, total > 0 {
                 params = total / 1e9
-                if size == nil { size = Self.estimateMLXBytes(params: total, bits: bits) }
+                if size == nil {
+                    // Per-dtype counts when the Hub sends them (always for safetensors repos) — a mixed
+                    // export (quantised LLM + bf16 vision tower) is 20-30 % bigger than params × bits/8.
+                    let byDtype = Self.dtypeCounts(st?["parameters"])
+                    size = byDtype.isEmpty ? Self.estimateMLXBytes(params: total, bits: bits)
+                                            : Self.mlxBytes(parameters: byDtype, bits: bits,
+                                                            groupSize: (config["quantization_config"] as? [String: Any])?["group_size"] as? Int)
+                }
             }
             if params == nil { params = paramsB(fromName: id) }
             return Hit(id: id, kind: kind,
@@ -376,8 +383,60 @@ public struct HubCatalog: Sendable {
     }
 
     /// 4-bit MLX weights ≈ params × bits/8 × 1.125 (scales + biases per group of 64). Pinned on the curated rows.
+    ///
+    /// Only a fallback now: it assumes EVERY parameter is quantised, so it reads 16-33 % low on a
+    /// vision export (the tower stays bf16) and ~6 % high at 8 bits. Prefer ``mlxBytes(parameters:bits:groupSize:)``
+    /// whenever the Hub sent the per-dtype breakdown.
     public static func estimateMLXBytes(params: Double, bits: Int?) -> Int64 {
         Int64(params * Double(bits ?? 16) / 8 * (bits == nil ? 1 : 1.125))
+    }
+
+    /// `safetensors.parameters` → `["U32": 751894528, "BF16": 101091392]`, dropping anything unreadable.
+    static func dtypeCounts(_ any: Any?) -> [String: Double] {
+        guard let raw = any as? [String: Any] else { return [:] }
+        var out: [String: Double] = [:]
+        for (dtype, n) in raw {
+            guard let count = (n as? NSNumber)?.doubleValue, count > 0 else { continue }
+            out[dtype.uppercased()] = count
+        }
+        return out
+    }
+
+    /// Bytes per element of a safetensors dtype (unknown names fall back to 4).
+    static func dtypeBytes(_ dtype: String) -> Double {
+        switch dtype {
+        case "F64", "I64", "U64": 8
+        case "F32", "I32", "U32": 4
+        case "F16", "BF16", "I16", "U16": 2
+        case "U8", "I8", "BOOL", "F8_E4M3", "F8_E5M2", "F8_E8M0": 1
+        default: 4
+        }
+    }
+
+    /// Weights on disk from the Hub's per-dtype parameter counts — the number the Mine/collection rows show
+    /// and the number the file list will confirm.
+    ///
+    /// The Hub reports a quantised MLX tensor by its LOGICAL parameter count under `U32` (the packed
+    /// storage dtype), so a quantised parameter costs `bits/8` plus its share of the per-group scale and
+    /// bias (two 16-bit values per `group_size`, 64 unless config.json says otherwise). Everything else
+    /// (bf16 vision tower, embeddings a converter left alone, f32 norms) costs its own dtype.
+    ///
+    /// Measured against the Hub's real `siblings[].size` on 2026-10-06: ≤ 0.02 % off on
+    /// `cagataydev/loopl-{0.8b,2b,4b}-4bit` (625.2 / 1722.3 / 3034.3 MB), `mlx-community/Qwen3-VL-2B-Instruct-4bit`,
+    /// `Qwen3-1.7B-4bit`, `Qwen3-8B-8bit`, `Llama-3.2-1B-Instruct-4bit` and the bf16 `cagataydev/loopl-0.8b`,
+    /// where ``estimateMLXBytes(params:bits:)`` was -23.3 %, -27.7 %, -15.9 %, -32.8 % and +5.9 % out.
+    public static func mlxBytes(parameters: [String: Double], bits: Int?, groupSize: Int? = nil) -> Int64 {
+        let group = Double(max(1, groupSize ?? 64))
+        var total = 0.0
+        for (dtype, count) in parameters {
+            // `bits == nil` or 16+ → nothing was quantised; U32 then really is a 4-byte tensor (rope caches…).
+            if let bits, bits < 16, dtype == "U32" {
+                total += count * (Double(bits) / 8 + 4 / group)
+            } else {
+                total += count * dtypeBytes(dtype)
+            }
+        }
+        return Int64(total)
     }
 
     static func gatedFlag(_ v: Any?) -> Bool {
