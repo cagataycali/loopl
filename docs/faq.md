@@ -7,6 +7,9 @@ hide:
 
 # FAQ
 
+??? question "Where do I get the app?"
+    [TestFlight](https://testflight.apple.com/join/uUNjfzW9) — public beta, iOS 18+, no account. The App Store listing follows the 1.0 review. Or build `App/` from the [source](https://github.com/cagataycali/loopl).
+
 ??? question "Is it really free?"
     Yes. No account, no purchase, no analytics. The models are public weights; the compute is your phone's. The SDK is open source.
 

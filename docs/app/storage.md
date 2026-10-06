@@ -44,3 +44,7 @@ These are load-time estimates from drive throughput, not device measurements —
 
 !!! note "Device proof pending"
     The round trip — grant a folder, move Qwen3.5‑0.8B to the drive, run a chat — is proven on the simulator with a folder standing in for the drive. The owner's SanDisk on the iPhone 16 Pro is the remaining step and will update the table above with measured numbers.
+
+---
+
+<div class="l-actions l-actions--page"><a class="l-btn l-btn--ink l-btn--tf" href="https://testflight.apple.com/join/uUNjfzW9">Get it on TestFlight</a><a class="l-link" href="index.md">The app</a></div>

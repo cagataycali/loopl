@@ -482,3 +482,10 @@ html.l-js .l-reveal.is-on { opacity: 1; transform: none; }
 .l-shots--v2 .l-phone--mini::after { display: none; }
 .l-shots--v2 figcaption { font-style: normal; font-size: .64rem; color: var(--l-ink-2); margin: .9rem auto 0; text-align: center; max-width: 24ch; }
 @media (max-width: 44em) { .l-shots--v2 { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.6rem 1rem; } .l-shots--v2 .l-phone--mini { width: min(100%, 170px); } }
+
+/* 404 */
+.l-404 .l-end--v2 { padding-top: clamp(3rem, 10vh, 7rem); }
+.l-mark--404 { width: 56px; height: 56px; color: var(--l-fill); margin: 0 auto 1.4rem; display: block; }
+.l-js .l-mark--404 .l-mark__loop { stroke-dasharray: 1; stroke-dashoffset: 1; animation: l-draw .9s ease-in-out .1s forwards; }
+.l-js .l-mark--404 .l-mark__flame { opacity: 0; animation: l-fade .3s ease-out .9s forwards; }
+.l-404 .l-actions { justify-content: center; }
