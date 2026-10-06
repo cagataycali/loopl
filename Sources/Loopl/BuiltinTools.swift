@@ -71,22 +71,120 @@ public enum NotesStore {
     public static func save(_ n: [String: String]) { UserDefaults.standard.set(n, forKey: key) }
 }
 
-/// Network access — refused outright when the offline toggle is on, so the
-/// agent proves the "no network while offline" rule through its own tools.
+/// `http` — the one network tool: GET/HEAD/POST/PUT/PATCH/DELETE with headers,
+/// a body and a timeout. Every call is flagged for human approval, graded by
+/// method (reads low, writes medium, DELETE high); `ApprovalPolicy` decides
+/// which actually ask. Refused outright while offline mode is on. Responses are
+/// capped (`maxBytes` read, `maxChars` returned) so one page cannot flood the
+/// context. Redirects are followed by the system; only https (or http to the
+/// loopback host, for tests) is allowed.
+public struct HttpTool: Tool {
+    public let maxBytes: Int
+    public let maxChars: Int
+    public let maxTimeout: TimeInterval
+    public init(maxBytes: Int = 256_000, maxChars: Int = 8000, maxTimeout: TimeInterval = 60) {
+        self.maxBytes = maxBytes; self.maxChars = maxChars; self.maxTimeout = maxTimeout
+    }
+    public let name = "http"
+    public let description = "Make an HTTPS request. method GET/HEAD/POST/PUT/PATCH/DELETE (default GET), optional headers object, body (string or JSON object), timeout seconds. Returns status, content-type and the body text (truncated). Writes may ask the user for approval. Unavailable in offline mode."
+    public let parameters: JSONValue = [
+        "type": "object",
+        "properties": [
+            "method": ["type": "string", "enum": ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"], "description": "HTTP method, default GET"],
+            "url": ["type": "string", "description": "https URL"],
+            "headers": ["type": "object", "description": "request headers, e.g. {\"Accept\": \"application/json\"}"],
+            "body": ["type": "string", "description": "request body — a string, or a JSON object which is sent as application/json"],
+            "timeout": ["type": "number", "description": "seconds, default 20, max 60"],
+        ],
+        "required": ["url"],
+    ]
+
+    public static let methods: Set<String> = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"]
+
+    /// Parsed, validated arguments — shared by `call` and `requiresApproval` so the card shows exactly what will run.
+    public struct Request: Sendable, Hashable {
+        public var method: String
+        public var url: URL
+        public var headers: [String: String]
+        public var body: Data?
+        public var timeout: TimeInterval
+        public var bodyText: String? { body.map { String(decoding: $0.prefix(2000), as: UTF8.self) } }
+        public var isMutating: Bool { method != "GET" && method != "HEAD" }
+        public var risk: ApprovalRequest.Risk { method == "DELETE" ? .high : isMutating ? .medium : .low }
+    }
+
+    public static func parse(_ args: [String: JSONValue], maxTimeout: TimeInterval = 60) throws -> Request {
+        guard let raw = args["url"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines), let url = URL(string: raw), let host = url.host else {
+            throw ToolError("need a url")
+        }
+        let loopback = ["localhost", "127.0.0.1", "::1", "[::1]"].contains(host.lowercased())
+        guard url.scheme == "https" || (url.scheme == "http" && loopback) else { throw ToolError("only https urls are allowed") }
+        let method = (args["method"]?.stringValue ?? "GET").uppercased()
+        guard methods.contains(method) else { throw ToolError("unsupported method \(method) — use GET, HEAD, POST, PUT, PATCH or DELETE") }
+        var headers: [String: String] = [:]
+        if case .object(let h)? = args["headers"] { for (k, v) in h { headers[k] = v.stringValue ?? v.compact } }
+        var body: Data?
+        var jsonBody = false
+        switch args["body"] {
+        case .string(let s)?: body = s.data(using: .utf8)
+        case .object(let o)?: body = JSONValue.object(o).compact.data(using: .utf8); jsonBody = true
+        case .array(let a)?: body = JSONValue.array(a).compact.data(using: .utf8); jsonBody = true
+        case nil, .null?: body = nil
+        case let other?: body = other.compact.data(using: .utf8)
+        }
+        if jsonBody, !headers.keys.contains(where: { $0.lowercased() == "content-type" }) { headers["Content-Type"] = "application/json" }
+        if body != nil, !["POST", "PUT", "PATCH", "DELETE"].contains(method) { body = nil }
+        let timeout = min(max(args["timeout"]?.doubleValue ?? 20, 1), maxTimeout)
+        return Request(method: method, url: url, headers: headers, body: body, timeout: timeout)
+    }
+
+    public func requiresApproval(for input: [String: JSONValue]) -> ApprovalRequest? {
+        guard let r = try? Self.parse(input, maxTimeout: maxTimeout) else { return nil }   // invalid input fails in `call` instead
+        let host = r.url.host ?? r.url.absoluteString
+        var detail = r.isMutating ? "Sends a \(r.method) request" : "Reads"
+        if let b = r.body { detail += " · \(ByteCountFormatter.string(fromByteCount: Int64(b.count), countStyle: .file)) body" }
+        if !r.headers.isEmpty { detail += " · \(r.headers.count) header\(r.headers.count == 1 ? "" : "s")" }
+        return ApprovalRequest(toolName: name, title: "\(r.method) \(host)", method: r.method, url: r.url.absoluteString,
+                               headers: ApprovalRequest.redact(r.headers), bodyPreview: r.bodyText, detail: detail, risk: r.risk, input: input)
+    }
+
+    public func call(_ args: [String: JSONValue]) async throws -> String {
+        let r = try Self.parse(args, maxTimeout: maxTimeout)
+        if NetworkPolicy.isOffline { throw ToolError("offline mode is on — network refused") }
+        var req = URLRequest(url: r.url, timeoutInterval: r.timeout)
+        req.httpMethod = r.method
+        req.setValue("loopl/0.1 (iOS)", forHTTPHeaderField: "User-Agent")
+        for (k, v) in r.headers { req.setValue(v, forHTTPHeaderField: k) }
+        req.httpBody = r.body
+        let (data, resp) = try await NetworkPolicy.session.data(for: req)
+        let http = resp as? HTTPURLResponse
+        let code = http?.statusCode ?? 0
+        let type = (http?.value(forHTTPHeaderField: "Content-Type") ?? "").split(separator: ";").first.map(String.init) ?? ""
+        var head = "HTTP \(code)"
+        if !type.isEmpty { head += " \(type)" }
+        if let loc = http?.value(forHTTPHeaderField: "Location") { head += "\nLocation: \(loc)" }
+        if r.method == "HEAD" || data.isEmpty { return head + "\n(\(data.count) bytes)" }
+        let capped = data.prefix(maxBytes)
+        var body = String(decoding: capped, as: UTF8.self)
+        var truncated = data.count > maxBytes
+        if body.count > maxChars { body = String(body.prefix(maxChars)); truncated = true }
+        if truncated { body += "\n… [truncated: \(data.count) bytes total]" }
+        return head + "\n" + body
+    }
+}
+
+/// 0.1 tool. Kept one release as an alias of `http` with method GET; use `HttpTool`.
+@available(*, deprecated, message: "use HttpTool (`http`) — http_get is kept one release as an alias")
 public struct HttpGetTool: Tool {
     public init() {}
     public let name = "http_get"
-    public let description = "Fetch a URL over HTTPS and return the first 4000 characters of the body. Unavailable in offline mode."
+    public let description = "Deprecated alias of http: fetch a URL with GET and return the body text. Unavailable in offline mode."
     public let parameters: JSONValue = ["type": "object", "properties": ["url": ["type": "string"]], "required": ["url"]]
+    public func requiresApproval(for input: [String: JSONValue]) -> ApprovalRequest? {
+        HttpTool(maxChars: 4000).requiresApproval(for: ["url": input["url"] ?? .null, "method": "GET"])
+    }
     public func call(_ args: [String: JSONValue]) async throws -> String {
-        guard let raw = args["url"]?.stringValue, let url = URL(string: raw), url.scheme == "https" else { throw ToolError("need an https url") }
-        if NetworkPolicy.isOffline { throw ToolError("offline mode is on — network refused") }
-        var req = URLRequest(url: url, timeoutInterval: 20)
-        req.setValue("loopl/0.1 (iOS)", forHTTPHeaderField: "User-Agent")
-        let (data, resp) = try await NetworkPolicy.session.data(for: req)
-        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
-        let body = String(decoding: data.prefix(16_000), as: UTF8.self)
-        return "HTTP \(code)\n" + String(body.prefix(4000))
+        try await HttpTool(maxChars: 4000).call(["url": args["url"] ?? .null, "method": "GET"])
     }
 }
 

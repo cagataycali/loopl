@@ -15,7 +15,9 @@ public enum AgentEvent: Sendable {
     case toolUseStream(name: String, toolUseId: String, partialInput: String)   // ToolUseStreamEvent
     case modelMessage(Message)                                   // ModelMessageEvent (assembled assistant turn, appended)
     case throttle(delay: TimeInterval)                           // EventLoopThrottleEvent (retry backoff)
-    case toolStarted(ToolUse)                                    // loopl: the tool is about to run (after BeforeToolCall hooks)
+    case approvalRequested(ApprovalRequest)                      // loopl: a tool call is suspended until `resolve(approval:)` (HITL)
+    case approvalResolved(id: String, ApprovalDecision)          // loopl: the human (or the timeout) answered
+    case toolStarted(ToolUse)                                    // loopl: the tool is about to run (after BeforeToolCall hooks + approval)
     case toolResult(ToolResult)                                  // ToolResultEvent
     case toolResultMessage(Message)                              // ToolResultMessageEvent (appended)
     case metrics(Metrics)                                        // loopl: runtime numbers (debug sheet)
@@ -70,12 +72,18 @@ public actor Agent {
     public let toolExecutor: any ToolExecutor
     public let retryStrategy: ModelRetryStrategy?
     public private(set) var eventLoopMetrics = EventLoopMetrics()
+    /// Human-in-the-loop: how long a suspended tool call waits for `resolve(approval:)` before it is denied.
+    public let approvalTimeout: TimeInterval
+    private var pending: [String: (request: ApprovalRequest, continuation: CheckedContinuation<ApprovalDecision, Never>)] = [:]
+    /// Tool calls waiting for a human right now (a UI restores its cards from this).
+    public var pendingApprovals: [ApprovalRequest] { pending.values.map(\.request).sorted { $0.id < $1.id } }
 
     /// - Parameters:
     ///   - conversationManager: default `SlidingWindowConversationManager()` — the only limiter.
     ///   - hooks: `HookProvider`s registered after the manager and the retry strategy.
     ///   - toolExecutor: default `ConcurrentToolExecutor()`.
     ///   - retryStrategy: default `ModelRetryStrategy()` (6 attempts, 4 s → 240 s). Pass `nil` to disable.
+    ///   - approvalTimeout: a tool call waiting for `resolve(approval:)` is denied after this (default 120 s).
     public init(model: any Model,
                 tools: [any Tool] = [],
                 systemPrompt: String? = nil,
@@ -83,8 +91,10 @@ public actor Agent {
                 conversationManager: any ConversationManager = SlidingWindowConversationManager(),
                 hooks: [any HookProvider] = [],
                 toolExecutor: any ToolExecutor = ConcurrentToolExecutor(),
-                retryStrategy: ModelRetryStrategy? = ModelRetryStrategy()) {
+                retryStrategy: ModelRetryStrategy? = ModelRetryStrategy(),
+                approvalTimeout: TimeInterval = 120) {
         self.model = model
+        self.approvalTimeout = approvalTimeout
         self.tools = tools
         self.systemPrompt = systemPrompt
         self.messages = messages
@@ -103,6 +113,45 @@ public actor Agent {
     /// Replace the history (a host restoring a session). No hooks fire.
     public func setMessages(_ messages: [Message]) { self.messages = messages }
     public func reset() { messages.removeAll(); eventLoopMetrics = EventLoopMetrics() }
+
+    // MARK: human-in-the-loop
+
+    /// Answer a suspended tool call (`AgentEvent.approvalRequested`). Returns false when nothing
+    /// with that id is waiting (already answered, timed out, or cancelled).
+    @discardableResult
+    public func resolve(approval id: String, _ decision: ApprovalDecision) -> Bool {
+        guard let entry = pending.removeValue(forKey: id) else {
+            // Answered before the call reached its suspension point (a very fast UI): keep it for `awaitDecision`.
+            if awaiting.contains(id) { early[id] = decision; return true }
+            return false
+        }
+        entry.continuation.resume(returning: decision)
+        return true
+    }
+    private var awaiting: Set<String> = []
+    private var early: [String: ApprovalDecision] = [:]
+
+    /// Suspend the current tool call until `resolve(approval:)`, the timeout, or task cancellation.
+    /// Awaiting the continuation releases the actor, so the other tools of the message keep running.
+    private func awaitDecision(_ request: ApprovalRequest) async -> ApprovalDecision {
+        let id = request.id
+        let timeout = approvalTimeout
+        awaiting.remove(id)
+        if let d = early.removeValue(forKey: id) { return d }
+        let timer = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(max(0, timeout) * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            await self?.resolve(approval: id, .deny(reason: "no answer within \(Int(timeout)) s"))
+        }
+        defer { timer.cancel() }
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { (c: CheckedContinuation<ApprovalDecision, Never>) in
+                pending[id] = (request, c)
+            }
+        } onCancel: {
+            Task { [weak self] in await self?.resolve(approval: id, .deny(reason: "cancelled")) }
+        }
+    }
 
     // MARK: Strands `__call__` / `invoke_async`
 
@@ -322,11 +371,14 @@ public actor Agent {
     private func runTool(_ use: ToolUse, _ yield: @Sendable @escaping (AgentEvent) -> Void) async -> ToolResult {
         let t0 = Date()
         let selected = tools.first { $0.name == use.name }
-        var before = BeforeToolCallEvent(toolUse: use, selectedTool: selected)
+        var approval = selected?.requiresApproval(for: use.input)
+        approval?.id = use.toolUseId; approval?.toolName = use.name
+        if approval?.input.isEmpty == true { approval?.input = use.input }
+        var before = BeforeToolCallEvent(toolUse: use, selectedTool: selected, approval: approval)
         do { before = try await hooks.invoke(before) } catch {
             return .error(use, "hook error: \((error as? LocalizedError)?.errorDescription ?? "\(error)")")
         }
-        let toolUse = before.toolUse
+        var toolUse = before.toolUse
         var result: ToolResult
         var thrown: (any Error)?
         if let cancel = before.cancelTool {
@@ -335,6 +387,25 @@ public actor Agent {
             var after = AfterToolCallEvent(toolUse: toolUse, selectedTool: nil, result: result, cancelMessage: msg)
             after = (try? await hooks.invoke(after)) ?? after
             return after.result
+        }
+        if var request = before.approval {
+            // Human-in-the-loop: suspend this call (and only this call) until a decision arrives.
+            request.id = toolUse.toolUseId; request.toolName = toolUse.name
+            if request.input.isEmpty { request.input = toolUse.input }
+            awaiting.insert(request.id)
+            yield(.approvalRequested(request))
+            let decision = await awaitDecision(request)
+            yield(.approvalResolved(id: request.id, decision))
+            switch decision {
+            case .approve: break
+            case .approveEdited(let edited): toolUse.input = edited
+            case .deny(let reason):
+                let msg = "Tool call denied by the user" + (reason.map { ": \($0)" } ?? "") + ". Do not retry it; continue without it."
+                result = .error(toolUse, msg, durationMs: Date().timeIntervalSince(t0) * 1000)
+                var after = AfterToolCallEvent(toolUse: toolUse, selectedTool: before.selectedTool, result: result, cancelMessage: msg)
+                after = (try? await hooks.invoke(after)) ?? after
+                return after.result
+            }
         }
         yield(.toolStarted(toolUse))
         if let tool = before.selectedTool {

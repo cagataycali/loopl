@@ -1,0 +1,280 @@
+import SwiftUI
+import Loopl
+
+// Human-in-the-loop card. Rendered inline by `AgentTranscriptView` for every
+// `TranscriptItem.Kind.approval`: a pending card asks (Approve · Deny · Edit),
+// a resolved card collapses to one quiet line. Motion through
+// `LooplDesign.Motion` only; Reduce Motion crossfades; haptics on each answer.
+
+public struct ApprovalCard: View {
+    public var request: ApprovalRequest
+    public var decision: ApprovalDecision?
+    public var onDecide: (ApprovalDecision) -> Void
+    @State private var showBody = false
+    @State private var editing = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    public init(request: ApprovalRequest, decision: ApprovalDecision? = nil, onDecide: @escaping (ApprovalDecision) -> Void) {
+        self.request = request; self.decision = decision; self.onDecide = onDecide
+    }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            header
+            if decision == nil {
+                if let detail = request.detail { Text(detail).font(.footnote).foregroundStyle(.secondary) }
+                if !request.headers.isEmpty { headersView }
+                if let preview = request.bodyPreview, !preview.isEmpty { bodyPreview(preview) }
+                actions
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(LooplDesign.secondaryBackground, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(borderTint, lineWidth: 1))
+        .animation(LooplDesign.Motion.faded(LooplDesign.Motion.spring, reduceMotion), value: decision)
+        .animation(LooplDesign.Motion.faded(LooplDesign.Motion.snappy, reduceMotion), value: showBody)
+        .sheet(isPresented: $editing) {
+            ApprovalEditor(request: request) { edited in
+                editing = false
+                LooplDesign.success()
+                onDecide(.approveEdited(edited))
+            }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(a11y)
+    }
+
+    // MARK: pieces
+
+    private var header: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            if let d = decision {
+                Image(systemName: d.isApproved ? "checkmark.shield.fill" : "xmark.shield.fill")
+                    .font(.footnote).foregroundStyle(d.isApproved ? LooplDesign.accent : Color.secondary)
+                    .transition(.scale.combined(with: .opacity))
+            } else {
+                Image(systemName: "hand.raised.fill").font(.footnote).foregroundStyle(riskTint)
+                    .transition(.scale.combined(with: .opacity))
+            }
+            if let m = request.method { MethodBadge(m, tint: riskTint) }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(request.host ?? request.title).font(.callout.weight(.semibold)).lineLimit(1)
+                if let path = pathLine { Text(path).font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle) }
+                if let d = decision { Text(verdict(d)).font(.caption).foregroundStyle(.secondary).transition(.opacity) }
+            }
+            Spacer(minLength: 0)
+            if decision == nil { Pill(request.risk.rawValue, tint: riskTint) }
+        }
+    }
+
+    private var headersView: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(request.headers.keys.sorted(), id: \.self) { k in
+                HStack(spacing: 6) {
+                    Text(k).font(.caption2.monospaced().weight(.semibold)).foregroundStyle(.secondary)
+                    Text(request.headers[k] ?? "").font(.caption2.monospaced()).foregroundStyle(.secondary).lineLimit(1)
+                }
+            }
+        }
+    }
+
+    private func bodyPreview(_ preview: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button {
+                LooplDesign.haptic()
+                showBody.toggle()
+            } label: {
+                HStack(spacing: 6) {
+                    Text("body").font(.caption2.weight(.semibold)).foregroundStyle(.secondary).textCase(.uppercase).kerning(0.5)
+                    Text("\(preview.utf8.count) B").font(.caption2.monospacedDigit()).foregroundStyle(.tertiary)
+                    Image(systemName: "chevron.right").font(.caption2.weight(.semibold)).foregroundStyle(.tertiary)
+                        .rotationEffect(.degrees(showBody ? 90 : 0))
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(showBody ? "hide body" : "show body")
+            if showBody {
+                Text(preview).font(.footnote.monospaced()).textSelection(.enabled).lineLimit(14)
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(LooplDesign.tertiaryFill, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
+            }
+        }
+    }
+
+    private var actions: some View {
+        HStack(spacing: 10) {
+            Button {
+                LooplDesign.success()
+                onDecide(.approve)
+            } label: {
+                Label("Approve", systemImage: "checkmark").font(.callout.weight(.semibold))
+                    .frame(maxWidth: .infinity).padding(.vertical, 9)
+                    .background(LooplDesign.accent, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                    .foregroundStyle(.white)
+            }
+            .buttonStyle(ApprovalPressStyle())
+            .accessibilityHint("runs the call as shown")
+            Button {
+                LooplDesign.failure()
+                onDecide(.deny(reason: nil))
+            } label: {
+                Label("Deny", systemImage: "xmark").font(.callout.weight(.semibold))
+                    .frame(maxWidth: .infinity).padding(.vertical, 9)
+                    .background(LooplDesign.tertiaryFill, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                    .foregroundStyle(.primary)
+            }
+            .buttonStyle(ApprovalPressStyle())
+            .accessibilityHint("the model is told you refused")
+            Button {
+                LooplDesign.haptic()
+                editing = true
+            } label: {
+                Image(systemName: "pencil").font(.callout.weight(.semibold))
+                    .frame(width: 44).padding(.vertical, 9)
+                    .background(LooplDesign.tertiaryFill, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                    .foregroundStyle(.primary)
+            }
+            .buttonStyle(ApprovalPressStyle())
+            .accessibilityLabel("Edit")
+            .accessibilityHint("change the request before approving")
+        }
+        .padding(.top, 2)
+        .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom)))
+    }
+
+    private var riskTint: Color {
+        switch request.risk { case .low: LooplDesign.accent; case .medium: LooplDesign.amber; case .high: .red }
+    }
+    private var borderTint: Color {
+        guard decision == nil else { return LooplDesign.accent.opacity(0.12) }
+        return riskTint.opacity(0.35)
+    }
+    private var pathLine: String? {
+        guard let s = request.url, let u = URL(string: s), request.host != nil else { return nil }
+        var p = u.path.isEmpty ? "/" : u.path
+        if let q = u.query, !q.isEmpty { p += "?" + q }
+        return p
+    }
+    private func verdict(_ d: ApprovalDecision) -> String {
+        switch d {
+        case .approve: "Approved"
+        case .approveEdited: "Approved with edits"
+        case .deny(let reason): reason.map { "Denied — \($0)" } ?? "Denied"
+        }
+    }
+    private var a11y: String {
+        if let d = decision { return "\(request.title), \(verdict(d))" }
+        return "approval needed: \(request.title), risk \(request.risk.rawValue)"
+    }
+}
+
+/// `POST` / `GET` chip, tinted by risk.
+public struct MethodBadge: View {
+    public var method: String
+    public var tint: Color
+    public init(_ method: String, tint: Color = LooplDesign.accent) { self.method = method; self.tint = tint }
+    public var body: some View {
+        Text(method).font(.caption2.monospaced().weight(.bold)).kerning(0.5)
+            .padding(.horizontal, 6).padding(.vertical, 3)
+            .background(tint.opacity(0.18), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .foregroundStyle(tint)
+            .accessibilityLabel("method \(method)")
+    }
+}
+
+/// Press feedback: a small scale + dim, interruptible (interactive spring); Reduce Motion dims only.
+struct ApprovalPressStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.97 : 1)
+            .opacity(configuration.isPressed ? 0.85 : 1)
+            .animation(LooplDesign.Motion.interactive, value: configuration.isPressed)
+    }
+}
+
+/// Edit the proposed input before approving. Each field is one line (strings)
+/// or JSON (objects/arrays/numbers); invalid JSON keeps the Approve button off.
+public struct ApprovalEditor: View {
+    public var request: ApprovalRequest
+    public var onApprove: ([String: JSONValue]) -> Void
+    @State private var fields: [(key: String, text: String)] = []
+    @State private var invalid: Set<String> = []
+    @Environment(\.dismiss) private var dismiss
+
+    public init(request: ApprovalRequest, onApprove: @escaping ([String: JSONValue]) -> Void) {
+        self.request = request; self.onApprove = onApprove
+    }
+
+    public var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    ForEach(fields.indices, id: \.self) { i in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(fields[i].key).font(.caption.weight(.semibold)).foregroundStyle(invalid.contains(fields[i].key) ? .red : .secondary)
+                            TextField(fields[i].key, text: binding(i), axis: .vertical).font(.body.monospaced()).lineLimit(1...8)
+                                .autocorrectionDisabled().noAutocapitalization()
+                        }
+                    }
+                } header: { Text(request.title) } footer: {
+                    Text(invalid.isEmpty ? "Strings are sent as typed; other values are parsed as JSON." : "Fix the JSON in \(invalid.sorted().joined(separator: ", ")).")
+                }
+            }
+            .navigationTitle("Edit request")
+            .inlineTitle()
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Approve") { onApprove(assembled()) }.font(.body.weight(.semibold)).disabled(!invalid.isEmpty)
+                }
+            }
+            .onAppear { if fields.isEmpty { fields = request.input.sorted { $0.key < $1.key }.map { ($0.key, Self.text($0.value)) } } }
+        }
+    }
+
+    private func binding(_ i: Int) -> Binding<String> {
+        Binding(get: { fields[i].text }, set: { v in
+            fields[i].text = v
+            let key = fields[i].key
+            if case .string = request.input[key] { invalid.remove(key); return }
+            if Self.parse(v) == nil { invalid.insert(key) } else { invalid.remove(key) }
+        })
+    }
+    private func assembled() -> [String: JSONValue] {
+        var out = request.input
+        for f in fields {
+            if case .string = request.input[f.key] { out[f.key] = .string(f.text) }
+            else if let v = Self.parse(f.text) { out[f.key] = v }
+        }
+        return out
+    }
+    static func text(_ v: JSONValue) -> String { if case .string(let s) = v { return s }; return v.compact }
+    static func parse(_ s: String) -> JSONValue? {
+        guard let d = s.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(JSONValue.self, from: d)
+    }
+}
+
+private extension View {
+    @ViewBuilder func inlineTitle() -> some View {
+        #if os(iOS)
+        self.navigationBarTitleDisplayMode(.inline)
+        #else
+        self
+        #endif
+    }
+    @ViewBuilder func noAutocapitalization() -> some View {
+        #if os(iOS)
+        self.textInputAutocapitalization(.never)
+        #else
+        self
+        #endif
+    }
+}

@@ -121,11 +121,17 @@ public struct AfterToolsEvent: HookEvent {
 
 /// Strands `BeforeToolCallEvent`: per tool. A hook may swap `toolUse`, replace
 /// `selectedTool`, or `cancelTool` with a message that becomes the error result.
+/// loopl adds `approval`: pre-filled from `tool.requiresApproval(for:)`; a hook
+/// sets it to `nil` to auto-approve (`ApprovalPolicy`) or sets one to demand a
+/// human decision — the agent suspends the call until `resolve(approval:)`.
 public struct BeforeToolCallEvent: HookEvent {
     public var toolUse: ToolUse
     public var selectedTool: (any Tool)?
     public var cancelTool: String? = nil
-    public init(toolUse: ToolUse, selectedTool: (any Tool)?) { self.toolUse = toolUse; self.selectedTool = selectedTool }
+    public var approval: ApprovalRequest? = nil
+    public init(toolUse: ToolUse, selectedTool: (any Tool)?, approval: ApprovalRequest? = nil) {
+        self.toolUse = toolUse; self.selectedTool = selectedTool; self.approval = approval
+    }
 }
 
 /// Strands `AfterToolCallEvent`: per tool, reversed order; `result` is mutable.

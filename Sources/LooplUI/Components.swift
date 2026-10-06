@@ -415,6 +415,8 @@ public struct AgentTranscriptView<Empty: View, Banner: View>: View {
     public var expandTools = false
     private let empty: () -> Empty
     private let banner: () -> Banner
+    /// Human-in-the-loop: called when an `ApprovalCard` is answered (see `onApproval(_:)`).
+    public var onApproval: ((ApprovalRequest, ApprovalDecision) -> Void)? = nil
     @State private var pinned = true
     @State private var lastCount = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -483,9 +485,17 @@ public struct AgentTranscriptView<Empty: View, Banner: View>: View {
         case .user(let s): UserTurn(s).padding(.top, 8)
         case .assistant(let s): StreamingTextView(s, streaming: transcript.isRunning && item.id == transcript.items.last?.id)
         case .toolUse(let c, let r): ToolRow(call: c, result: r, expanded: expandTools)
+        case .approval(let req, let d): ApprovalCard(request: req, decision: d) { onApproval?(req, $0) }
         case .reasoning(let r): Text(r).font(.caption).foregroundStyle(.secondary).italic()
         case .note(let s): Text(s).font(.caption).foregroundStyle(.tertiary)
         }
+    }
+}
+
+public extension AgentTranscriptView {
+    /// Route approval answers (`ApprovalCard`) to the agent — `agent.resolve(approval: req.id, decision)`.
+    func onApproval(_ handler: @escaping (ApprovalRequest, ApprovalDecision) -> Void) -> Self {
+        var copy = self; copy.onApproval = handler; return copy
     }
 }
 
