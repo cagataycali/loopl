@@ -709,6 +709,17 @@ public struct AgentTranscriptView<Empty: View, Banner: View>: View {
                             .transition(reduceMotion ? .opacity : .asymmetric(insertion: .move(edge: .bottom).combined(with: .opacity), removal: .opacity))
                     }
                     if showPerformance, !transcript.items.isEmpty { TokenMeter(transcript.metrics).padding(.top, -6) }
+                    // Children still running after their use_agent row returned, once the parent has settled: one chip line
+                    // each under the answer, so "something is still working" is visible without scrolling back to the card.
+                    if !transcript.isRunning, !Self.backgroundAgents(transcript).isEmpty {
+                        BackgroundAgentsStrip(runs: Self.backgroundAgents(transcript)) { r in
+                            if let row = transcript.items.first(where: { if case .agent(let x) = $0.kind { return x.info.id == r.info.id }; return false }) {
+                                withAnimation(reduceMotion ? nil : LooplDesign.Motion.value) { proxy.scrollTo(row.id, anchor: .top) }
+                            }
+                        }
+                        .padding(.top, 4)
+                        .transition(.opacity)
+                    }
                     Color.clear.frame(height: 1).id("loopl.bottom")
                 }
                 .padding(.horizontal, LooplDesign.gutter)
@@ -774,6 +785,11 @@ public struct AgentTranscriptView<Empty: View, Banner: View>: View {
         }
     }
 
+    /// Children still working after the turn they were started in settled — the strip under the transcript.
+    nonisolated public static func backgroundAgents(_ t: Transcript) -> [SubAgentRun] {
+        t.agents.filter { !$0.status.isFinished && ($0.status == .background || $0.info.background) }
+    }
+
     static func isAtBottom(_ g: ScrollGeometry) -> Bool {
         LooplDesign.isAtBottom(offset: g.contentOffset.y, content: g.contentSize.height, container: g.containerSize.height,
                                insetTop: g.contentInsets.top, insetBottom: g.contentInsets.bottom)
@@ -804,39 +820,9 @@ public struct AgentTranscriptView<Empty: View, Banner: View>: View {
             ReasoningRow(text: r, streaming: transcript.isRunning && item.id == transcript.items.last?.id)
         case .note(let s): Text(s).font(.caption).foregroundStyle(.tertiary).accessibilityIdentifier("transcript-note")
         case .agent(let run):
-            // Placeholder until AgentCard (Phase 6 lane E) lands: the child's name, status and its rows, indented.
-            SubAgentPlaceholderRow(run: run, expandTools: expandTools, onApproval: onApproval)
+            // A sub-agent's card (Phase 6): its own rows, approvals answered through the same handler (the Engine bubbles them).
+            AgentCard(run: run, expandTools: expandTools) { req, d in onApproval?(req, d) }
         }
-    }
-}
-
-/// Minimal rendering of a sub-agent: one header line + the child's own rows. Lane E replaces this with `AgentCard`.
-struct SubAgentPlaceholderRow: View {
-    let run: SubAgentRun
-    let expandTools: Bool
-    var onApproval: ((ApprovalRequest, ApprovalDecision) -> Void)?
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                Image(systemName: "person.2.circle").foregroundStyle(.secondary)
-                Text(run.info.name).font(.subheadline.weight(.medium))
-                Text("· \(run.status.rawValue)").font(.caption).foregroundStyle(.secondary)
-                if run.status == .running || run.status == .background { ProgressView().controlSize(.mini) }
-            }
-            ForEach(run.transcript.items) { item in
-                switch item.kind {
-                case .assistant(let s): StreamingTextView(s, streaming: run.transcript.isRunning && item.id == run.transcript.items.last?.id)
-                case .toolUse(let c, let r): ToolRow(call: c, result: r, expanded: expandTools)
-                case .approval(let req, let d): ApprovalCard(request: req, decision: d) { onApproval?(req, $0) }
-                case .note(let s): Text(s).font(.caption).foregroundStyle(.tertiary)
-                case .reasoning, .user, .agent: EmptyView()
-                }
-            }
-        }
-        .padding(.leading, 12)
-        .overlay(alignment: .leading) { Rectangle().fill(.quaternary).frame(width: 2) }
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("agent-card-\(run.info.id)")
     }
 }
 

@@ -32,6 +32,10 @@ Free, no sign-in, no analytics. On first launch you pick a model (loopl 0.8B · 
 
 Eleven tools — time, arithmetic, notes, `http`, and the iPhone's own: images, voice, transcription, translation, Vision, flashlight, haptics, other apps. Writes ask first. → [Tools](tools.md)
 
+## Sub-agents
+
+When the model calls `use_agent`, the row does not go dark: a **card for each child agent** opens under it — its name, one line of its instructions, the tools it was given, and the child's own stream rendered with the same rows you already know (text, tool rows, approval cards). A status chip says **running · waiting for you · background · done · failed**, with the time it has taken. A child that needs your approval shows the ordinary card *inside* its own; your answer goes to that child. Two helpers in parallel are two stacked cards. A child started in the **background** folds to one chip line (tap to open); while it still runs after the answer, the line stays under the transcript, and when it finishes the parent is woken — a quiet *[use_agent … finished]* line, then its follow-up — never a bubble you did not type. History keeps one summary line per child; the child's rows are not replayed. → [Sub-agents (SDK)](../sdk/sub-agents.md)
+
 ## Whose answer is it
 
 A conversation reopened from History is replayed into a **fresh context** — the model never sees the old token history, and the model loaded now may not be the one that wrote those answers. When they differ, a quiet line under the title says so (*Answered by Qwen3.5 2B*), and becomes *Earlier answers by …* as soon as you add a turn. Nothing is shown when the thread and the loaded model agree.
