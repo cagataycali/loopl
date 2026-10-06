@@ -41,3 +41,7 @@ Rows that would not validate are never written — the review screen is the vali
 - Removing the token (Settings › Hugging Face, or *Sign out* on the dataset step) deletes it from the Keychain.
 
 The SDK side: `ConversationExport.record(_:options:)` turns a `Thread` into one validated row (redaction in `Options`), `shard(_:options:)` batches rows into the JSONL + images + card a push commits, and `validate(_:)` lists schema problems; `HFHubClient` — see [Private repos](../sdk/models.md#private-repos) in the SDK docs. Then [train on it](train.md).
+
+---
+
+<div class="l-actions l-actions--page"><a class="l-btn l-btn--ink l-btn--tf" href="https://testflight.apple.com/join/uUNjfzW9">Get it on TestFlight</a><a class="l-link" href="index.md">The app</a></div>
