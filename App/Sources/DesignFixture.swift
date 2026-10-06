@@ -186,6 +186,27 @@ enum DesignFixture {
             engine.transcript = t
             Task { await writeFixtureRecording(to: url) }
             return
+        case "markdown":
+            // Everything the block renderer knows: heading, table, quote, rule, lists, code — the shapes small models emit.
+            t.user("Compare the three runtimes in a table, then quote the one-line rule.")
+            t.apply(.startEventLoop(cycle: 1))
+            t.apply(.text("""
+            ## Runtimes
+
+            | Runtime | Formats | Best for |
+            |---|---|---|
+            | **MLX** | 4-bit safetensors | iPhone 15 Pro and newer — Metal |
+            | **llama.cpp** | GGUF Q4_K_M | older devices, more quants |
+            | **Apple Intelligence** | built in | nothing to download |
+
+            > One rule: the model decides, the app runs the tool, the result goes back as a message.
+
+            ---
+
+            - Context and output length follow the model's recommended maximum.
+            - Tool results are rendered as rows you can open.
+            """))
+            t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("…"), metrics: EventLoopMetrics())))
         default: // streaming
             t.user("Explain what an agent loop is, in three short points, with a Swift example.")
             t.apply(.startEventLoop(cycle: 1))
