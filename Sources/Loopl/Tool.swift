@@ -19,6 +19,13 @@ public protocol Tool: Sendable {
     /// `apple_intelligence` tool makes a 3B model summarise "hey" in a loop.
     /// Default `nil` — offered to every model.
     var redundantWithRuntime: RuntimeKind? { get }
+    /// Image-producing tools implement this (and make `call(_:)` return the prose only). Default wraps `call(_:)`.
+    func callOutput(_ args: [String: JSONValue]) async throws -> ToolOutput
+    /// Image-consuming tools implement this. `images` are the pictures attached to the latest user message (most recent
+    /// last); the default ignores them and calls `callOutput`. These two are protocol REQUIREMENTS, not extension-only
+    /// methods: the agent holds `any Tool`, and an extension method on an existential binds statically to the default —
+    /// `describe_image` never saw a picture and `generate_image` never returned one until ToolsE2ETests caught it (2026-10-06).
+    func call(_ args: [String: JSONValue], images: [ImageBlock]) async throws -> ToolOutput
 }
 
 extension Tool {
