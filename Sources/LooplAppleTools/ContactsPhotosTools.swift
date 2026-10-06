@@ -83,7 +83,7 @@ struct CNContactsSource: ContactsSource {
 public struct ContactsSearchTool: AppleTool {
     public init() {}
     public let name = "contacts_search"
-    public let description = "Find a person in the user's contacts by name and return their phone numbers and email addresses. Use when the user asks for someone's number, email, or wants to call, text or email a contact (then open_app with tel:/sms:/mailto:)."
+    public let description = "Look up a person in the user's Contacts app by name: phone numbers, email addresses, company. Call it whenever the user asks for someone's phone number, email address or contact details, or wants to call, text or email a person — you do not know their contacts without it (then open_app with tel:/sms:/mailto:)."
     public let parameters: JSONValue = ToolSchema.object([
         "name": ToolSchema.string("The name, or part of it, e.g. Ali"),
         "limit": ToolSchema.number("Maximum matches (default 5)"),
