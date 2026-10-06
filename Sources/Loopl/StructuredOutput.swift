@@ -109,6 +109,9 @@ public struct StructuredOutputTool<T: Decodable & Sendable>: Tool {
         self.dateStrategy = dateStrategy
     }
 
+    /// The decoder's complaint is the repair signal — `ToolValidation` must not pre-empt it.
+    public var validatesOwnInput: Bool { true }
+
     public func call(_ args: [String: JSONValue]) async throws -> String {
         do {
             let value = try Self.decode(args, dateStrategy: dateStrategy)

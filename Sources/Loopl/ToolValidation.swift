@@ -59,7 +59,8 @@ public enum ToolValidation {
                 continue
             }
             // 3. loopl: the input against the tool's JSON schema (unknown tool → the agent explains).
-            guard let tool = byName[use.name] else { valid.append(use); continue }
+            // Tools that validate their own input (StructuredOutputTool) keep their error message.
+            guard let tool = byName[use.name], !tool.validatesOwnInput else { valid.append(use); continue }
             switch repair(input: use.input, schema: tool.parameters) {
             case .ok(let input):
                 var fixed = use

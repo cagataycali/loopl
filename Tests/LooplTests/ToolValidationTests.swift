@@ -178,6 +178,24 @@ final class ToolValidationTests: XCTestCase {
         let calls = await ran.value
         XCTAssertEqual(calls, 0, "a tool must not see input its schema refuses")
     }
+
+    /// A tool that validates its own input (`StructuredOutputTool`) is NOT pre-checked:
+    /// its decoder's complaint is the repair signal the model must read.
+    func testSelfValidatingToolsSkipTheSchemaPreCheck() throws {
+        struct Reading: Decodable, Sendable { var city: String; var celsius: Int }
+        let structured = try StructuredOutputTool<Reading>(Reading.self)
+        XCTAssertTrue(structured.validatesOwnInput)
+        let use = ToolUse(toolUseId: "s1", name: structured.name, input: ["city": .string("Istanbul")]) // celsius missing
+        let outcome = ToolValidation.validateAndPrepare(toolUses: [use], tools: [structured])
+        XCTAssertEqual(outcome.valid.map { $0.toolUseId }, ["s1"], "the call must reach the tool untouched")
+        XCTAssertTrue(outcome.results.isEmpty)
+        // …while an ordinary tool with the same schema is still refused before it runs.
+        let plain = ClosureTool(name: "plain", description: "", parameters: structured.parameters) { _ in "ran" }
+        XCTAssertFalse(plain.validatesOwnInput)
+        let refused = ToolValidation.validateAndPrepare(toolUses: [ToolUse(toolUseId: "p1", name: "plain", input: ["city": .string("Istanbul")])], tools: [plain])
+        XCTAssertTrue(refused.valid.isEmpty)
+        XCTAssertEqual(refused.results.count, 1)
+    }
 }
 
 /// Minimal async-safe counter for the tests above.

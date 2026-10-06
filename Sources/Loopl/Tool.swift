@@ -9,6 +9,11 @@ public protocol Tool: Sendable {
     /// Human-in-the-loop: return a request when this input should be shown to a
     /// person before running (default `nil` — see `Approval.swift`).
     func requiresApproval(for input: [String: JSONValue]) -> ApprovalRequest?
+    /// `true` when the tool decodes and complains about its own input (e.g.
+    /// `StructuredOutputTool`, whose error result IS the repair signal). The
+    /// agent's schema pre-check (`ToolValidation`) then leaves the input alone.
+    /// Default `false`.
+    var validatesOwnInput: Bool { get }
 }
 
 public struct ToolError: LocalizedError, Sendable {
@@ -33,6 +38,7 @@ public struct ToolSpec: Sendable, Hashable, Codable {
 }
 
 extension Tool {
+    public var validatesOwnInput: Bool { false }
     public var toolSpec: ToolSpec { ToolSpec(name: name, description: description, inputSchema: parameters) }
     /// OpenAI-style function spec (0.1 name, kept).
     public var spec: JSONValue { toolSpec.openAIFunction }
