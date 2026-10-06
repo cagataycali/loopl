@@ -95,6 +95,8 @@ public enum StorageError: LocalizedError, Equatable, Sendable {
     case bookmarkInvalid(name: String)
     /// Permission to the folder could not be obtained (`startAccessingSecurityScopedResource` false).
     case accessDenied(name: String)
+    /// The folder is reachable but loopl cannot create files in it (`createFile` false / read-only).
+    case notWritable(volume: String, path: String, reason: String)
     case cancelled
 
     public var errorDescription: String? {
@@ -105,6 +107,7 @@ public enum StorageError: LocalizedError, Equatable, Sendable {
         case .verifyFailed(let file, let reason): "\(file) did not copy correctly (\(reason)) — nothing was deleted"
         case .bookmarkInvalid(let name): "loopl lost access to the folder on \(name) — choose it again in Settings › Storage"
         case .accessDenied(let name): "iOS refused access to the folder on \(name) — choose it again in Settings › Storage"
+        case .notWritable(let volume, let path, let reason): "can't write to \(path) on \(volume): \(reason)"
         case .cancelled: "move cancelled — the original is untouched"
         }
     }

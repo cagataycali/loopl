@@ -15,12 +15,17 @@ public final class ModelStore {
         case failed(String)
         /// The weights are on a drive that is not plugged in — still ours, not usable right now.
         case needsDrive(String)
+        /// The drive is plugged in but loopl cannot read its folder (grant refused) — re-grant, never re-download.
+        case driveUnreadable(String, reason: String)
         /// Being copied between the iPhone and a drive (`to` = the destination's name).
         case moving(done: Int64, total: Int64, to: String)
         public var isDownloading: Bool { if case .downloading = self { return true }; return false }
         public var isDownloaded: Bool { if case .downloaded = self { return true }; return false }
         public var isMoving: Bool { if case .moving = self { return true }; return false }
         public var needsDrive: String? { if case .needsDrive(let n) = self { return n }; return nil }
+        public var unreadableDrive: String? { if case .driveUnreadable(let n, _) = self { return n }; return nil }
+        /// On a drive we cannot use right now (away or unreadable): dim the row, never auto-download.
+        public var driveBlocked: Bool { needsDrive != nil || unreadableDrive != nil }
     }
 
     /// Drives the user granted + where every model lives (storage.json).
@@ -119,9 +124,28 @@ public final class ModelStore {
         for spec in catalog.models where spec.isDownloadable {
             if tasks[spec.id] != nil { continue }
             if let drive = storage.missingDrive(for: spec) { states[spec.id] = .needsDrive(drive); continue }
+            if let u = storage.unreadableDrive(for: spec) { states[spec.id] = .driveUnreadable(u.name, reason: u.reason); continue }
             guard let dir = storage.directory(for: spec) else { states[spec.id] = .notDownloaded; continue }
             let external = storage.location(of: spec.id).isExternal
-            let files = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.fileSizeKey])) ?? []
+            var files: [URL]
+            do { files = try FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.fileSizeKey]) } catch {
+                let ns = error as NSError
+                if external, ns.domain == NSCocoaErrorDomain, ns.code == NSFileReadNoSuchFileError {
+                    files = []                                   // recorded external, directory gone → honestly not downloaded
+                } else if external {
+                    // The volume listed but this directory did not: a read failure, not an empty folder.
+                    storage.diagnostics.log("\(spec.id): listing \(dir.lastPathComponent) failed: \(ns.domain) \(ns.code) \(ns.localizedDescription)")
+                    states[spec.id] = .driveUnreadable(locationName(spec), reason: ns.localizedDescription); continue
+                } else { files = [] }
+            }
+            // `.part` next to its finished file = a leftover of a download that ran against a complete model
+            // (the failed relaunch created `config.json.part` beside a whole `config.json`). Drop, don't re-download.
+            let orphans = ExternalStorage.orphanParts(in: files.map(\.lastPathComponent))
+            if !orphans.isEmpty {
+                for o in orphans { try? FileManager.default.removeItem(at: dir.appendingPathComponent(o)) }
+                files.removeAll { orphans.contains($0.lastPathComponent) }
+                storage.diagnostics.log("\(spec.id): removed orphan sidecars \(orphans)")
+            }
             let bytes = files.reduce(Int64(0)) { $0 + Int64((try? $1.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) }
             if !external, counted.insert(dir).inserted { used += bytes }
             let names = Set(files.map(\.lastPathComponent))
@@ -154,13 +178,18 @@ public final class ModelStore {
         let resuming: Bool = if case .paused = states[spec.id] ?? .notDownloaded { true } else { false }
         let chosen: String? = resuming ? storage.location(of: spec.id).volumeId : (volume ?? storage.suggestedTarget(need: spec.sizeBytes))
         guard let target = storage.target(chosen, for: spec) else {
-            states[spec.id] = .failed("\(storage.name(of: chosen)) is not plugged in"); return
+            let v = chosen.flatMap { storage.volume($0) }
+            states[spec.id] = .failed(v?.connected == true ? "\(storage.name(of: chosen)) is connected but loopl can't read it — re-grant its folder in Settings › Storage"
+                                                           : "\(storage.name(of: chosen)) is not plugged in"); return
         }
         do {
-            try FileManager.default.createDirectory(at: target.url, withIntermediateDirectories: true)
+            // Prove the target takes a file BEFORE touching storage.json or the network (a refused grant makes
+            // `createFile` on the drive return false — the owner saw that as "config.json.part doesn't exist").
+            try ExternalStorage.ensureWritable(target.url, volumeName: storage.name(of: chosen))
             let have = ExternalStorage.size(of: target.url)
             try ExternalStorage.ensureSpace(need: max(0, spec.sizeBytes - have), at: target.url, volumeName: storage.name(of: chosen))
         } catch {
+            storage.diagnostics.log("\(spec.id): download refused — \(error.localizedDescription)")
             states[spec.id] = .failed(error.localizedDescription); return
         }
         storage.set(location: target.location, for: spec.id)

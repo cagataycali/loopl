@@ -7,6 +7,7 @@ struct LooplApp: App {
     @State private var settings = AppSettings()
     @State private var store = ModelStore()
     @State private var engine: Engine?
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
@@ -26,6 +27,11 @@ struct LooplApp: App {
                 }
             }
             .tint(LooplDesign.accent)
+            // App-wide (not only on the Storage screen): a drive plugged in while loopl was in the background —
+            // or one iOS mounted late — is re-resolved the moment the app is active again.
+            .onChange(of: scenePhase) { _, p in
+                if p == .active, engine != nil { store.refresh(); store.storage.retryLateMounts() }
+            }
         }
     }
 }

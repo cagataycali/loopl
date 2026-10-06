@@ -150,6 +150,7 @@ enum SelfTest {
                     case .failed(let msg): throw ModelError("download failed: \(msg)")
                     case .paused, .notDownloaded: throw ModelError("download stopped unexpectedly")
                     case .needsDrive(let d): throw ModelError("\(spec.name) is on \(d), which is not plugged in")
+                    case .driveUnreadable(let d, let r): throw ModelError("\(spec.name) is on \(d), which cannot be read: \(r)")
                     case .moving: continue
                     }
                     break

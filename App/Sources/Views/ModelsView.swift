@@ -22,7 +22,7 @@ struct ModelsView: View {
         let available = store.catalog.models.filter { $0.runtime != .appleFM || AppleFoundationModel.availability().available }
         func onDevice(_ s: ModelSpec) -> Bool {
             guard let st = store.states[s.id] else { return !s.isDownloadable || engine.loadedModel?.id == s.id }
-            return !s.isDownloadable || st.isDownloaded || st.isMoving || st.needsDrive != nil || engine.loadedModel?.id == s.id
+            return !s.isDownloadable || st.isDownloaded || st.isMoving || st.driveBlocked || engine.loadedModel?.id == s.id
         }
         let here = available.filter(onDevice).sorted { a, b in (engine.loadedModel?.id == a.id) && engine.loadedModel?.id != b.id }
         let rest = available.filter { !onDevice($0) }
@@ -111,7 +111,7 @@ struct ModelsView: View {
         let busy = engine.readiness.spec?.id == spec.id && engine.readiness.isBusy
         VStack(alignment: .leading, spacing: 6) {
             Button {
-                guard !busy, !isLoaded, !engine.isGenerating, state.needsDrive == nil, !state.isMoving else { return }
+                guard !busy, !isLoaded, !engine.isGenerating, !state.driveBlocked, !state.isMoving else { return }
                 LooplDesign.haptic(1)
                 Task { await engine.select(spec) }
             } label: {
@@ -121,8 +121,8 @@ struct ModelsView: View {
                 }
             }
             .buttonStyle(.plain)
-            .opacity(state.needsDrive == nil ? 1 : 0.55)
-            .accessibilityHint(state.needsDrive.map { "on \($0), not connected" } ?? (isLoaded ? "in use" : "switches to this model"))
+            .opacity(state.driveBlocked ? 0.55 : 1)
+            .accessibilityHint(state.needsDrive.map { "on \($0), not connected" } ?? state.unreadableDrive.map { "on \($0), which can't be read" } ?? (isLoaded ? "in use" : "switches to this model"))
             if state.isDownloaded, store.storage.location(of: spec.id).isExternal {
                 Label("On \(store.locationName(spec))", systemImage: "externaldrive").font(.caption).foregroundStyle(.secondary)
                     .accessibilityIdentifier("models-location-\(spec.id)")
@@ -141,6 +141,10 @@ struct ModelsView: View {
             case .needsDrive(let drive):
                 Label("Needs \(drive) — plug it in to use", systemImage: "externaldrive.badge.xmark").font(.caption).foregroundStyle(.orange)
                     .accessibilityIdentifier("models-needs-drive-\(spec.id)")
+            case .driveUnreadable(let drive, _):
+                Label("\(drive) is connected but loopl can't read it — re-grant its folder in Settings › Storage", systemImage: "externaldrive.badge.exclamationmark")
+                    .font(.caption).foregroundStyle(.orange)
+                    .accessibilityIdentifier("models-drive-unreadable-\(spec.id)")
             case .moving(let done, let total, let to):
                 HStack(spacing: 10) {
                     ProgressView(value: total > 0 ? Double(done) / Double(total) : 0).tint(LooplDesign.accent)
@@ -158,7 +162,7 @@ struct ModelsView: View {
         }
         .padding(.vertical, 2)
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-            if state.needsDrive != nil || state.isMoving {
+            if state.driveBlocked || state.isMoving {
                 // Nothing on the phone to delete; a move in flight owns the files.
             } else if spec.isFromHub {
                 Button(role: .destructive) { confirmDelete = spec } label: { Label("Remove", systemImage: "trash") }
@@ -181,7 +185,7 @@ struct ModelsView: View {
                     ForEach(targets) { v in Button("Move to \(v.name)", systemImage: "externaldrive") { store.move(spec, to: v.id) } }
                 }
             }
-            if state.needsDrive != nil || state.isMoving { /* not deletable from here */ }
+            if state.driveBlocked || state.isMoving { /* not deletable from here */ }
             else if spec.isFromHub { Button("Remove from loopl", systemImage: "trash", role: .destructive) { confirmDelete = spec } }
             else if spec.isDownloadable, state.isDownloaded { Button("Delete from device", systemImage: "trash", role: .destructive) { confirmDelete = spec } }
         }
