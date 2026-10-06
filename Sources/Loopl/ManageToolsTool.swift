@@ -17,7 +17,10 @@ public struct ManageToolsTool: Tool {
     public static let toolName = "manage_tools"
     public var name: String { Self.toolName }
     public var description: String {
-        "Add or remove your own tools. If you need a tool you do not have, call this with action \"list\" to see every available tool, then action \"mount\" with its name — it is usable on your very next step. \"unmount\" removes tools you no longer need. \"describe\" shows one tool's parameters. \"create\" loads a new tool from source code you write; \"remove\" deletes a created tool."
+        // v2 (measured): lead with the trigger + the exact call. v1 ("Add or remove your own tools…list first") scored 0/12
+        // on loopl-0.8b — the model calls the missing tool by name and gives up on "Unknown tool"; the unknown-tool error
+        // now points here, and this text says what to send.
+        "Mount a tool you need but do not have. If a tool is missing from your tool list — for example http, calculator, current_time, remember, recall or a device tool — call manage_tools with {\"action\": \"mount\", \"names\": [\"<tool name>\"]}; it is usable on your very next step, so call it right after. {\"action\": \"list\"} shows every tool you can mount. unmount removes tools you no longer need; describe shows one tool's parameters; create / remove load or delete a tool from source code."
     }
     public var parameters: JSONValue {
         ToolSchema.object([

@@ -110,7 +110,31 @@ final class ToolRegistryTests: XCTestCase {
         let specs = await model.seenToolSpecs.map { $0.map(\.name) }
         XCTAssertEqual(specs[0], ["calculator", "current_time", "manage_tools"])
         XCTAssertEqual(specs[1], ["current_time", "manage_tools"])
-        XCTAssertTrue(results[1].isError); XCTAssertTrue(results[1].content.contains("Unknown tool: calculator"), results[1].content)
+        XCTAssertTrue(results[1].isError)
+        // The repair path (measured on loopl-0.8b: the model calls the missing tool by name first): a KNOWN, unmounted tool
+        // is told exactly how to mount itself, not just "Unknown tool".
+        XCTAssertEqual(results[1].content, "calculator exists but is not mounted. Call manage_tools with {\"action\": \"mount\", \"names\": [\"calculator\"]} first, then call calculator again.")
+    }
+
+    func testUnknownToolMessagesWithRegistry() async throws {
+        let registry = ToolRegistry(catalog: [CalculatorTool(), HttpTool()], mounted: ["calculator"], selfManaging: true)
+        await registry.register(ClosureTool(name: "flashlight", description: "torch") { _ in "" }, source: .app, mounted: false, available: false, reason: "No torch on this device.")
+        let model = FakeModel(turns: [.toolUse([use("http", id: "a"), use("flashlight", id: "b"), use("teleport", id: "c")]), .text("ok")])
+        let agent = Agent(model: model, retryStrategy: nil, registry: registry)
+        var results: [ToolResult] = []
+        for try await e in agent.stream("x") { if case .toolResult(let r) = e { results.append(r) } }
+        let by = Dictionary(uniqueKeysWithValues: results.map { ($0.toolUseId, $0.content) })
+        XCTAssertEqual(by["a"], "http exists but is not mounted. Call manage_tools with {\"action\": \"mount\", \"names\": [\"http\"]} first, then call http again.")
+        XCTAssertEqual(by["b"], "flashlight cannot run on this device: No torch on this device. Available tools: calculator, manage_tools")
+        XCTAssertEqual(by["c"], "Unknown tool: teleport. Available tools: calculator, manage_tools. Tools you can mount with manage_tools: http")
+    }
+
+    func testUnknownToolMessageWithoutRegistryIsUnchanged() async throws {
+        let model = FakeModel(turns: [.toolUse([use("http", id: "a")]), .text("ok")])
+        let agent = Agent(model: model, tools: [CalculatorTool()], retryStrategy: nil)
+        var results: [ToolResult] = []
+        for try await e in agent.stream("x") { if case .toolResult(let r) = e { results.append(r) } }
+        XCTAssertEqual(results.first?.content, "Unknown tool: http. Available tools: calculator")
     }
 
     func testHostMountBetweenTurnsAndSetToolsMirrorsIntoRegistry() async throws {

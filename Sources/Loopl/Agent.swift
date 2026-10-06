@@ -723,12 +723,33 @@ public actor Agent {
                 }
             }
         } else {
-            result = .error(toolUse, "Unknown tool: \(toolUse.name). Available tools: \(offeredTools.map(\.name).sorted().joined(separator: ", "))",
-                            durationMs: Date().timeIntervalSince(t0) * 1000)
+            result = .error(toolUse, await unknownToolMessage(toolUse.name), durationMs: Date().timeIntervalSince(t0) * 1000)
         }
         var after = AfterToolCallEvent(toolUse: toolUse, selectedTool: before.selectedTool, result: result, error: thrown)
         after = (try? await hooks.invoke(after)) ?? after
         return after.result
+    }
+
+    /// The result for a call to a tool that is not offered. With a registry (Phase 6) the message is the repair path:
+    /// a KNOWN but unmounted tool says exactly how to mount it, and a wrong name lists what can be mounted — measured
+    /// on loopl-0.8b (ManageToolsMeasurement): the model calls the tool it wants by name first, so this error is where
+    /// it learns about `manage_tools`.
+    func unknownToolMessage(_ name: String) async -> String {
+        let offered = offeredTools.map(\.name).sorted().joined(separator: ", ")
+        guard let registry else { return "Unknown tool: \(name). Available tools: \(offered)" }
+        let listing = await registry.list()
+        let canManage = listing.contains { $0.name == ManageToolsTool.toolName && $0.mounted }
+        let mountable = listing.filter { !$0.mounted && $0.available }.map(\.name)
+        if canManage, mountable.contains(name) {
+            return "\(name) exists but is not mounted. Call \(ManageToolsTool.toolName) with {\"action\": \"mount\", \"names\": [\"\(name)\"]} first, then call \(name) again."
+        }
+        if let e = listing.first(where: { $0.name == name }), !e.available {
+            let reason = e.reason.hasSuffix(".") ? String(e.reason.dropLast()) : e.reason
+            return "\(name) cannot run on this device: \(reason). Available tools: \(offered)"
+        }
+        var msg = "Unknown tool: \(name). Available tools: \(offered)"
+        if canManage, !mountable.isEmpty { msg += ". Tools you can mount with \(ManageToolsTool.toolName): \(mountable.joined(separator: ", "))" }
+        return msg
     }
 
     // MARK: `_estimate_input_tokens` (usage baseline, not a re-count)
