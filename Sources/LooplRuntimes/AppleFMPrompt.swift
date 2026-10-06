@@ -30,6 +30,7 @@ public enum AppleFMPrompt {
         case answer
     }
 
+    /// The instructions and prompt sent to Apple's model for one turn.
     public struct Built: Sendable {
         public var instructions: String
         public var prompt: String

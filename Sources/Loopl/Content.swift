@@ -31,6 +31,7 @@ public typealias ToolCall = ToolUse
 
 /// `ToolResult`: what a tool produced for one `ToolUse`.
 public struct ToolResult: Sendable, Hashable, Codable, Identifiable {
+    /// Whether the tool ran; `.error` results reach the model prefixed `ERROR: `.
     public enum Status: String, Sendable, Codable, Hashable { case success, error }
     public var toolUseId: String
     public var name: String

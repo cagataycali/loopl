@@ -1,5 +1,6 @@
 import Foundation
 
+/// The three engines: MLX, llama.cpp (GGUF) and Apple Foundation Models.
 public enum RuntimeKind: String, Sendable, Codable, CaseIterable, Identifiable {
     case mlx        // ml-explore/mlx-swift-lm, Metal, real device only
     case appleFM    // Apple Foundation Models (iOS 26+, Apple Intelligence)
@@ -111,6 +112,7 @@ public extension Model {
     var contextWindow: Int { min(params.contextLength, Self.contextCeiling) }
 }
 
+/// Whether an engine can run here, and why not when it can't.
 public struct RuntimeAvailability: Sendable, Hashable {
     public var available: Bool
     public var reason: String

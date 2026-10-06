@@ -27,6 +27,7 @@ extension Tool {
     public func isOffered(to kind: RuntimeKind) -> Bool { redundantWithRuntime != kind }
 }
 
+/// Throw from a tool to hand the model a message it can act on — the call becomes an `ERROR:` result.
 public struct ToolError: LocalizedError, Sendable {
     public let message: String
     public init(_ message: String) { self.message = message }

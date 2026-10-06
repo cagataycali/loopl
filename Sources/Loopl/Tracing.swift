@@ -14,7 +14,9 @@ import Foundation
 /// One span, shaped like an OpenTelemetry span (ids are 32/16 hex characters,
 /// so a host can forward them to a real collector unchanged).
 public struct Span: Sendable, Hashable, Codable, Identifiable {
+    /// OpenTelemetry span kind: `client` for model calls, `internal` for the rest.
     public enum Kind: String, Sendable, Codable, Hashable { case `internal`, client }
+    /// OpenTelemetry span status.
     public enum Status: String, Sendable, Codable, Hashable { case unset, ok, error }
 
     public var id: String
@@ -91,6 +93,7 @@ public enum SpanAttribute {
 /// `execute_tool` child per tool (concurrent tools are matched by `toolUseId`,
 /// so parallel calls nest correctly).
 public final class Tracer: HookProvider, @unchecked Sendable {
+    /// What a tracer records and how many spans it keeps.
     public struct Options: Sendable {
         /// Put prompts, answers, tool arguments and tool results into span
         /// attributes. Off by default: a span is diagnostics, not a transcript.

@@ -3,6 +3,7 @@ import Foundation
 /// A UI-ready view of the conversation, built by folding `AgentEvent`s.
 /// Pure (no SwiftUI) so it is unit-testable and shared by every front end.
 public struct TranscriptItem: Identifiable, Sendable, Hashable {
+    /// What a row of the transcript shows.
     public enum Kind: Sendable, Hashable {
         case user(String)
         case assistant(String)
@@ -19,6 +20,7 @@ public struct TranscriptItem: Identifiable, Sendable, Hashable {
     public init(id: UUID = UUID(), kind: Kind, images: [ImageBlock] = []) { self.id = id; self.kind = kind; self.images = images }
 }
 
+/// The conversation as a UI renders it: rows built from agent events, plus metrics.
 public struct Transcript: Sendable, Hashable {
     public var items: [TranscriptItem] = []
     public var metrics = Metrics()

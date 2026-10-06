@@ -22,6 +22,7 @@ public struct HubCatalog: Sendable {
 
     // MARK: - Types
 
+    /// Which runnable format to search for: MLX safetensors or GGUF.
     public enum Kind: String, Sendable, CaseIterable, Identifiable, Codable {
         case mlx, gguf
         public var id: String { rawValue }
@@ -65,6 +66,7 @@ public struct HubCatalog: Sendable {
         public var isVision: Bool { HubCatalog.isVision(repo: id, pipeline: pipeline, modelType: modelType, files: files) }
     }
 
+    /// A file of a search hit, with its size.
     public struct File: Sendable, Hashable, Codable {
         public var path: String
         public var size: Int64
@@ -79,6 +81,7 @@ public struct HubCatalog: Sendable {
         }
     }
 
+    /// The parts of a repo's `config.json` loopl reads: architecture, context, quantisation, vision.
     public struct Config: Sendable, Hashable, Codable {
         public var modelType: String?
         public var architectures: [String]
@@ -134,6 +137,7 @@ public struct HubCatalog: Sendable {
         }
     }
 
+    /// Why a repo could not be searched or resolved into a `ModelSpec`.
     public enum HubError: LocalizedError, Equatable {
         case offline, http(Int, String), noWeights(String), badJSON(String), visionGGUF(String)
         /// 401/403 with NO token: private or gated — a Hugging Face token would help.
@@ -176,6 +180,7 @@ public struct HubCatalog: Sendable {
 
     // MARK: - Family
 
+    /// The tool-call grammar a repo probably speaks, and whether loopl has proven it on-device.
     public struct FamilyGuess: Sendable, Hashable {
         public var family: ToolFamily
         /// `true` when loopl has run this family's tool-call grammar on-device (curated catalog rows);

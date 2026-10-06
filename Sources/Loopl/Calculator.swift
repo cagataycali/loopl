@@ -5,6 +5,7 @@ import Foundation
 /// dynamic dispatch — only numbers, + - * / % ^, parentheses, a short
 /// whitelist of functions and two constants.
 public struct Calculator: Sendable {
+    /// Why an expression could not be evaluated; the message goes back to the model.
     public enum CalcError: LocalizedError, Equatable {
         case unexpected(String), unknownFunction(String), unknownIdentifier(String), divisionByZero, tooLong
         public var errorDescription: String? {

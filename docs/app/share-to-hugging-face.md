@@ -40,4 +40,4 @@ Rows that would not validate are never written — the review screen is the vali
 - Redaction runs on the device before anything is encoded; the preview shows the redacted bytes.
 - Removing the token (Settings › Hugging Face, or *Sign out* on the dataset step) deletes it from the Keychain.
 
-The SDK side is `ConversationExport` + `HFHubClient` — see [Private repos](../sdk/models.md#private-repos) in the SDK docs. Then [train on it](train.md).
+The SDK side: `ConversationExport.record(_:options:)` turns a `Thread` into one validated row (redaction in `Options`), `shard(_:options:)` batches rows into the JSONL + images + card a push commits, and `validate(_:)` lists schema problems; `HFHubClient` — see [Private repos](../sdk/models.md#private-repos) in the SDK docs. Then [train on it](train.md).

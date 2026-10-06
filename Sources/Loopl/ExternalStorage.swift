@@ -84,6 +84,7 @@ public struct StorageManifest: Sendable, Hashable, Codable {
 
 // MARK: - Errors
 
+/// Why a download or move to a volume was refused or failed.
 public enum StorageError: LocalizedError, Equatable, Sendable {
     /// Not enough room on the target volume for `need` bytes (after headroom).
     case notEnoughSpace(need: Int64, free: Int64, volume: String)

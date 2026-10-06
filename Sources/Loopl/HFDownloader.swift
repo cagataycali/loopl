@@ -17,6 +17,7 @@ public struct HFDownloader: Sendable {
     public var token: HFTokenProvider?
     public init(token: HFTokenProvider? = nil) { self.token = token }
 
+    /// One file in a Hub repo tree: path, size, git blob id and LFS pointer.
     public struct RemoteFile: Sendable, Hashable, Decodable {
         public var path: String
         public var size: Int64
@@ -26,6 +27,7 @@ public struct HFDownloader: Sendable {
         public var oid: String?
         /// Present for LFS-stored files (weights, and tokenizer.json above ~10 MB): `oid` is the content's SHA-256.
         public var lfs: LFS?
+        /// The LFS pointer of a large file: its SHA-256 and size.
         public struct LFS: Sendable, Hashable, Decodable {
             public var oid: String
             public var size: Int64?
@@ -43,6 +45,7 @@ public struct HFDownloader: Sendable {
         }
     }
 
+    /// Why a download failed: offline, an HTTP status, or the file system.
     public enum DLError: LocalizedError, Equatable {
         case offline, http(Int, String), io(String)
         /// 401/403 with NO token: the repo is private or gated — a token would help.

@@ -12,6 +12,7 @@ public protocol HFTransport: Sendable {
     func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse)
 }
 
+/// The default `HFTransport`: URLSession, nothing else.
 public struct HFURLSessionTransport: HFTransport {
     public init() {}
     public func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
@@ -24,6 +25,7 @@ public struct HFURLSessionTransport: HFTransport {
 
 // MARK: - Errors
 
+/// Errors from the Hub API, phrased for the person who has to fix them.
 public enum HFHubError: LocalizedError, Equatable, Sendable {
     case offline
     case noToken
@@ -65,6 +67,7 @@ public struct HFHubClient: Sendable {
         self.token = token; self.host = host; self.transport = transport
     }
 
+    /// Model, dataset or space — the three kinds of Hub repository.
     public enum RepoType: String, Sendable, Codable, CaseIterable {
         case model, dataset, space
         /// Path segment used by the Hub API (`/api/models/...`, `/api/datasets/...`, `/api/spaces/...`).
@@ -75,6 +78,7 @@ public struct HFHubClient: Sendable {
 
     // MARK: Who am I
 
+    /// Who a token belongs to and what it may do (`/api/whoami-v2`).
     public struct WhoAmI: Sendable, Hashable, Decodable {
         public var name: String
         public var fullname: String?
@@ -145,6 +149,7 @@ public struct HFHubClient: Sendable {
 
     // MARK: Models by author
 
+    /// A model repo as the Hub lists it: id, privacy, tags, pipeline.
     public struct ModelSummary: Sendable, Hashable, Decodable, Identifiable {
         public var id: String
         public var isPrivate: Bool
@@ -216,6 +221,7 @@ public struct HFHubClient: Sendable {
 
     // MARK: Repos
 
+    /// The repository `createRepo` made: its URL and `owner/name`.
     public struct CreatedRepo: Sendable, Hashable, Decodable {
         public var url: String
         public var name: String       // "owner/name"
@@ -237,6 +243,7 @@ public struct HFHubClient: Sendable {
         return try Self.parseCreatedRepo(data)
     }
 
+    /// One entry of a repo tree: a file or a directory.
     public struct TreeEntry: Sendable, Hashable, Decodable {
         public var path: String
         public var type: String     // "file" | "directory"
@@ -276,6 +283,7 @@ public struct HFHubClient: Sendable {
         public init(path: String, text: String) { self.path = path; self.data = Data(text.utf8) }
     }
 
+    /// The commit a push produced.
     public struct CommitResult: Sendable, Hashable, Decodable {
         public var commitOid: String
         public var commitUrl: String
@@ -340,12 +348,15 @@ public struct HFHubClient: Sendable {
         }
     }
 
+    /// A Hugging Face Job: its id, stage and timings.
     public struct Job: Sendable, Hashable, Decodable, Identifiable {
+        /// Where a job is: PENDING, RUNNING, COMPLETED, ERROR, CANCELED or DELETED.
         public struct Status: Sendable, Hashable, Decodable {
             public var stage: String            // PENDING | RUNNING | COMPLETED | ERROR | CANCELED | DELETED
             public var message: String?
             public var failureCount: Int?
         }
+        /// Seconds spent waiting for a machine, running, and in total.
         public struct Durations: Sendable, Hashable, Decodable { public var schedulingSecs: Int?; public var runningSecs: Int?; public var totalSecs: Int? }
         public var id: String
         public var createdAt: String?
@@ -416,6 +427,7 @@ public struct HFHubClient: Sendable {
         _ = try await send(post("/api/jobs/\(namespace)/\(id)/cancel", body: Data(), contentType: "application/json"), requiresToken: true)
     }
 
+    /// One line of a job's log stream.
     public struct LogLine: Sendable, Hashable { public var text: String; public var timestamp: String? }
 
     /// The logs endpoint streams server-sent events: `data: {"data": "...", "timestamp": "..."}` per line.
@@ -501,6 +513,7 @@ public protocol HFTokenStore: Sendable {
     func write(_ token: String?) throws
 }
 
+/// An `HFTokenStore` that forgets on exit — for tests and previews.
 public final class HFMemoryTokenStore: HFTokenStore, @unchecked Sendable {
     private let lock = NSLock()
     private var value: String?
