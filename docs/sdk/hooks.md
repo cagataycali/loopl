@@ -130,7 +130,7 @@ func drive(_ agent: Agent, _ prompt: String, into transcript: inout Transcript) 
 
 "Hold a message and edit it" is a transcript operation, not an event-loop one. `truncated(before:)` /
 `truncated(through:)` cut the visible thread, `userTurn(before:)` finds the user turn an answer belongs to
-(Retry), and `messages` rebuilds the Strands-shaped history from what is kept — then a **fresh** `Agent` on that
+(Retry), and `messages` rebuilds the agent history from what is kept — then a **fresh** `Agent` on that
 history streams the edited turn like any other, tools and approvals included.
 
 ```swift
