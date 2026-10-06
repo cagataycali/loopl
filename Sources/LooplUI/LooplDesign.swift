@@ -33,6 +33,13 @@ public enum LooplDesign {
 
     /// Horizontal padding of the document column (brief: 20 pt).
     public static let gutter: CGFloat = 20
+    /// Round control (composer attach / mic / send, recording bar buttons): 40 pt at the default text size, scaled
+    /// with `.callout`, never past `controlSideMax` — three of them at 56 pt left an SE composer two words wide.
+    public static let controlSide: CGFloat = 40
+    public static let controlSideMax: CGFloat = 44
+    /// Fill of a round control that sits on bar material. `secondarySystemBackground` was the SAME tint as `.bar`
+    /// in light mode, so the attach / mic circles vanished and the "+" read as a bare glyph (UX audit, 16 Pro).
+    public static let controlFill = Color(.secondarySystemFill)
     /// The widest the conversation column (and the composer) gets, on iPad / Mac / landscape: about 75 characters
     /// of 17 pt body per line. Narrower windows are unaffected (the column simply fills them).
     public static let readingWidth: CGFloat = 680
