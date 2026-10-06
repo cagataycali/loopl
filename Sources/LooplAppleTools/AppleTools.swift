@@ -59,7 +59,7 @@ public enum AppleTools {
          FlashlightTool(), VibrateTool(), OpenAppTool(),
          ClipboardReadTool(), ClipboardWriteTool(),   // measured 2026-10-06: two tools beat one `action` tool on the 0.8B (ClipboardShapeMeasurement)
          CalendarEventsTool(), CalendarCreateTool(), RemindersDueTool(), RemindersCreateTool(),   // off by default
-         LocationTool()]                                                                            // off by default
+         LocationTool(), ContactsSearchTool(), PhotosRecentTool()]                                  // off by default
     }
     public static var names: [String] { all.map(\.name) }
     /// Names switched on by default (`defaultOn`) — the everyday set.

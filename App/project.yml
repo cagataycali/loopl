@@ -74,6 +74,9 @@ targets:
         NSRemindersFullAccessUsageDescription: Let the model read your reminders and add ones you approve. Nothing leaves this device.
         # location tool (off by default): city-level by default, exact only when the model asks and you allow it.
         NSLocationWhenInUseUsageDescription: Tell the model where you are when it asks — your city by default, exact position only when you allow it. Nothing leaves this device.
+        # contacts_search (off by default): read-only name lookup. photos_recent (off by default): Selected Photos is enough.
+        NSContactsUsageDescription: Let the model look up a name in your contacts when you ask. Nothing is changed or sent anywhere.
+        NSPhotoLibraryUsageDescription: Let the model see your newest photos when you ask — Selected Photos is enough. Nothing leaves this device.
         # open_app tool: schemes canOpenURL may answer for (UIApplication.open reports truthfully for any scheme).
         LSApplicationQueriesSchemes:
         - shortcuts
