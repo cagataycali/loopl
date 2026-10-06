@@ -17,7 +17,7 @@ hide:
 <h1 class="l-hero__title">An agent that lives on your phone<span>.</span></h1>
 <p class="l-hero__lead">loopl runs <b>the model, the loop and the tools</b> on the device. It talks, uses the phone, asks before it acts — and works with the network off.</p>
 <div class="l-actions">
-<a class="l-btn l-btn--ink l-btn--tf" href="https://testflight.apple.com/join/uUNjfzW9" id="testflight"><svg class="l-mark" viewBox="0 0 1024 1024" aria-hidden="true"><path class="l-mark__loop" pathLength="1" d="M 801.324 706.796 A 327.68 327.68 0 1 1 675.84 269.181" fill="none" stroke="currentColor" stroke-width="128" stroke-linecap="round"/><g class="l-mark__flame" transform="rotate(-6 675.84 191.459) translate(546.304 -2.845) scale(259.072 388.608)"><path d="M 0.66 0 C 0.86 0.22 1 0.44 1 0.64 C 1 0.86 0.78 1 0.5 1 C 0.22 1 0 0.86 0 0.64 C 0 0.34 0.42 0.3 0.66 0 Z" fill="currentColor"/></g></svg>Get it on TestFlight</a>
+<a class="l-btn l-btn--ink l-btn--tf" href="https://testflight.apple.com/join/uUNjfzW9" id="testflight"><svg class="l-mark" viewBox="0 0 1024 1024" aria-hidden="true"><path class="l-mark__loop" pathLength="1" d="M 801.324 706.796 A 327.68 327.68 0 1 1 675.84 269.181" fill="none" stroke="currentColor" stroke-width="128" stroke-linecap="round"/><path class="l-mark__sweep" pathLength="1" d="M 801.324 706.796 A 327.68 327.68 0 1 1 675.84 269.181" fill="none" stroke="#fff" stroke-width="128" stroke-linecap="round"/><g class="l-mark__flame" transform="rotate(-6 675.84 191.459) translate(546.304 -2.845) scale(259.072 388.608)"><path d="M 0.66 0 C 0.86 0.22 1 0.44 1 0.64 C 1 0.86 0.78 1 0.5 1 C 0.22 1 0 0.86 0 0.64 C 0 0.34 0.42 0.3 0.66 0 Z" fill="currentColor"/></g></svg>Get it on TestFlight</a>
 <a class="l-link" href="sdk/agent/">Read the SDK docs</a>
 </div>
 <p class="l-micro">Public beta · nothing collected · works in airplane mode</p>
@@ -52,7 +52,7 @@ hide:
 <div class="l-step" data-screen="approval"><span class="l-num">04</span><h3>It asks before it acts.</h3><p>Anything that leaves the device — a request, another app — waits for your tap. Deny, and the model is told so.</p></div>
 <div class="l-step" data-screen="vision"><span class="l-num">05</span><h3>Show it. Tell it.</h3><p>Send a photo to a vision model. Record a take and let it transcribe.</p></div>
 <div class="l-step" data-screen="train"><span class="l-num">06</span><h3>Train it on your own conversations.</h3><p>Pick chats, push them to your private dataset, start a fine-tune on Hugging Face, download the result. From the phone.</p></div>
-<div class="l-story__cta l-reveal"><a class="l-btn l-btn--ink l-btn--tf" href="https://testflight.apple.com/join/uUNjfzW9"><svg class="l-mark" viewBox="0 0 1024 1024" aria-hidden="true"><path class="l-mark__loop" pathLength="1" d="M 801.324 706.796 A 327.68 327.68 0 1 1 675.84 269.181" fill="none" stroke="currentColor" stroke-width="128" stroke-linecap="round"/><g class="l-mark__flame" transform="rotate(-6 675.84 191.459) translate(546.304 -2.845) scale(259.072 388.608)"><path d="M 0.66 0 C 0.86 0.22 1 0.44 1 0.64 C 1 0.86 0.78 1 0.5 1 C 0.22 1 0 0.86 0 0.64 C 0 0.34 0.42 0.3 0.66 0 Z" fill="currentColor"/></g></svg>Get it on TestFlight</a><a class="l-link" href="app/">About the app</a></div>
+<div class="l-story__cta l-reveal"><a class="l-btn l-btn--ink l-btn--tf" href="https://testflight.apple.com/join/uUNjfzW9"><svg class="l-mark" viewBox="0 0 1024 1024" aria-hidden="true"><path class="l-mark__loop" pathLength="1" d="M 801.324 706.796 A 327.68 327.68 0 1 1 675.84 269.181" fill="none" stroke="currentColor" stroke-width="128" stroke-linecap="round"/><path class="l-mark__sweep" pathLength="1" d="M 801.324 706.796 A 327.68 327.68 0 1 1 675.84 269.181" fill="none" stroke="#fff" stroke-width="128" stroke-linecap="round"/><g class="l-mark__flame" transform="rotate(-6 675.84 191.459) translate(546.304 -2.845) scale(259.072 388.608)"><path d="M 0.66 0 C 0.86 0.22 1 0.44 1 0.64 C 1 0.86 0.78 1 0.5 1 C 0.22 1 0 0.86 0 0.64 C 0 0.34 0.42 0.3 0.66 0 Z" fill="currentColor"/></g></svg>Get it on TestFlight</a><a class="l-link" href="app/">About the app</a></div>
 </div>
 </section>
 
@@ -103,12 +103,13 @@ hide:
 <div class="l-tool"><code>remember</code> · <code>recall</code><p>Notes the agent keeps between chats.</p></div>
 <div class="l-tool"><code>http</code><em>asks first</em><p>Any HTTPS request, behind a human approval card.</p></div>
 <div class="l-tool"><code>calculator</code> · <code>current_time</code><p>Exact arithmetic, any time zone.</p></div>
+<a class="l-tool l-tool--yours" href="#your-own-tool"><code>your_tool</code><p>A Swift struct: name, schema, async function. ↓</p></a>
 </div>
 </section>
 
 <section class="l-sec" markdown>
 <div class="l-sec__head l-reveal">
-<div><span class="l-num">03 — Your own</span><h2>A tool is a Swift struct.</h2></div>
+<div><span class="l-num">03 — Your own</span><h2 id="your-own-tool">A tool is a Swift struct.</h2></div>
 <p>A name, a description, a JSON schema and an async function. Hand it to an Agent next to the built-ins.</p>
 </div>
 <div class="l-split l-reveal" markdown>

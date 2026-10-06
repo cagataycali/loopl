@@ -1,5 +1,9 @@
 {% extends "base.html" %}
 {% block extrahead %}
+  {% if page.is_homepage %}
+  <link rel="preload" as="image" href="{{ 'assets/app2/hero-light-poster.jpg' | url }}" media="(prefers-color-scheme: light)" fetchpriority="high" />
+  <link rel="preload" as="image" href="{{ 'assets/app2/hero-dark-poster.jpg' | url }}" media="(prefers-color-scheme: dark)" fetchpriority="high" />
+  {% endif %}
   <link rel="preload" href="{{ 'assets/fonts/InterTight-latin.woff2' | url }}" as="font" type="font/woff2" crossorigin />
   {# og:title / og:description / og:image / twitter:* come from the social plugin #}
   <meta property="og:site_name" content="loopl" />
