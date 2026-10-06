@@ -2,14 +2,15 @@ import XCTest
 
 /// Models tab in the order a first-time user needs it (owner, 2026-10-06): 1 On this iPhone · 2 Browse Hugging Face · 3 Train your own ·
 /// 4 loopl models · 5 Mine — five sections, read top to bottom; the rest of the catalog folds under the loopl models.
-/// Deterministic: `--design-collection bundled` (snapshot, no network) + `--design-models shelf|empty` (ModelStore.overrideState).
+/// Deterministic: `--design-collection bundled` (snapshot, no network) + `--design-models shelf|empty` (ModelStore.overrideState) +
+/// `--storage-fixture none` (no drives left over from StorageUITests on the same simulator).
 /// Screenshots → LOOPL_SHOT_DIR: models-order-shelf.png models-order-empty.png.
 final class ModelsOrderUITests: XCTestCase {
     private let headers = ["models-header-device", "models-header-browse", "models-header-train"]
 
     func testSectionsReadTopToBottomInTheOwnersOrder() throws {
         let app = XCUIApplication()
-        app.launchArguments = ["--design-fixture", "empty", "--design-tab", "models", "--design-collection", "bundled", "--design-models", "shelf"]
+        app.launchArguments = ["--design-fixture", "empty", "--design-tab", "models", "--design-collection", "bundled", "--design-models", "shelf", "--storage-fixture", "none"]
         app.launch()
         let device = app.staticTexts["models-header-device"].firstMatch
         XCTAssertTrue(device.waitForExistence(timeout: 10), "section 1 header")
@@ -27,11 +28,11 @@ final class ModelsOrderUITests: XCTestCase {
         // 2 → 3 → 4 → 5, by scrolling down the list and recording where each header first appears.
         var order: [String] = []
         let wanted = headers + ["loopl models", "Mine"]
-        for _ in 0..<8 {
-            for id in wanted where !order.contains(id) {
-                let el = id == "loopl models" || id == "Mine" ? app.staticTexts[id].firstMatch : app.staticTexts[id].firstMatch
-                if el.exists, el.isHittable { order.append(id) }
-            }
+        for _ in 0..<14 {
+            // A lazy List realises a header shortly before it scrolls in, so "first seen" is the order on screen.
+            // (`isHittable` is not asked: the last header can sit under the floating tab bar and still be in order.)
+            // Mine's header reads "Mine · @author" once a token is in the runner env.
+            for id in wanted where !order.contains(id) && app.staticTexts.matching(NSPredicate(format: "identifier == %@ OR label BEGINSWITH %@", id, id)).firstMatch.exists { order.append(id) }
             if order.count == wanted.count { break }
             app.swipeUp()
         }
@@ -43,7 +44,7 @@ final class ModelsOrderUITests: XCTestCase {
 
     func testEmptyShelfSaysWhereModelsComeFrom() throws {
         let app = XCUIApplication()
-        app.launchArguments = ["--design-fixture", "empty", "--design-tab", "models", "--design-collection", "bundled", "--design-models", "empty"]
+        app.launchArguments = ["--design-fixture", "empty", "--design-tab", "models", "--design-collection", "bundled", "--design-models", "empty", "--storage-fixture", "none"]
         app.launch()
         let empty = app.descendants(matching: .any).matching(identifier: "models-empty").firstMatch
         XCTAssertTrue(empty.waitForExistence(timeout: 10), "the calm empty line")

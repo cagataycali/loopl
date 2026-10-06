@@ -297,6 +297,9 @@ enum StorageFixture {
         let fm = FileManager.default
         // Start from a clean manifest so the fixture is deterministic.
         for v in store.storage.volumes { store.storage.forget(v.id) }
+        // `--storage-fixture none`: just the clean manifest — no drives at all (a simulator that ran the drive tests keeps
+        // "SanDisk"/"Old stick" and their models in storage.json; the Models-order tests want a phone with nothing on it).
+        if folder.lastPathComponent == "none" { store.refresh(); return }
         try? fm.createDirectory(at: folder, withIntermediateDirectories: true)
         guard let drive = try? store.storage.add(folder: folder, name: "SanDisk") else { return }
         if let qwen = store.catalog.models.first(where: { $0.id == "qwen3.5-0.8b-4bit" }), let t = store.storage.target(drive.id, for: qwen) {
