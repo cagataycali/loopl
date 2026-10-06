@@ -12,14 +12,21 @@ import Foundation
 //   2. POST /api/jobs/<user> with command = ["bash","-lc", curl-with-token … && exec uv run /tmp/loopl_sft.py "$@", "loopl", <args…>],
 //      environment LOOPL_SCRIPT_URL = the private resolve URL, secret HF_TOKEN, the flavor, a timeout and a name label.
 
-/// A Qwen3.5 base the script knows (`--base 0.8b|2b|4b`).
+/// A model size the script knows. `hubId` is the Qwen3.5 ROOT of every lineage (sizes, estimates, vision); the base the
+/// app actually trains from is `trainingRepo` — the public loopl bf16 checkpoint of that size (owner decision,
+/// 2026-10-06: "we will use the loopl models as the base model to post-tune in our app too"), so a first round from the
+/// Train screen already carries loopl's tool dialect and identity, and the script records it as round 2 of that lineage.
 public enum TrainingBase: String, CaseIterable, Sendable, Codable, Identifiable {
     case b0_8 = "0.8b", b2 = "2b", b4 = "4b"
     public var id: String { rawValue }
     public var hubId: String {
         switch self { case .b0_8: "Qwen/Qwen3.5-0.8B"; case .b2: "Qwen/Qwen3.5-2B"; case .b4: "Qwen/Qwen3.5-4B" }
     }
-    public var label: String { switch self { case .b0_8: "Qwen3.5 0.8B"; case .b2: "Qwen3.5 2B"; case .b4: "Qwen3.5 4B" } }
+    /// The bf16 repo `--base` names when no tuned model is chosen: `cagataydev/loopl-<size>` (public, v1.1 today).
+    public static let looplAuthor = "cagataydev"
+    public var trainingRepo: String { "\(Self.looplAuthor)/loopl-\(rawValue)" }
+    public var label: String { switch self { case .b0_8: "loopl 0.8B"; case .b2: "loopl 2B"; case .b4: "loopl 4B" } }
+    public var rootLabel: String { switch self { case .b0_8: "Qwen3.5 0.8B"; case .b2: "Qwen3.5 2B"; case .b4: "Qwen3.5 4B" } }
     /// The script's default method per size (full FT beats LoRA 3× on knowledge for the same data; 4B full FT wants an H200).
     public var defaultMethod: TrainingMethod { switch self { case .b0_8: .lora; case .b2: .full; case .b4: .lora } }
     public var recommendedFlavor: TrainingFlavor { switch self { case .b0_8: .a10gSmall; case .b2, .b4: .a100Large } }
@@ -46,7 +53,7 @@ public enum TrainingBase: String, CaseIterable, Sendable, Codable, Identifiable 
     }
 }
 
-/// What `--base` names: a stock Qwen3.5 size, or a model the user already tuned (continual tuning, script 1.2.0).
+/// What `--base` names: a public loopl size (`TrainingBase.trainingRepo`), or a model the user already tuned (continual tuning, script 1.2.0).
 /// A tuned model trains from its **bf16** repo — the `-4bit` Mine row maps to it by name (`loopl-x-4bit` → `loopl-x`);
 /// the script refuses quantized weights, so `bf16Repo == nil` greys the choice out with the reason.
 public struct TrainingTunedBase: Hashable, Sendable, Codable, Identifiable {
@@ -196,9 +203,9 @@ public struct TrainingPlan: Hashable, Sendable, Codable {
 
     /// Round this job closes: 1 from a stock base, `tunedBase.round + 1` when continuing.
     public var round: Int { (tunedBase?.round ?? 0) + 1 }
-    /// `--base` as the script receives it.
-    public var baseArgument: String { tunedBase?.bf16Repo ?? base.rawValue }
-    /// "Qwen3.5 0.8B" or "loopl-app-sim · round 2".
+    /// `--base` as the script receives it: the tuned model's bf16 repo, else the public loopl checkpoint of that size.
+    public var baseArgument: String { tunedBase?.bf16Repo ?? base.trainingRepo }
+    /// "loopl 0.8B" or "loopl-app-sim · round 2".
     public var baseLabel: String { tunedBase.map { "\($0.name) · round \(round)" } ?? base.label }
     /// Epochs the estimate bills for (auto → the heuristic's upper bound).
     public var plannedEpochs: Int { epochs.planned(forConversations: conversations) }

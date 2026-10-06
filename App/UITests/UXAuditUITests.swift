@@ -49,7 +49,9 @@ final class UXAuditUITests: XCTestCase {
         // The app must answer queries within seconds afterwards (the hang made this take 30 s and fail).
         let t0 = Date()
         XCTAssertTrue(app.buttons["Send"].firstMatch.waitForExistence(timeout: 10))
-        XCTAssertTrue(app.tabBars.firstMatch.waitForExistence(timeout: 10), "tab bar back after the keyboard")
+        if UIDevice.current.userInterfaceIdiom == .phone {   // the iPad shell has a sidebar, no tab bar
+            XCTAssertTrue(app.tabBars.firstMatch.waitForExistence(timeout: 10), "tab bar back after the keyboard")
+        }
         XCTAssertLessThan(Date().timeIntervalSince(t0), 15, "layout loop: queries stalled")
     }
 
