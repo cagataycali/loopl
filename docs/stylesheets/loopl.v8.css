@@ -116,8 +116,8 @@ body { font-family: var(--l-sans); -webkit-font-smoothing: antialiased; text-ren
 
 /* tables — hairlines only */
 .md-typeset table:not([class]) { font-size: .72rem; border: 0; border-radius: 0; box-shadow: none; display: table; width: 100%; }
-.md-typeset table:not([class]) th { font-weight: 500; color: var(--l-ink-3); background: transparent; border-bottom: 1px solid var(--l-line); font-size: .64rem; letter-spacing: .02em; padding: .6em .8em .6em 0; }
-.md-typeset table:not([class]) td { border-top: 1px solid var(--l-line); vertical-align: top; padding: .7em .8em .7em 0; }
+.md-typeset table:not([class]) th { font-weight: 500; color: var(--l-ink-3); background: transparent; border-bottom: 1px solid var(--l-line); font-size: .64rem; letter-spacing: .02em; padding: .6em 1.2em .6em 0; white-space: nowrap; }
+.md-typeset table:not([class]) td { border-top: 1px solid var(--l-line); vertical-align: top; padding: .7em 1.2em .7em 0; }
 .md-typeset table:not([class]) tr:first-child td { border-top: 0; }
 .md-typeset table:not([class]) tbody tr:hover { background: transparent; }
 .md-typeset__scrollwrap { margin: 1em 0; }
@@ -129,6 +129,14 @@ body { font-family: var(--l-sans); -webkit-font-smoothing: antialiased; text-ren
 .md-typeset .admonition-title::before, .md-typeset summary::before, .md-typeset summary::after { display: none; }
 .md-typeset .admonition.note, .md-typeset .admonition.tip { border-left-color: var(--l-fill); }
 
+/* FAQ — hairline rows, a quiet + that turns */
+.md-typeset details { border: 0 !important; border-top: 1px solid var(--l-line) !important; border-radius: 0; margin: 0 !important; padding: 0 !important; box-shadow: none; font-size: .8rem; }
+.md-typeset details:last-of-type { border-bottom: 1px solid var(--l-line) !important; }
+.md-typeset details > summary { padding: 1.05rem 2rem 1.05rem 0 !important; margin: 0 !important; font-weight: 500; cursor: pointer; list-style: none; position: relative; }
+.md-typeset details > summary::-webkit-details-marker { display: none; }
+.md-typeset details > summary::after { display: block !important; content: "+"; position: absolute; right: .2rem; top: 50%; transform: translateY(-50%); width: auto; height: auto; background: none; -webkit-mask: none; mask: none; color: var(--l-ink-3) !important; font-weight: 300; font-size: 1.1rem; transition: transform .35s var(--l-ease); }
+.md-typeset details[open] > summary::after { transform: translateY(-50%) rotate(45deg); }
+.md-typeset details > :not(summary) { color: var(--l-ink-2); margin: 0 0 1.1rem; }
 /* tabs */
 .md-typeset .tabbed-labels { box-shadow: none; border-bottom: 1px solid var(--l-line); }
 .md-typeset .tabbed-labels > label { font-weight: 500; font-size: .68rem; color: var(--l-ink-3); padding: .8em 1.2em .7em 0; }
@@ -243,7 +251,7 @@ body { font-family: var(--l-sans); -webkit-font-smoothing: antialiased; text-ren
 .l-stage__bar b { font-weight: 500; color: var(--l-ink-2); }
 .l-stage__bar button { font: inherit; color: var(--l-ink-3); background: none; border: 0; cursor: pointer; padding: 0; }
 .l-stage__bar button:hover { color: var(--l-ink); }
-.l-chat { padding: 1.4rem 1.3rem 1.5rem; min-height: 15.5rem; font-size: .76rem; line-height: 1.6; }
+.l-chat { padding: 1.4rem 1.3rem 1.5rem; font-size: .76rem; line-height: 1.6; }
 .l-msg { margin: 0 0 1rem; }
 .l-msg__who { display: block; font-size: .58rem; color: var(--l-ink-3); margin-bottom: .15rem; letter-spacing: .02em; }
 .l-msg--you p { color: var(--l-ink); margin: 0; }
@@ -277,8 +285,8 @@ html.l-js .l-stage[data-typing] .l-caret { opacity: 1; animation: l-blink 1s ste
 /* the loop diagram */
 .l-loop { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 3rem; align-items: center; }
 .l-ring { width: 100%; max-width: 420px; justify-self: center; color: var(--l-ink); }
-.l-ring text { font-family: var(--l-sans); font-size: 13px; font-weight: 500; fill: var(--l-ink); }
-.l-ring .l-sub { font-size: 10.5px; font-weight: 400; fill: var(--l-ink-3); }
+.l-ring text { font-family: var(--l-sans); font-size: 15px; font-weight: 500; fill: var(--l-ink); }
+.l-ring .l-sub { font-size: 12.5px; font-weight: 400; fill: var(--l-ink-3); }
 .l-ring .l-track { stroke: var(--l-line); }
 .l-ring .l-node { fill: var(--l-bg); stroke: var(--l-ink); }
 .l-ring .l-spark { fill: var(--l-fill); }
@@ -353,7 +361,6 @@ html.l-js .l-reveal.is-on { opacity: 1; transform: none; }
   .l-tools { grid-template-columns: minmax(0, 1fr); }
   .l-stats { grid-template-columns: minmax(0, 1fr); }
   .l-stat, .l-stat + .l-stat { padding: 1.3rem 0; border-left: 0; border-bottom: 1px solid var(--l-line); }
-  .l-chat { min-height: 17rem; }
   .md-typeset h1 { font-size: 1.6rem; }
 }
 
