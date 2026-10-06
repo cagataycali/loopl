@@ -1,0 +1,248 @@
+[
+ {
+  "type": "job",
+  "id": "6ac4691e404719ba3765b92f",
+  "createdAt": "2026-10-06T03:21:02.640Z",
+  "createdBy": {
+   "id": "6498ef778fadf0ae7639b982",
+   "name": "cagataydev"
+  },
+  "dockerImage": "ghcr.io/astral-sh/uv:python3.12-bookworm",
+  "arguments": [],
+  "command": [
+   "uv",
+   "run",
+   "/data/sft.py",
+   "--base",
+   "Qwen/Qwen3.5-0.8B",
+   "--dataset",
+   "cagataydev/loopl-train",
+   "--revision",
+   "cc7554514936360b17950efd9779634313c63919",
+   "--out",
+   "cagataydev/loopl-0.8b-mid2",
+   "--eval-split",
+   "eval",
+   "--epochs",
+   "2",
+   "--max-length",
+   "4096",
+   "--batch",
+   "2",
+   "--grad-accum",
+   "8",
+   "--full",
+   "--lr",
+   "2e-5",
+   "--oversample",
+   "c=2"
+  ],
+  "environment": {},
+  "flavor": "a100-large",
+  "arch": "amd64",
+  "timeout": 43200,
+  "retry": 0,
+  "volumes": [
+   {
+    "type": "bucket",
+    "source": "cagataydev/jobs-artifacts",
+    "mountPath": "/data",
+    "readOnly": false,
+    "path": "20261006T032059-9bd3d6",
+    "configuredByUserId": "6498ef778fadf0ae7639b982"
+   }
+  ],
+  "expose": {
+   "ports": []
+  },
+  "ssh": {
+   "enabled": false
+  },
+  "status": {
+   "stage": "RUNNING",
+   "message": null,
+   "failureCount": 0
+  },
+  "startedAt": "2026-10-06T03:21:09.568Z",
+  "durations": {
+   "schedulingSecs": 6,
+   "runningSecs": 1418,
+   "totalSecs": 1425
+  },
+  "owner": {
+   "id": "6498ef778fadf0ae7639b982",
+   "name": "cagataydev",
+   "type": "user"
+  },
+  "initiator": {
+   "id": "6498ef778fadf0ae7639b982",
+   "name": "cagataydev",
+   "type": "user"
+  },
+  "secrets": [
+   "HF_TOKEN"
+  ],
+  "labels": {
+   "name": "loopl-full-0-8b-20261006T0320"
+  }
+ },
+ {
+  "type": "job",
+  "id": "6ac459b6fbc85ba6823afcbf",
+  "createdAt": "2026-10-06T02:15:18.329Z",
+  "createdBy": {
+   "id": "6498ef778fadf0ae7639b982",
+   "name": "cagataydev"
+  },
+  "dockerImage": "ghcr.io/astral-sh/uv:python3.12-bookworm",
+  "arguments": [],
+  "command": [
+   "uv",
+   "run",
+   "/data/gguf_job.py",
+   "--src",
+   "cagataydev/loopl-0.8b-mid",
+   "--dst",
+   "cagataydev/loopl-0.8b-mid-GGUF",
+   "--tag",
+   "b11401",
+   "--quants",
+   "Q4_K_M"
+  ],
+  "environment": {},
+  "flavor": "cpu-upgrade",
+  "arch": "amd64",
+  "timeout": 7200,
+  "retry": 0,
+  "volumes": [
+   {
+    "type": "bucket",
+    "source": "cagataydev/jobs-artifacts",
+    "mountPath": "/data",
+    "readOnly": false,
+    "path": "20261006T021517-1ff3e0",
+    "configuredByUserId": "6498ef778fadf0ae7639b982"
+   }
+  ],
+  "expose": {
+   "ports": []
+  },
+  "ssh": {
+   "enabled": false
+  },
+  "status": {
+   "stage": "COMPLETED",
+   "message": null,
+   "failureCount": 0
+  },
+  "startedAt": "2026-10-06T02:15:23.486Z",
+  "finishedAt": "2026-10-06T02:17:18.073Z",
+  "durations": {
+   "schedulingSecs": 5,
+   "runningSecs": 114,
+   "totalSecs": 119
+  },
+  "owner": {
+   "id": "6498ef778fadf0ae7639b982",
+   "name": "cagataydev",
+   "type": "user"
+  },
+  "initiator": {
+   "id": "6498ef778fadf0ae7639b982",
+   "name": "cagataydev",
+   "type": "user"
+  },
+  "secrets": [
+   "HF_TOKEN"
+  ],
+  "labels": {
+   "name": "gguf-loopl-0-8b-mid-GGUF"
+  }
+ },
+ {
+  "type": "job",
+  "id": "6ac455b0404719ba3765b301",
+  "createdAt": "2026-10-06T01:58:08.910Z",
+  "createdBy": {
+   "id": "6498ef778fadf0ae7639b982",
+   "name": "cagataydev"
+  },
+  "dockerImage": "ghcr.io/astral-sh/uv:python3.12-bookworm",
+  "arguments": [],
+  "command": [
+   "uv",
+   "run",
+   "/data/sft.py",
+   "--base",
+   "Qwen/Qwen3.5-0.8B",
+   "--dataset",
+   "cagataydev/loopl-train",
+   "--revision",
+   "c307aa1f795a65364fc0d4a0350b7a7f9738f6e7",
+   "--out",
+   "cagataydev/loopl-0.8b-mid",
+   "--eval-split",
+   "eval",
+   "--epochs",
+   "3",
+   "--max-length",
+   "4096",
+   "--batch",
+   "2",
+   "--grad-accum",
+   "8",
+   "--full",
+   "--lr",
+   "2e-5"
+  ],
+  "environment": {},
+  "flavor": "a100-large",
+  "arch": "amd64",
+  "timeout": 43200,
+  "retry": 0,
+  "volumes": [
+   {
+    "type": "bucket",
+    "source": "cagataydev/jobs-artifacts",
+    "mountPath": "/data",
+    "readOnly": false,
+    "path": "20261006T015804-345756",
+    "configuredByUserId": "6498ef778fadf0ae7639b982"
+   }
+  ],
+  "expose": {
+   "ports": []
+  },
+  "ssh": {
+   "enabled": false
+  },
+  "status": {
+   "stage": "COMPLETED",
+   "message": null,
+   "failureCount": 0
+  },
+  "startedAt": "2026-10-06T01:58:15.072Z",
+  "finishedAt": "2026-10-06T02:14:34.791Z",
+  "durations": {
+   "schedulingSecs": 6,
+   "runningSecs": 979,
+   "totalSecs": 985
+  },
+  "owner": {
+   "id": "6498ef778fadf0ae7639b982",
+   "name": "cagataydev",
+   "type": "user"
+  },
+  "initiator": {
+   "id": "6498ef778fadf0ae7639b982",
+   "name": "cagataydev",
+   "type": "user"
+  },
+  "secrets": [
+   "HF_TOKEN"
+  ],
+  "labels": {
+   "name": "loopl-full-0-8b-20261006T0158"
+  }
+ }
+]

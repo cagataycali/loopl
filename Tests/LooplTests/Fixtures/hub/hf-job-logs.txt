@@ -1,0 +1,15 @@
+data: {"data":"===== Job started at 2026-10-06 03:21:03 =====","timestamp":"2026-10-06T03:21:03Z"}
+
+data: {"data":"Downloading tokenizers (3.2MiB)","timestamp":"2026-10-06T03:21:09.419Z"}
+
+data: {"data":"Downloading sympy (6.0MiB)","timestamp":"2026-10-06T03:21:09.421Z"}
+
+data: {"data":"Downloading nvidia-cufile (1.2MiB)","timestamp":"2026-10-06T03:21:09.421Z"}
+
+data: {"data":"Downloading hf-xet (4.3MiB)","timestamp":"2026-10-06T03:21:09.421Z"}
+
+data: {"data":"Downloading nvidia-cusolver (191.6MiB)","timestamp":"2026-10-06T03:21:09.425Z"}
+
+data: {"data":"Downloading transformers (12.0MiB)","timestamp":"2026-10-06T03:21:09.425Z"}
+
+data: {"data":"Downloading networkx (2.0MiB)","timestamp":"202

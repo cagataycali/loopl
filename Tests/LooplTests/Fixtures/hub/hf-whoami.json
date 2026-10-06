@@ -1,0 +1,14 @@
+{
+ "type": "user",
+ "id": "6498ef778fadf0ae7639b982",
+ "name": "cagataydev",
+ "fullname": "Cagatay Cali",
+ "auth": {
+  "type": "access_token",
+  "accessToken": {
+   "displayName": "mac-mini",
+   "role": "write",
+   "createdAt": "2026-03-02T02:23:02.604Z"
+  }
+ }
+}
