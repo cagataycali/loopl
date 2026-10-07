@@ -40,7 +40,7 @@ final class VLModelsUITests: XCTestCase {
         XCTAssertTrue(fourB.waitForExistence(timeout: 5), "Qwen3-VL 4B Thinking row")
         XCTAssertGreaterThanOrEqual(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'thinks before answering'")).count, 2, "both Thinking rows carry the fact")
 
-        guard ProcessInfo.processInfo.environment["LOOPL_VL_DOWNLOAD"] == "1" else { return }
+        guard ProcessInfo.processInfo.environment["LOOPL_VL_DOWNLOAD"] == "1" else { note("rows verified; LOOPL_VL_DOWNLOAD unset"); return }
         // Tap → engine.select → HFDownloader on the real repo. We only need to see bytes arrive.
         for _ in 0..<6 where !twoB.isHittable { app.swipeDown() }
         twoB.tap()
@@ -49,13 +49,22 @@ final class VLModelsUITests: XCTestCase {
         let bytes = app.staticTexts.matching(NSPredicate(format: "label CONTAINS ' of 1.8 GB' OR label CONTAINS ' of 1,8 GB'")).firstMatch
         XCTAssertTrue(bytes.waitForExistence(timeout: 60), "progress row with bytes of 1.8 GB")
         shoot(app, "vl-thinking-downloading")
-        print("VL-SIM download started: \(bytes.label)")
+        note("VL-SIM download started: \(bytes.label) · progress: \(progress.label)")
     }
 
     private func shoot(_ app: XCUIApplication, _ name: String) {
+        Thread.sleep(forTimeInterval: 0.6)
+        let shot = XCUIScreen.main.screenshot()
+        if let dir = ProcessInfo.processInfo.environment["LOOPL_SHOT_DIR"] {
+            try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+            try? shot.pngRepresentation.write(to: URL(fileURLWithPath: dir).appendingPathComponent(name + ".png"))
+        }
+        XCTContext.runActivity(named: name) { a in
+            let att = XCTAttachment(screenshot: shot); att.lifetime = .keepAlways; att.name = name; a.add(att)
+        }
+    }
+    private func note(_ text: String) {
         guard let dir = ProcessInfo.processInfo.environment["LOOPL_SHOT_DIR"] else { return }
-        let png = app.screenshot().pngRepresentation
-        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
-        try? png.write(to: URL(fileURLWithPath: dir).appendingPathComponent("\(name).png"))
+        try? (text + "\n").write(to: URL(fileURLWithPath: dir).appendingPathComponent("vl-sim-notes.txt"), atomically: true, encoding: .utf8)
     }
 }
