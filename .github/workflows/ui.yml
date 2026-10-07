@@ -5,9 +5,10 @@ name: ui
 # was red on main from IMPROVE-3 #120 (the delete buttons moved behind Settings › Storage) until
 # #170 repaired it, because nothing ran this target.
 #
-# The live suites in this target skip themselves without a Hugging Face token
-# (TrainLive / TrainE2EMine / TrainContinualLive / CollectionLive / HubShare push), so no run here
-# ever launches a billed job. Nothing is passed in on purpose.
+# The live suites in this target skip themselves without a Hugging Face token, and nothing is passed in
+# on purpose — but a skipped UI test still builds and LAUNCHES the app, which is the expensive part, so
+# they are skipped at the xcodebuild level instead (see SKIP below). Everything else runs, including new
+# files nobody remembered to add to a list.
 on:
   push:
     branches: [main]
@@ -15,12 +16,16 @@ on:
   workflow_dispatch:
 concurrency:
   group: ui-${{ github.ref }}
-  cancel-in-progress: true
+  # NOT cancel-in-progress. Measured on the first run: during a batch main is pushed every ~20 minutes
+  # and this job takes ~30, so cancelling the previous run means NO run ever finishes — the first one
+  # (b7a916c4) was cancelled 3 seconds in by the build-30 bump. A post-merge guard that never reports is
+  # not a guard, so runs queue instead.
+  cancel-in-progress: false
 jobs:
   uitests:
     name: looplUITests (iOS Simulator, post-merge)
     runs-on: macos-26
-    timeout-minutes: 60
+    timeout-minutes: 90   # measured: ~5 min to build for testing, ~25-30 min for the suite
     steps:
       - uses: actions/checkout@v4
       - name: Select Xcode 26
@@ -58,11 +63,29 @@ jobs:
       - name: UI tests
         run: |
           set -o pipefail
+          # The five suites that only exist to drive a real Hugging Face job: they would XCTSkip here
+          # (no token), but each test still launches the app first, which is seconds we spend for nothing.
+          SKIP="-skip-testing:LooplUITests/TrainLiveUITests \
+                -skip-testing:LooplUITests/TrainE2EMineUITests \
+                -skip-testing:LooplUITests/TrainContinualLiveUITests \
+                -skip-testing:LooplUITests/CollectionLiveUITests \
+                -skip-testing:LooplUITests/HubShareUITests"
+          START=$(date +%s)
           xcodebuild -project App/LooplApp.xcodeproj -scheme looplUITests -configuration Debug \
             -destination "id=${{ steps.sim.outputs.udid }}" -derivedDataPath DerivedData \
             CODE_SIGNING_ALLOWED=NO -skipPackagePluginValidation -skipMacroValidation \
-            -resultBundlePath DerivedData/ui.xcresult \
+            $SKIP -resultBundlePath DerivedData/ui.xcresult \
             test-without-building 2>&1 | tee ui.log | tail -n 120
+          echo "### looplUITests: $(( ($(date +%s) - START) / 60 )) min" >> "$GITHUB_STEP_SUMMARY"
+          grep -E "Executed [0-9]+ tests" ui.log | tail -n 1 >> "$GITHUB_STEP_SUMMARY" || true
+      # The slowest suites, so the next person trimming this job has numbers instead of a guess.
+      - name: Where the time went
+        if: always()
+        run: |
+          grep -E "^Test Suite '.*' (passed|failed) at" -A 1 ui.log \
+            | grep -E "Executed|Test Suite" | paste - - 2>/dev/null \
+            | sed -E "s/Test Suite '([^']+)'.*Executed ([0-9]+) tests.*in ([0-9.]+) .*/\3s  \2 tests  \1/" \
+            | sort -rn | head -n 15 | tee -a "$GITHUB_STEP_SUMMARY" || true
       - name: Which tests failed (names, not a tail)
         if: failure()
         run: |
