@@ -69,13 +69,16 @@ final class PlainWordsTests: XCTestCase {
         let root = try repoRoot()
         let views = try source(in: root, "App/Sources")
         let all = views + (try source(in: root, "Sources"))
+        // IMPROVE-9 handoff item: the first version of this guard only caught the imperative "tap X", so
+        // "use the Repair button" or "press Repair" would have walked straight past it. All three forms now.
+        let forms = ["tap repair", "tap the repair", "use the repair", "press repair", "press the repair"]
         for (name, text) in all {
             for line in text.split(separator: "\n") where !line.trimmingCharacters(in: .whitespaces).hasPrefix("//") {
                 let l = line.lowercased()
-                guard l.contains("tap repair") || l.contains("tap the repair") else { continue }
+                guard forms.contains(where: { l.contains($0) }) else { continue }
                 // Only legitimate if a view really declares one.
                 let declared = views.contains { $0.1.contains("Button(\"Repair\")") || $0.1.contains("\"Repair\")") }
-                XCTAssertTrue(declared, "\(name) says “tap Repair” but no view declares a Repair button: \(line)")
+                XCTAssertTrue(declared, "\(name) points at a Repair button that no view declares: \(line)")
             }
         }
     }
@@ -98,6 +101,11 @@ final class PlainWordsTests: XCTestCase {
             "gated repos are hidden",
             "mlx-community conversions",
             "Pick the quant in the details",
+            // this PR
+            "Weights, tokenizer and configs are downloaded",
+            "No MLX or GGUF repos under",
+            "Private repos in your account",
+            "Text(\"GGUF: ",                          // a raw error labelled with a file format
         ]
         var offenders: [String] = []
         for dir in ["App/Sources", "Sources"] {
