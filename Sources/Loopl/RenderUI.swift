@@ -89,8 +89,49 @@ public struct RenderSpec: Sendable, Hashable {
         var issues: [String] = []
         title = args["title"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 }
         var raw = args["components"]?.arrayValue ?? []
+        if raw.isEmpty, let text = args["components"]?.stringValue {
+            // MEASURED (loopl-2b, 2026-10-07): the model sends `components` as a JSON *string* 4/9 times — the right
+            // pins and nodes, double-encoded. Decode it (with the two repairs below) instead of drawing the string as prose.
+            if let decoded = Self.decodeComponents(text) { raw = decoded; issues.append("`components` was sent as a JSON string — send a plain array next time") }
+            else { issues.append("`components` was a string that is not valid JSON — send an array of {type, …} objects") }
+        }
         if raw.isEmpty, args["type"]?.stringValue != nil { raw = [.object(args)] }   // a single component passed at the top level
         guard !raw.isEmpty else { throw ToolError("render_ui: `components` is required — a non-empty array of {type, …} objects. Types: \(RenderComponent.knownTypes.joined(separator: ", ")).") }
+        // The agent's schema pre-check (ToolValidation) wraps a non-array `components` into a one-element array, so the
+        // double-encoded string also arrives as `[ "[{…}]" ]` — unwrap any element that is itself JSON text.
+        raw = raw.flatMap { item -> [JSONValue] in
+            guard let s = item.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines), s.hasPrefix("[") || s.hasPrefix("{") else { return [item] }
+            if let decoded = Self.decodeComponents(s) { issues.append("`components` was sent as a JSON string — send a plain array next time"); return decoded }
+            issues.append("a component was a string that is not valid JSON — send {type, …} objects"); return []
+        }
+        // Stray top-level keys (`edges`, `pins`, `series`, …) — the model split one component across the call (loopl-2b
+        // put three edge-less `diagram`s in `components` and `edges` beside them). Attach each to the first component
+        // that takes it; edge-less diagrams are merged into one so the edges have their nodes.
+        let strayKeys: [String: [String]] = ["edges": ["diagram"], "nodes": ["diagram"], "pins": ["map"], "route": ["map"], "series": ["chart"], "points": ["chart"],
+                                             "rows": ["table"], "headers": ["table"], "data": ["keyvalue", "chart"], "items": ["list"]]
+        let strays = args.filter { strayKeys[$0.key] != nil }
+        if !strays.isEmpty {
+            var objs = raw.map { $0.objectValue ?? [:] }
+            if strays["edges"] != nil {
+                let diagrams = objs.indices.filter { (objs[$0]["type"]?.stringValue ?? "") == "diagram" && objs[$0]["edges"] == nil }
+                if diagrams.count > 1 {
+                    var merged = objs[diagrams[0]]
+                    merged["nodes"] = .array(diagrams.flatMap { objs[$0]["nodes"]?.arrayValue ?? [] })
+                    for i in diagrams.dropFirst().reversed() { objs.remove(at: i) }
+                    objs[diagrams[0]] = merged
+                    issues.append("\(diagrams.count) diagram components had no edges and `edges` was outside — merged into one diagram")
+                }
+            }
+            for (key, value) in strays {
+                let v: JSONValue = value.stringValue.flatMap { Self.decodeComponents($0).map(JSONValue.array) } ?? value
+                if let i = objs.indices.first(where: { strayKeys[key]!.contains(objs[$0]["type"]?.stringValue ?? "") && objs[$0][key] == nil }) {
+                    objs[i][key] = v
+                    issues.append("`\(key)` was outside its component — put it inside the \(objs[i]["type"]?.stringValue ?? "") object")
+                }
+            }
+            raw = objs.map(JSONValue.object)
+        }
+        guard !raw.isEmpty else { throw ToolError("render_ui: `components` must be a non-empty array of {type, …} objects" + (issues.isEmpty ? "" : " — " + issues.joined(separator: "; ")) + ". Types: \(RenderComponent.knownTypes.joined(separator: ", ")).") }
         if raw.count > Self.maxComponents { issues.append("only the first \(Self.maxComponents) of \(raw.count) components were drawn"); raw = Array(raw.prefix(Self.maxComponents)) }
         var out: [RenderComponent] = []
         for (i, item) in raw.enumerated() {
@@ -105,9 +146,90 @@ public struct RenderSpec: Sendable, Hashable {
         self.issues = issues
     }
 
+    /// A `components` value that arrived as text. Tries the text as-is, then with trailing commas removed, then with the
+    /// shape loopl-2b produced 2/3 times for a diagram — `["diagram", "nodes": […], "edges": […]]` (the opening `{"type":`
+    /// collapsed into a bare string) — rewritten to `[{"type": "diagram", …}]`.
+    static func decodeComponents(_ text: String) -> [JSONValue]? {
+        func parse(_ t: String) -> [JSONValue]? {
+            guard let data = t.data(using: .utf8), let v = try? JSONDecoder().decode(JSONValue.self, from: data) else { return nil }
+            if let a = v.arrayValue { return a }
+            if let o = v.objectValue { return o["components"]?.arrayValue ?? [.object(o)] }
+            return nil
+        }
+        var t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let a = parse(t) { return a }
+        // Trailing commas before a closing bracket/brace are the most common model slip.
+        t = t.replacingOccurrences(of: #",\s*([\]}])"#, with: "$1", options: .regularExpression)
+        // `"points: [` — a key whose closing quote was dropped (loopl-2b, chart run).
+        t = t.replacingOccurrences(of: #""([a-z_]+): "#, with: "\"$1\": ", options: .regularExpression)
+        if let a = parse(t) { return a }
+        // Unbalanced closers: `…]}]}` (one `}` too many) or a truncated tail — rebalance with a bracket stack.
+        if let a = parse(balanced(t)) { return a }
+        // `[ "kind", "field": …, … ]` → `[{"type": "kind", "field": …, …}]`
+        if let r = t.range(of: #"^\[\s*"([a-z_]+)"\s*,"#, options: .regularExpression) {
+            let kind = String(t[r]).replacingOccurrences(of: #"[\[\s",]"#, with: "", options: .regularExpression)
+            var body = String(t[r.upperBound...])
+            if body.hasSuffix("]") { body.removeLast() }
+            let fixed = "[{\"type\": \"\(kind)\", " + body + "}]"
+            if let a = parse(fixed) { return a }
+        }
+        return nil
+    }
+
+    /// Rebalance `[]`/`{}` outside string literals: drop closers that have no opener, append the closers a truncated
+    /// tail is missing. A dangling `"key":` or `,` before the appended closers is removed.
+    static func balanced(_ text: String) -> String {
+        var out = "", stack: [Character] = [], inString = false, escaped = false
+        for ch in text {
+            if inString {
+                out.append(ch)
+                if escaped { escaped = false } else if ch == "\\" { escaped = true } else if ch == "\"" { inString = false }
+                continue
+            }
+            switch ch {
+            case "\"": inString = true; out.append(ch)
+            case "[", "{": stack.append(ch); out.append(ch)
+            case "]": if stack.last == "[" { stack.removeLast(); out.append(ch) }     // else: an extra closer — dropped
+            case "}": if stack.last == "{" { stack.removeLast(); out.append(ch) }
+            default: out.append(ch)
+            }
+        }
+        if inString { out.append("\"") }
+        while true {
+            let trimmed = out.replacingOccurrences(of: #"(,|"[^"]*"\s*:)\s*$"#, with: "", options: .regularExpression)
+            if trimmed == out { break }
+            out = trimmed
+        }
+        for open in stack.reversed() { out.append(open == "[" ? "]" : "}") }
+        return out
+    }
+
     // MARK: per-kind parsing
 
+    /// `type` when the model did not say it: loopl-0.8b wrote `{"kind": "map", "pins": …}` 3/3 (a "map"-named kind),
+    /// `{"chart": {…}}` and `{"text": "…"}` (the type as the key). Inferred from `kind`, from a type-named key, then from
+    /// the fields present — and reported, so the model learns the word is `type`.
+    static func inferType(_ o: inout [String: JSONValue], index n: Int, issues: inout [String]) {
+        if let t = o["type"]?.stringValue, !t.isEmpty { return }
+        func set(_ t: String, _ why: String) { o["type"] = .string(t); issues.append("component \(n): no `type` — read as \(t) (\(why)); say \"type\": \"\(t)\"") }
+        if let k = o["kind"]?.stringValue?.lowercased() {
+            if RenderComponent.knownTypes.contains(k) { set(k, "from kind"); return }
+            if ["bar", "line", "pie"].contains(k) { set("chart", "kind \(k)"); return }
+        }
+        for key in RenderComponent.knownTypes where o[key] != nil {
+            if let inner = o[key]?.objectValue { for (ik, iv) in inner where o[ik] == nil { o[ik] = iv } }
+            else if let text = o[key]?.stringValue { if o["content"] == nil { o["content"] = .string(text) } }
+            o.removeValue(forKey: key); set(key, "from the key \(key)"); return
+        }
+        let byFields: [(String, [String])] = [("map", ["pins", "markers", "route"]), ("diagram", ["nodes", "edges"]), ("chart", ["series", "points"]),
+                                              ("table", ["rows", "headers", "columns"]), ("progress", ["completed", "total"]), ("list", ["items"]),
+                                              ("keyvalue", ["data"]), ("image", ["url", "attachment"]), ("markdown", ["content", "text"])]
+        for (t, keys) in byFields where keys.contains(where: { o[$0] != nil }) { set(t, "from its fields"); return }
+    }
+
     private static func component(_ o: [String: JSONValue], index n: Int, issues: inout [String]) -> RenderComponent {
+        var o = o
+        inferType(&o, index: n, issues: &issues)
         let type = (o["type"]?.stringValue ?? "").lowercased().trimmingCharacters(in: .whitespaces)
         let title = str(o["title"]) ?? str(o["label"])
         switch type {
@@ -285,7 +407,9 @@ public struct RenderSpec: Sendable, Hashable {
     public var resultText: String {
         let kinds = components.map(\.kindName)
         var s = "rendered \(components.count) component\(components.count == 1 ? "" : "s") (\(kinds.joined(separator: ", "))). The user sees the card — do not repeat the same data in prose."
-        if !issues.isEmpty { s += "\nissues: " + issues.joined(separator: "; ") }
+        // MEASURED (loopl-0.8b): a line labelled `issues:` read as "it failed" → the model re-sent the same card 4×. The
+        // card IS drawn; the notes are for next time, and the result says so in those words.
+        if !issues.isEmpty { s += "\nnotes (the card above is already drawn — do not send it again; for your next call): " + issues.joined(separator: "; ") }
         return s
     }
 }
@@ -309,14 +433,15 @@ public struct RenderUITool: Tool {
     public init() {}
     public let name = RenderUITool.toolName
     public let description = """
-    Show the user a native card instead of prose: a chart, a map, a diagram, a table, a key/value grid, a list, a progress bar, \
-    markdown or an image. Use it whenever the answer is numbers over categories or time (chart), places (map), steps or a flow \
-    (diagram), or structured data (table/keyvalue/list). Pass components as an array; each has a `type` and that type's fields: \
-    chart{title, kind: bar|line|pie, series:[{name, points:[{label, value}]}]} · map{title, pins:[{lat, lon, label}], route:[[lat,lon]]} · \
-    diagram{title, nodes:[{id, label}], edges:[{from, to, label}]} · table{title, headers:[…], rows:[[…]]} · keyvalue{title, data:{key: value}} · \
-    list{title, items:[string | {title, subtitle}]} · progress{description, total, completed} · markdown{content} · text{content, style} · \
-    image{url | attachment, caption} · rule{title}. Values are numbers (4000, not "4k"). The card appears in the chat; afterwards \
-    answer in one short sentence and do not repeat the data.
+    Show the user a native card instead of prose — call it DIRECTLY with the data (no calculator first) whenever the answer is \
+    numbers over categories or time (a chart), places (a map), steps or a flow (a diagram), or structured data (table, keyvalue, list). \
+    components is an ARRAY of objects, each with a type: \
+    {"type":"chart","kind":"bar","series":[{"name":"steps","points":[{"label":"Mon","value":4000},{"label":"Tue","value":6200}]}]} · \
+    {"type":"map","pins":[{"lat":40.74,"lon":-74.03,"label":"bwè kafe"}],"route":[[40.74,-74.03],[40.75,-74.02]]} · \
+    {"type":"diagram","nodes":[{"id":"open","label":"Open app"},{"id":"home","label":"Home"}],"edges":[{"from":"open","to":"home","label":"ok"}]} · \
+    table{headers,rows} · keyvalue{data:{key:value}} · list{items} · progress{description,total,completed} · markdown{content} · text{content} · image{url|attachment} · rule{title}. \
+    kind is bar, line or pie; values are numbers (4000, not "4k"). The card appears in the chat; afterwards answer in one short \
+    sentence and do not repeat the data.
     """
     public let parameters: JSONValue = ["type": "object", "properties": [
         "title": ["type": "string", "description": "optional heading for the whole card"],

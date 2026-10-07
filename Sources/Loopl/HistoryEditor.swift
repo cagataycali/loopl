@@ -319,6 +319,7 @@ public enum HistoryEditor {
             case .toolResult(let r): parts.append("toolResult:\(r.name)")
             case .reasoning: parts.append("[reasoning]")
             case .image: parts.append("[image]")
+            case .video: parts.append("[video]")
             }
         }
         if content.count > 3 { parts.append("+\(content.count - 3) more") }
@@ -531,6 +532,7 @@ public enum HistoryEditor {
         case .toolResult: "toolResult"
         case .reasoning: "reasoning"
         case .image: "image"
+        case .video: "video"
         }
     }
 }

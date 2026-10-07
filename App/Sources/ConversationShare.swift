@@ -18,11 +18,12 @@ enum ConversationShare {
         out.append("")
         for item in c.items {
             switch item {
-            case .user(let s, let images):
+            case .user(let s, let images, let videos):
                 let text = AudioAttachmentMarker.split(s)
                 var head = "**You**"
                 var extras: [String] = []
                 if let n = images?.count, n > 0 { extras.append("\(n) image\(n == 1 ? "" : "s")") }
+                if let vids = videos, !vids.isEmpty { extras.append(vids.map { "video \($0.clock)" }.joined(separator: ", ")) }
                 if !text.clips.isEmpty { extras.append("\(text.clips.count) recording\(text.clips.count == 1 ? "" : "s")") }
                 if !extras.isEmpty { head += " _(\(extras.joined(separator: ", ")))_" }
                 out += [head, "", text.text, ""]
@@ -132,7 +133,7 @@ struct ShareCard: View {
             Divider()
             ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                 switch item {
-                case .user(let s, let images): UserTurn(s, images: images ?? [], menu: false)
+                case .user(let s, let images, let videos): UserTurn(s, images: images ?? [], videos: videos ?? [], menu: false)
                 case .assistant(let s): MarkdownBody(s)
                 case .tool(let name, _, _, let isError, let ms, _):
                     HStack(spacing: 6) {

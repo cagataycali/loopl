@@ -124,6 +124,10 @@ Style
         var out: [JSONValue] = [.object(["role": "system", "content": .string(systemPrompt)])]
         var images: [ImageFile] = []
         var imageRefs: [JSONValue] = []
+        // Videos travel as a REFERENCE, never the bytes: the row's text gets the same honest stand-in a text model
+        // reads (file name, length, transcript) and `videos` lists {ref, duration, width, height, frames} — the
+        // frames themselves are not a training signal until a video-QA dataset round decides their shape.
+        var videoRefs: [JSONValue] = []
         var toolCalls = 0, turns = 0
         var pending: [String: ToolUse] = [:]   // tool-call ids waiting for a result
 
@@ -139,7 +143,12 @@ Style
                     }
                     continue
                 }
-                let text = urls.scrub(m.text)
+                let text = urls.scrub(m.textWithVideoFallback)
+                for v in m.videos {
+                    var ref: [String: JSONValue] = ["ref": .string(v.fileName), "duration": .number(v.duration), "frames": .number(Double(v.frameCount))]
+                    if let w = v.width, let h = v.height { ref["width"] = .number(Double(w)); ref["height"] = .number(Double(h)) }
+                    videoRefs.append(.object(ref))
+                }
                 let pics = options.redaction.stripImages ? [] : m.images
                 if pics.isEmpty {
                     guard !text.isEmpty else { continue }
@@ -209,6 +218,7 @@ Style
             "gen": .object(gen),
         ]
         if !imageRefs.isEmpty { row["images"] = .array(imageRefs) }
+        if !videoRefs.isEmpty { row["videos"] = .array(videoRefs) }
         return Record(id: id, json: .object(row), images: images, turns: turns, toolCalls: toolCalls)
     }
 

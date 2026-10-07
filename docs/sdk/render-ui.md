@@ -57,8 +57,14 @@ One `type` per component; everything else is optional so a 0.8B model can emit i
 
 The author is a small on-device model, so `RenderSpec(args:)` repairs what it can — `"4k"` and `"7,100"` become
 numbers, `{Mon: 4000}` becomes points, object rows are read by header, `"login -> home"` is an edge, a node named only
-by an edge is added — and **records every repair in `issues`**. The result the model reads names the kinds it drew and
-appends the issues, so a bad call can be corrected on the next step. An unknown `type` is kept as
+by an edge is added; and the shapes measured on loopl-0.8b/2b: `components` sent as a JSON *string* (also when the
+schema check has wrapped it into a one-element array), an extra `}` or a truncated tail (brackets are rebalanced), a
+key missing its closing quote, a missing `type` (inferred from `kind`, from a type-named key such as `{"chart": {…}}`,
+or from the fields present), `edges`/`pins`/`series` left beside the component instead of inside it, and a diagram
+split across edge-less components — and **records every repair in `issues`**. The result the model reads names the kinds it drew and
+appends the issues as *notes for the next call* — worded so that the model knows the card **is** already drawn
+(measured on loopl-0.8b: a line labelled `issues:` read as failure and the same card was re-sent four times). An
+unknown `type` is kept as
 `RenderComponent.unknown(type:)`: the card says *unknown component type "gauge"* and the result lists the known
 types. Only a missing or empty `components` throws.
 

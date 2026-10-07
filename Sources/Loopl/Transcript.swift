@@ -22,7 +22,9 @@ public struct TranscriptItem: Identifiable, Sendable, Hashable {
     public var kind: Kind
     /// Pictures attached to this item — a user turn's attachments, or a tool's produced images (`ToolResult.images`).
     public var images: [ImageBlock] = []
-    public init(id: UUID = UUID(), kind: Kind, images: [ImageBlock] = []) { self.id = id; self.kind = kind; self.images = images }
+    /// Clips attached to a user turn (Phase 8). The file stays on disk; the block carries the poster + transcript.
+    public var videos: [VideoBlock] = []
+    public init(id: UUID = UUID(), kind: Kind, images: [ImageBlock] = [], videos: [VideoBlock] = []) { self.id = id; self.kind = kind; self.images = images; self.videos = videos }
 }
 
 /// The conversation as a UI renders it: rows built from agent events, plus metrics.
@@ -49,7 +51,7 @@ public struct Transcript: Sendable, Hashable {
 
     public init() {}
 
-    public mutating func user(_ text: String, images: [ImageBlock] = []) { items.append(.init(kind: .user(text), images: images)); isRunning = true }
+    public mutating func user(_ text: String, images: [ImageBlock] = [], videos: [VideoBlock] = []) { items.append(.init(kind: .user(text), images: images, videos: videos)); isRunning = true }
     public mutating func note(_ text: String) { items.append(.init(kind: .note(text))) }
 
     /// The host stopped the turn and the agent could not report it (STOP-LOCATION 2026-10-07 — the fallback behind
