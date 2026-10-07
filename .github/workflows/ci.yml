@@ -2,7 +2,9 @@ name: ci
 on:
   push:
     branches: [main]
-    paths-ignore: ['docs/**', 'mkdocs.yml', 'requirements-docs.txt', '.github/workflows/docs.yml']
+    paths-ignore: ['docs/**', 'mkdocs.yml', 'requirements-docs.txt',
+                  '.github/workflows/docs.yml', '.github/workflows/docs-pr.yml',
+                  'scripts/changelog-release.py']
   pull_request:
   workflow_dispatch:
 concurrency:
