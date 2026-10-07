@@ -28,6 +28,10 @@ hurry is how a conflict marker reaches a merge commit.
 
 - **One file per pull request**, named with its number. Reuse the file if you push again.
 - **Bullets only** — no `##` heading of your own; the Unreleased heading is already there.
+- **You may name test suites and symbols freely** (`EngineArchiveTests`, `ApprovalCard`) — this
+  directory is exempt from `docs/check_symbols.sh`'s "every documented type exists in Sources/"
+  scan, exactly as `changelog.md` is. The **copy rules still apply** here: the banned-product-name
+  rule in `docs/check_symbols.sh` is checked in fragments too.
 - Same voice as the rest of the changelog: what a person can now do or no longer suffers,
   the measurement behind it, and the test that pins it.
 - ASCII punctuation where it may end up in a TestFlight *What's New* (App Store Connect
