@@ -47,6 +47,32 @@ final class ToolListingTests: XCTestCase {
         XCTAssertNotNil(ToolListing.coreCopy["manage_tools"])
     }
 
+    /// Every portable tool needs a hand-written line in `coreCopy`, because `ToolsSection` falls back to the tool's own
+    /// `description` — written FOR THE MODEL. `use_agent` had no entry and Settings printed its 694-character prompt,
+    /// `{pending:true, id}` and all, as a 324 pt row (356 pt on an SE). The old check listed six names by hand, so a new
+    /// tool was invisible to it; this one asks the tools themselves.
+    func testEveryPortableToolHasHumanCopy() {
+        // The simple tools answer for themselves; the three that need a host are named by their own `toolName`
+        // constant, so renaming a tool breaks the build here instead of silently dropping it from this check.
+        let simple: [any Tool] = [CurrentTimeTool(), CalculatorTool(), RememberTool(), RecallTool(), HttpTool(), ManageMessagesTool()]
+        let names = simple.map(\.name) + [UseAgentTool.toolName, RenderUITool.toolName, AskUserTool.toolName,
+                                          SystemPromptTool.toolName, ManageToolsTool.toolName]
+        let longest = ToolListing.coreCopy.values.map(\.count).max() ?? 0
+        for name in names {
+            guard let copy = ToolListing.coreCopy[name] else {
+                return XCTFail("\(name) has no Settings copy — the row would print its model prompt instead")
+            }
+            XCTAssertLessThanOrEqual(copy.count, 180, "\(name): \(copy.count) characters is a paragraph, not a row (longest today \(longest))")
+            XCTAssertFalse(copy.contains("{") || copy.contains("}"), "\(name): braces are JSON, not words")
+            XCTAssertNil(copy.range(of: "[a-z_]+:(true|false|[a-z])", options: .regularExpression),
+                         "\(name): `key:value` is the model's argument syntax")
+            XCTAssertNil(copy.range(of: "\\b[A-Z]{4,}\\b", options: .regularExpression), "\(name): SHOUTING is prompt voice")
+        }
+        for (name, copy) in ToolListing.coreCopy {
+            XCTAssertTrue(copy.hasSuffix(".") || copy.hasSuffix("›"), "\(name): a row is a sentence")
+        }
+    }
+
     func testSummaryMatchesToolCountSummary() {
         let rows: [ToolListing.Row] = [
             .init(name: "a", copy: "", defaultOn: true, enabled: true), .init(name: "b", copy: "", defaultOn: true, enabled: true),
