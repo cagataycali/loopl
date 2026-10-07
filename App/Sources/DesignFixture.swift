@@ -55,6 +55,9 @@ enum DesignFixture {
     /// `--design-models shelf|empty`: Models › "On this iPhone" with weights that are not on the simulator — `shelf` = loopl 2B in use,
     /// Qwen3 0.6B downloaded, loopl 0.8B 40 % downloaded (one glyph per row); `empty` = nothing here, no model loaded (the calm empty state).
     static var models: String? { value("--design-models") }
+    /// `--design-update <catalog id>`: pretend this model's copy arrived 9 days ago at one commit and the repo serves
+    /// another, so the "Hugging Face has a newer version" row can be shot and tested without a network.
+    static var updateAvailable: String? { value("--design-update") }
     /// `--design-mounted "http,-calculator"`: the agent mounted `http` and unmounted `calculator` for this conversation (Phase 6) —
     /// Settings › Tools shows the *mounted / unmounted for this conversation* tags and the one-line note. `-name` = unmount.
     static var mounted: String? { value("--design-mounted") }
@@ -168,6 +171,10 @@ enum DesignFixture {
             engine.store.overrideState("qwen3-0.6b-4bit", .downloaded(bytes: 403_000_000))
             engine.store.overrideState("loopl-0.8b-4bit", .downloading(done: 250_000_000, total: 625_228_929, filesDone: 2, files: 6))
             engine.store.refresh()
+        }
+        if let id = updateAvailable {
+            engine.store.overrideVersions(installed: [id: InstalledVersion(sha: "0d1f2e3a4b5c", at: Date().addingTimeInterval(-9 * 86_400))],
+                                          remote: [id: "47d27b4415f8"])
         }
         #endif
         settings.showPerformance = CommandLine.arguments.contains("--design-perf")
