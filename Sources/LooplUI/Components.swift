@@ -491,13 +491,17 @@ public struct DisclosureChevron: View {
 public struct ToolRow: View {
     public var call: ToolUse
     public var result: ToolResult?
+    /// Phase 7: how many times this row's control was tapped (the host counts; the result is the latest).
+    public var controlTaps: Int = 0
     @State private var expanded: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var typeSize
     /// The ✓/✗ glyph is `.footnote`, so its box scales with it: fixed at 16 pt it overflowed into the tool name at
     /// AX-XL (the glyph is ~26 pt there) and the two touched (UX audit).
     @ScaledMetric(relativeTo: .footnote) private var badge: CGFloat = 16
-    public init(call: ToolUse, result: ToolResult?, expanded: Bool = false) { self.call = call; self.result = result; _expanded = State(initialValue: expanded) }
+    public init(call: ToolUse, result: ToolResult?, expanded: Bool = false, controlTaps: Int = 0) {
+        self.call = call; self.result = result; self.controlTaps = controlTaps; _expanded = State(initialValue: expanded)
+    }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -538,6 +542,13 @@ public struct ToolRow: View {
             if expanded { ToolCallCard(call: call, result: result).transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top))) }
             // A picture the tool made is the result — shown folded or not.
             if let r = result, !r.images.isEmpty { ToolImagesView(r.images) }
+            // Phase 7: a live control the result carries ("Turn off" under a flashlight result) — folded or not, under
+            // the row, indented to the name. A tap runs the same tool through the host; the row then shows the fresh result.
+            if let r = result, let c = r.control, !r.isError {
+                ToolControlView(control: c, toolUseId: call.toolUseId, taps: controlTaps)
+                    .padding(.leading, badge + 8)
+                    .transition(.opacity)
+            }
         }
         .padding(.vertical, 2)
         .animation(LooplDesign.Motion.faded(LooplDesign.Motion.spring, reduceMotion), value: result == nil)
@@ -836,7 +847,7 @@ public struct AgentTranscriptView<Empty: View, Banner: View>: View {
                 RenderCard(call: c, result: r, spec: spec, images: item.images)
             } else {
                 VStack(alignment: .leading, spacing: 8) {
-                    ToolRow(call: c, result: r, expanded: expandTools)
+                    ToolRow(call: c, result: r, expanded: expandTools, controlTaps: item.controlTaps)
                     if !item.images.isEmpty { ImageStrip(item.images, maxHeight: 260) }   // tool-produced pictures (generate_image…)
                 }
             }
