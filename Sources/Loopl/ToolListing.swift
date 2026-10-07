@@ -76,6 +76,7 @@ public struct ToolListing: Sendable, Hashable {
         "clipboard_write": "Asks before replacing what is on your clipboard.",
         "calendar_create": "Asks before adding an event.",
         "reminders_create": "Asks before adding a reminder.",
+        "system_prompt": "Asks before changing the system prompt — the card shows old → new; reads go through.",
     ]
 
     /// One-line copy for the portable tools (their `description` is written for the model, not for Settings).
@@ -88,5 +89,6 @@ public struct ToolListing: Sendable, Hashable {
         "http": "Fetches a URL for the model. Refused while offline mode is on.",
         "manage_tools": "Lets the model add or remove its own tools mid-conversation — a mount works on its very next step.",
         "manage_messages": "Lets the model tidy its own context in a long chat — old tool results go, your messages stay. The chat on screen never changes.",
+        "system_prompt": "Lets the model read or change its own system prompt when you ask for a standing rule — the Settings field, for every conversation. Revert any time in Settings › System prompt.",
     ]
 }
