@@ -405,7 +405,6 @@ public actor Agent {
         }
     }
 
-<<<<<<< HEAD
     /// Stop the run in flight (the user's stop button): the model stream ends at its next token, a tool call that
     /// never returns becomes an immediate "Tool execution cancelled" result (`runTool` races the tool against
     /// cancellation), waits on approvals/interrupts answer with their timeout response, and the loop reports
@@ -413,7 +412,7 @@ public actor Agent {
     public nonisolated func cancelRun() { runHandle.cancel() }
     /// True while a `stream()` is in flight.
     public nonisolated var isRunning: Bool { runHandle.isRunning }
-=======
+
     // MARK: Phase 7 — a control tap runs one tool for the user (no model call)
 
     /// The text the model reads in front of a tapped tool's result, so the next turn knows the state changed and WHO did it.
@@ -444,7 +443,6 @@ public actor Agent {
         try? await appendMessage(.toolResults([forModel]))
         return result
     }
->>>>>>> origin/main
 
     // MARK: `_run_loop`
 
