@@ -11,7 +11,7 @@ settings:
     DEVELOPMENT_TEAM: K6B7JDYLLL
     SWIFT_VERSION: '6.0'
     CODE_SIGN_STYLE: Automatic
-    CURRENT_PROJECT_VERSION: 21
+    CURRENT_PROJECT_VERSION: 22
     MARKETING_VERSION: 0.1.0
     SWIFT_STRICT_CONCURRENCY: complete
     # MLX + safetensors want the big address space; Metal only exists on device.
