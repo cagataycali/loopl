@@ -951,6 +951,9 @@ public struct ModelPickerRow: View {
         if spec.supportsVision {
             t = t + meta(" · ") + (Text(Image(systemName: "eye")) + Text(" vision")).font(.caption2.weight(.semibold)).foregroundColor(LooplDesign.accent)
         }
+        if spec.isThinking {
+            t = t + meta(" · ") + (Text(Image(systemName: "brain")) + Text(" thinks")).font(.caption2.weight(.semibold)).foregroundColor(.secondary)
+        }
         if spec.toolsUnverified == true {
             t = t + meta(" · ") + Text("tools unverified").font(.caption2.weight(.semibold)).foregroundColor(LooplDesign.amber)
         }
@@ -959,6 +962,7 @@ public struct ModelPickerRow: View {
     private var metaAccessibility: String {
         var parts = [spec.isDownloadable ? spec.sizeLabel : "built in", "\(spec.paramsB.formatted(.number.precision(.fractionLength(0...1))))B", "context \(spec.ctxUsable8GB.formatted())", spec.runtime.label]
         if spec.supportsVision { parts.append("sees pictures") }
+        if spec.isThinking { parts.append("thinks before answering") }
         if spec.toolsUnverified == true { parts.append("tool calls unverified for this model") }
         return parts.joined(separator: ", ")
     }
