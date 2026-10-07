@@ -1045,6 +1045,8 @@ public struct ModelPickerRow: View {
         if spec.isThinking {
             t = t + meta(" · ") + (Text(Image(systemName: "brain")) + Text(" thinks")).font(.caption2.weight(.semibold)).foregroundColor(.secondary)
         }
+        // The title no longer says "· Q4_K_M (llama.cpp)" (IMPROVE-4 #22); one word keeps a GGUF twin apart from its MLX sibling.
+        if spec.runtime == .gguf { t = t + meta(" · GGUF") }
         if spec.toolsUnverified == true {
             t = t + meta(" · ") + Text("tools unverified").font(.caption2.weight(.semibold)).foregroundColor(LooplDesign.amber)
         }
@@ -1056,6 +1058,7 @@ public struct ModelPickerRow: View {
     public static func metaAccessibility(_ spec: ModelSpec) -> String {
         var parts = [spec.isDownloadable ? spec.sizeLabel : "built in"]
         parts.append(spec.supportsVision ? "sees pictures" : "text only")
+        if spec.runtime == .gguf { parts.append("GGUF build") }
         if spec.isThinking { parts.append("thinks before answering") }
         if spec.toolsUnverified == true { parts.append("tool calls unverified for this model") }
         return parts.joined(separator: ", ")
