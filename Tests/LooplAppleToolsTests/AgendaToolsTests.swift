@@ -58,7 +58,9 @@ final class AgendaToolsTests: XCTestCase {
         let req = t.requiresApproval(for: ["title": .string("Lunch"), "start": .string("2026-10-07 12:30"), "location": .string("Pier 13")])
         XCTAssertEqual(req?.method, "ADD"); XCTAssertEqual(req?.risk, .medium)
         XCTAssertEqual(req?.title, "Add event · Lunch")
-        XCTAssertTrue(req?.detail?.contains("2026-10-07 12:30 @ Pier 13") == true, req?.detail ?? "")
+        XCTAssertTrue(req?.detail?.hasPrefix("Adds to your calendar — ") == true, req?.detail ?? "")
+        XCTAssertTrue(req?.detail?.hasSuffix(" at Pier 13") == true, req?.detail ?? "")
+        XCTAssertFalse(req?.detail?.contains("2026-10-07") == true, "no ISO stamp on the card: \(req?.detail ?? "")")
         XCTAssertNil(t.requiresApproval(for: ["title": .string("Lunch")]), "invalid input fails in call, no card")
     }
 
@@ -84,7 +86,7 @@ final class AgendaToolsTests: XCTestCase {
         XCTAssertNil(try RemindersCreateTool.parse(["title": .string("x")]).start, "due is optional")
         XCTAssertThrowsError(try RemindersCreateTool.parse(["due": .string("2026-10-08")]))
         let req = RemindersCreateTool().requiresApproval(for: ["title": .string("Water the plants")])
-        XCTAssertEqual(req?.title, "Add reminder · Water the plants"); XCTAssertEqual(req?.detail, "Adds to Reminders: no due date"); XCTAssertEqual(req?.risk, .medium)
+        XCTAssertEqual(req?.title, "Add reminder · Water the plants"); XCTAssertEqual(req?.detail, "Adds to Reminders — no due date"); XCTAssertEqual(req?.risk, .medium)
         let out = try await RemindersCreateTool().call(["title": .string("Water the plants"), "due": .string("2026-10-08 09:00")])
         XCTAssertTrue(out.hasPrefix("reminders: added"), out); XCTAssertTrue(out.contains("09:00: Water the plants"), out)
         XCTAssertEqual(src.created.last?.title, "Water the plants")
@@ -112,5 +114,20 @@ final class AgendaToolsTests: XCTestCase {
         XCTAssertEqual(AgendaStore.parseDate("2026-10-07")?.allDay, true)
         XCTAssertEqual(AgendaStore.parseDate("2026-10-07 15:00")?.allDay, false)
         XCTAssertNil(AgendaStore.parseDate("next tuesday"))
+    }
+
+    // MARK: spoken dates (AUDIT improve-3 #1: the card said "Adds to Reminders: 2026-10-07 09:00")
+    func testSpokenDatesReadLikeAPerson() {
+        var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "Europe/Istanbul")!
+        let now = cal.date(from: DateComponents(year: 2026, month: 10, day: 6, hour: 22, minute: 0))!
+        func at(_ day: Int, _ month: Int = 10, _ h: Int = 9) -> Date { cal.date(from: DateComponents(year: 2026, month: month, day: day, hour: h, minute: 0))! }
+        let cf = DateFormatter(); cf.calendar = cal; cf.timeZone = cal.timeZone; cf.timeStyle = .short; cf.dateStyle = .none
+        let clock = cf.string(from: at(7))   // locale-dependent "9:00 AM" / "09:00"
+        XCTAssertEqual(AgendaStore.spoken(at(6), now: now, calendar: cal), "today at \(clock)")
+        XCTAssertEqual(AgendaStore.spoken(at(7), now: now, calendar: cal), "tomorrow at \(clock)")
+        XCTAssertEqual(AgendaStore.spoken(at(7), allDay: true, now: now, calendar: cal), "tomorrow (all day)")
+        XCTAssertEqual(AgendaStore.spoken(at(9), now: now, calendar: cal), "Fri 9 Oct at \(clock)")           // within a week: weekday
+        XCTAssertEqual(AgendaStore.spoken(at(7, 11), now: now, calendar: cal), "Sat 7 Nov 2026 at \(clock)") // beyond: with the year
+        XCTAssertFalse(AgendaStore.spoken(at(7), now: now, calendar: cal).contains("2026-10-07"))
     }
 }
