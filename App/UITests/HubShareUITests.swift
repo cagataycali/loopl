@@ -37,11 +37,7 @@ final class HubShareUITests: XCTestCase {
 
     /// Open History, enter selection mode, select everything, tap Share — returns once the sheet's review step is up.
     private func openShareSheet(_ app: XCUIApplication) {
-        let history = app.buttons["History"].firstMatch
-        XCTAssertTrue(history.waitForExistence(timeout: 15), "History button")
-        history.tap()
-        let select = app.buttons["history.select"]
-        XCTAssertTrue(select.waitForExistence(timeout: 10), "Select button in History")
+        let select = app.reachHistory()
         shot("01-history")
         select.tap()
         let all = app.buttons["history.selectAll"]

@@ -64,10 +64,15 @@ final class KeyboardShortcutsUITests: XCTestCase {
         let app = launch("history")
         if UIDevice.current.userInterfaceIdiom == .pad {
             // iPad: History is the NavigationSplitView sidebar. Portrait starts with it hidden, so ⌘Y shows it and
-            // ⌘Y again hides it. The probe is the sidebar's own "History" section header — the chat detail has no
-            // History control in split layout (`if !inSplit` in ChatView), so this text means "the sidebar is on screen".
+            // ⌘Y again hides it.
+            //
+            // The probe is the sidebar's own Select button, by identifier. It used to be `staticTexts["History"]`,
+            // described as "the sidebar's own section header" — but the sidebar has no such header (measured: its
+            // rows are New conversation, the date sections, Models, Settings), so the probe could never be true and
+            // the test reported "⌘Y showed the sidebar" as a failure on an iPad whether or not ⌘Y worked. A probe
+            // that cannot succeed cannot tell you a feature is broken.
             XCTAssertTrue(app.buttons["New conversation"].firstMatch.waitForExistence(timeout: 10))
-            let header = app.staticTexts["History"]
+            let header = app.buttons["history.select"]
             let visibleBefore = header.exists
             app.typeKey("y", modifierFlags: .command)
             if visibleBefore {
@@ -79,7 +84,7 @@ final class KeyboardShortcutsUITests: XCTestCase {
             sleep(1)
             XCTAssertEqual(visibleBefore, header.exists, "⌘Y toggled it back")
         } else {
-            XCTAssertTrue(app.buttons["History"].waitForExistence(timeout: 10))
+            XCTAssertTrue(app.buttons["chat.history"].waitForExistence(timeout: 10))
             app.typeKey("y", modifierFlags: .command)
             XCTAssertTrue(app.buttons["Done"].waitForExistence(timeout: 5), "⌘Y opened the History sheet")
         }
