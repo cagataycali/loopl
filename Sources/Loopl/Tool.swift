@@ -107,7 +107,115 @@ public struct ClosureTool: Tool {
 public struct ToolOutput: Sendable, Hashable {
     public var text: String
     public var images: [ImageBlock]
-    public init(text: String, images: [ImageBlock] = []) { self.text = text; self.images = images }
+    /// Phase 7 (CONTROLS): an optional live control the result card draws — "Turn off" under a flashlight result,
+    /// a mini player under `music`, a map pin under `location`. Not part of what the model reads.
+    public var control: ToolControl?
+    public init(text: String, images: [ImageBlock] = [], control: ToolControl? = nil) { self.text = text; self.images = images; self.control = control }
+}
+
+// MARK: - Control affordances on tool results (Phase 7, CONTROLS)
+
+/// What a control tap runs: the SAME tool, with these arguments, through the agent's normal tool path
+/// (hooks + approval policy apply, the registry may mount it, the result replaces the card's). Never a hidden call.
+public struct ControlAction: Sendable, Hashable, Codable {
+    public var tool: String
+    public var args: [String: JSONValue]
+    public init(tool: String, args: [String: JSONValue] = [:]) { self.tool = tool; self.args = args }
+}
+
+/// A typed, tiny UI affordance a tool may attach to its result (`ToolOutput.control` → `ToolResult.control`).
+/// The card renders it live; the model never sees it (so no token cost and a 0.8B model cannot mis-emit it — the
+/// TOOL decides what control fits its own result). Persisted with the result, re-rendered from History.
+public enum ToolControl: Sendable, Hashable {
+    /// One switch — `on` is the state the result reports; the tap runs `action` (flashlight on → "Turn off").
+    case toggle(label: String, on: Bool, action: ControlAction)
+    /// One plain button that re-runs something (vibrate → "Vibrate again").
+    case button(label: String, action: ControlAction)
+    /// A mini player: title line + pause/play, previous, next, volume — every button is a `ControlAction` on `tool` (music).
+    case player(Player)
+    /// A pin on a small map (location); the whole card opens Maps.
+    case mapPin(lat: Double, lon: Double, label: String?)
+    /// Counts down to `until` (timers, "stops by itself at…").
+    case timer(until: Date, label: String?)
+    /// Opens a URL scheme / https link ("Open in Calendar", "Open in Reminders").
+    case link(label: String, url: String)
+
+    public struct Player: Sendable, Hashable, Codable {
+        public var title: String
+        public var subtitle: String?
+        public var playing: Bool
+        /// 0–100 when the tool knows it, else nil (slider hidden).
+        public var volume: Int?
+        /// The tool every button calls (`music`); the card sends `{action: pause|play|next|previous}` and
+        /// `{action: volume, level: N}` — the music tool's own schema, nothing invented.
+        public var tool: String
+        public init(title: String, subtitle: String? = nil, playing: Bool, volume: Int? = nil, tool: String = "music") {
+            self.title = title; self.subtitle = subtitle; self.playing = playing; self.volume = volume; self.tool = tool
+        }
+    }
+
+    /// The `type` discriminator in JSON (History files, fixtures, the dataset's control-tap family).
+    public var typeName: String {
+        switch self {
+        case .toggle: "toggle"; case .button: "button"; case .player: "player"
+        case .mapPin: "mapPin"; case .timer: "timer"; case .link: "link"
+        }
+    }
+    /// Short spoken form for accessibility and tests ("Turn off", "player: Song — playing").
+    public var accessibilitySummary: String {
+        switch self {
+        case .toggle(let label, let on, _): "\(label), currently \(on ? "on" : "off")"
+        case .button(let label, _): label
+        case .player(let p): "player: \(p.title), \(p.playing ? "playing" : "paused")"
+        case .mapPin(_, _, let label): "map pin\(label.map { ": \($0)" } ?? "")"
+        case .timer(_, let label): "timer\(label.map { ": \($0)" } ?? "")"
+        case .link(let label, _): label
+        }
+    }
+}
+
+extension ToolControl: Codable {
+    private enum K: String, CodingKey { case type, label, on, action, player, lat, lon, until, url }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: K.self)
+        let type = try c.decode(String.self, forKey: .type)
+        switch type {
+        case "toggle":
+            self = .toggle(label: try c.decode(String.self, forKey: .label), on: try c.decode(Bool.self, forKey: .on),
+                           action: try c.decode(ControlAction.self, forKey: .action))
+        case "button":
+            self = .button(label: try c.decode(String.self, forKey: .label), action: try c.decode(ControlAction.self, forKey: .action))
+        case "player":
+            self = .player(try c.decode(Player.self, forKey: .player))
+        case "mapPin":
+            self = .mapPin(lat: try c.decode(Double.self, forKey: .lat), lon: try c.decode(Double.self, forKey: .lon),
+                           label: try c.decodeIfPresent(String.self, forKey: .label))
+        case "timer":
+            self = .timer(until: Date(timeIntervalSince1970: try c.decode(Double.self, forKey: .until)),
+                          label: try c.decodeIfPresent(String.self, forKey: .label))
+        case "link":
+            self = .link(label: try c.decode(String.self, forKey: .label), url: try c.decode(String.self, forKey: .url))
+        default:
+            throw DecodingError.dataCorruptedError(forKey: .type, in: c, debugDescription: "unknown control type \(type)")
+        }
+    }
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: K.self)
+        try c.encode(typeName, forKey: .type)
+        switch self {
+        case .toggle(let label, let on, let action):
+            try c.encode(label, forKey: .label); try c.encode(on, forKey: .on); try c.encode(action, forKey: .action)
+        case .button(let label, let action):
+            try c.encode(label, forKey: .label); try c.encode(action, forKey: .action)
+        case .player(let p): try c.encode(p, forKey: .player)
+        case .mapPin(let lat, let lon, let label):
+            try c.encode(lat, forKey: .lat); try c.encode(lon, forKey: .lon); try c.encodeIfPresent(label, forKey: .label)
+        case .timer(let until, let label):
+            try c.encode(until.timeIntervalSince1970, forKey: .until); try c.encodeIfPresent(label, forKey: .label)
+        case .link(let label, let url):
+            try c.encode(label, forKey: .label); try c.encode(url, forKey: .url)
+        }
+    }
 }
 
 extension Tool {

@@ -174,12 +174,19 @@ public struct LocationTool: AppleTool {
         return lines.joined(separator: "\n")
     }
 
-    public func call(_ args: [String: JSONValue]) async throws -> String {
+    /// Phase 7: a pin on a small map under the result — at the SAME rounding the model got (coarse stays ~1 km).
+    public static func control(_ p: Place, precise: Bool) -> ToolControl {
+        let d = precise ? 5 : 2
+        return .mapPin(lat: LocationStore.round(p.latitude, decimals: d), lon: LocationStore.round(p.longitude, decimals: d), label: p.name)
+    }
+
+    public func call(_ args: [String: JSONValue]) async throws -> String { try await callOutput(args).text }
+
+    public func callOutput(_ args: [String: JSONValue]) async throws -> ToolOutput {
         let precise = Self.precise
         let a = Self.availability(); guard a.available else { throw ToolError("location is not available here: \(a.reason)") }
         let p = try await LocationStore.current.current(precise: precise)
-        return Self.render(p, precise: precise, purpose: Self.parse(args))
+        return ToolOutput(text: Self.render(p, precise: precise, purpose: Self.parse(args)), control: Self.control(p, precise: precise))
     }
-    public func callOutput(_ args: [String: JSONValue]) async throws -> ToolOutput { ToolOutput(text: try await call(args)) }
     public func call(_ args: [String: JSONValue], images: [ImageBlock]) async throws -> ToolOutput { try await callOutput(args) }
 }

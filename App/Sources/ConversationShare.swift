@@ -28,7 +28,7 @@ enum ConversationShare {
                 out += [head, "", text.text, ""]
             case .assistant(let s):
                 out += ["**loopl**", "", s, ""]
-            case .tool(let name, let args, let result, let isError, _, _):
+            case .tool(let name, let args, let result, let isError, _, _, _):
                 let argText = args.isEmpty ? "" : " `" + compact(args) + "`"
                 out.append("> \(isError ? "✗" : "✓") **\(name)**\(argText)")
                 if let r = result, !r.isEmpty {
@@ -134,7 +134,7 @@ struct ShareCard: View {
                 switch item {
                 case .user(let s, let images): UserTurn(s, images: images ?? [], menu: false)
                 case .assistant(let s): MarkdownBody(s)
-                case .tool(let name, _, _, let isError, let ms, _):
+                case .tool(let name, _, _, let isError, let ms, _, _):
                     HStack(spacing: 6) {
                         Image(systemName: isError ? "xmark.circle.fill" : "checkmark.circle.fill")
                             .foregroundStyle(isError ? Color.red : LooplDesign.accent)

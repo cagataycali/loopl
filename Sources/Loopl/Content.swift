@@ -43,11 +43,13 @@ public struct ToolResult: Sendable, Hashable, Codable, Identifiable {
     /// Pictures the tool PRODUCED (e.g. `generate_image`). The transcript renders
     /// them; they are not fed back to the model (token budget stays predictable).
     public var images: [ImageBlock]
+    /// Phase 7: a live control the card draws (flashlight → "Turn off"). UI-only, like `images`: the model never reads it.
+    public var control: ToolControl?
 
-    public init(toolUseId: String, name: String, status: Status = .success, content: String, durationMs: Double = 0, images: [ImageBlock] = []) {
-        self.toolUseId = toolUseId; self.name = name; self.status = status; self.content = content; self.durationMs = durationMs; self.images = images
+    public init(toolUseId: String, name: String, status: Status = .success, content: String, durationMs: Double = 0, images: [ImageBlock] = [], control: ToolControl? = nil) {
+        self.toolUseId = toolUseId; self.name = name; self.status = status; self.content = content; self.durationMs = durationMs; self.images = images; self.control = control
     }
-    enum CodingKeys: String, CodingKey { case toolUseId, name, status, content, durationMs, images }
+    enum CodingKeys: String, CodingKey { case toolUseId, name, status, content, durationMs, images, control }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         toolUseId = try c.decode(String.self, forKey: .toolUseId)
@@ -56,12 +58,14 @@ public struct ToolResult: Sendable, Hashable, Codable, Identifiable {
         content = try c.decodeIfPresent(String.self, forKey: .content) ?? ""
         durationMs = try c.decodeIfPresent(Double.self, forKey: .durationMs) ?? 0
         images = try c.decodeIfPresent([ImageBlock].self, forKey: .images) ?? []
+        control = try? c.decodeIfPresent(ToolControl.self, forKey: .control)   // an unknown future control type reads as none, never fails the thread
     }
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(toolUseId, forKey: .toolUseId); try c.encode(name, forKey: .name); try c.encode(status, forKey: .status)
         try c.encode(content, forKey: .content); try c.encode(durationMs, forKey: .durationMs)
         if !images.isEmpty { try c.encode(images, forKey: .images) }
+        if let control { try c.encode(control, forKey: .control) }
     }
     public var id: String { toolUseId }
     public var isError: Bool { status == .error }

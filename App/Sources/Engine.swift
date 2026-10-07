@@ -566,6 +566,70 @@ public final class Engine {
         start(agent, Loopl.Message.user(prompt, images: sent))
     }
 
+    // MARK: - Phase 7: control taps (a tool row's "Turn off" / mini player / "Vibrate again")
+
+    /// Tool-use ids whose control tap is running — the row's control dims and shows the sweep (`looplControlBusy`).
+    public internal(set) var controlBusy: Set<String> = []
+
+    /// Whether a control tap can run right now: a model is loaded and no turn is generating. The transcript view passes
+    /// a handler only then; otherwise the controls are drawn disabled (the state they show stays true).
+    public var canTapControls: Bool {
+        #if DEBUG
+        if model == nil, DesignFixture.requested, case .ready = readiness { return !isGenerating }
+        #endif
+        return model != nil && !isGenerating
+    }
+
+    /// The user tapped the control under tool row `toolUseId`: run `action.tool` with `action.args` through the agent's
+    /// normal tool path (`Agent.invokeTool` — hooks, the approval policy, registry mount-on-call) with NO model call,
+    /// then put the fresh result on the SAME row (`Transcript.applyControlResult`) and save the thread.
+    ///
+    /// How it is recorded: the row keeps its original arguments and gains `controlTaps` (the card says "updated by your
+    /// tap"); History saves the latest result + control with that row (no extra row — a tap is not a model turn); the
+    /// model's own history gets one tool-use + tool-result pair whose result starts with `Agent.tappedResultPrefix`, so
+    /// the next turn knows the flashlight is off and that the user did it. An approval card, if the policy asks, appears
+    /// exactly as for a model's call and `resolve` answers it.
+    public func tapControl(_ toolUseId: String, _ action: ControlAction) {
+        guard !controlBusy.contains(toolUseId) else { return }
+        #if DEBUG
+        if model == nil, DesignFixture.requested { Task { await DesignFixture.tapControl(self, toolUseId, action) }; return }
+        #endif
+        guard !isGenerating else { lastError = "wait for the answer to finish"; haptics.emit(.error); return }
+        guard let model else { lastError = "the model is still loading"; haptics.emit(.error); return }
+        let agent = self.agent ?? Agent(model: model, systemPrompt: effectiveSystemPrompt, messages: transcript.messages, hooks: [approvalPolicy], registry: registry)
+        self.agent = agent
+        lastError = nil
+        controlBusy.insert(toolUseId)
+        haptics.emit(.toolStart)
+        let use = ToolUse(toolUseId: Self.tapId(), name: action.tool, input: action.args)
+        let system = effectiveSystemPrompt, gate = self.gate
+        Task { [weak self] in
+            await agent.setSystemPrompt(system); await agent.setModelGate(gate)
+            do {
+                for try await event in agent.invokeTool(use) {
+                    guard let self else { return }
+                    switch event {
+                    case .toolStarted: break                                   // not a new row: the tapped row is the row
+                    case .toolResult(let r):
+                        self.transcript.applyControlResult(for: toolUseId, r)
+                        self.haptics.emit(r.isError ? .error : .toolFinish)
+                        if r.isError { self.lastError = r.content }
+                    case .approvalRequested, .approvalResolved: _ = self.transcript.apply(event)
+                    default: _ = self.transcript.apply(event)
+                    }
+                }
+            } catch {
+                self?.lastError = error.localizedDescription
+                self?.haptics.emit(.error)
+            }
+            self?.controlBusy.remove(toolUseId)
+            self?.archiveCurrent()
+        }
+    }
+
+    /// Ids for tapped calls: `tap_` + 8 hex — distinguishable from the model's `tooluse_…` in the model's history and in exports.
+    static func tapId() -> String { "tap_" + String(UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(8)).lowercased() }
+
     /// Run one turn of `agent` on `message`, folding every event into the transcript. Shared by `send` and the wake.
     private func start(_ agent: Agent, _ message: Loopl.Message) {
         let system = effectiveSystemPrompt, gate = self.gate

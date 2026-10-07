@@ -270,7 +270,17 @@ public struct CalendarCreateTool: AppleTool {
         let saved = try await AgendaStore.current.createEvent(item)
         return "calendar: added\n" + AgendaStore.line(saved)
     }
-    public func callOutput(_ args: [String: JSONValue]) async throws -> ToolOutput { ToolOutput(text: try await call(args)) }
+    /// Phase 7: "Open in Calendar" on the day of the event (`calshow:` takes seconds since 2001).
+    public static func control(_ item: AgendaItem) -> ToolControl {
+        let t = item.start.map { Int($0.timeIntervalSinceReferenceDate) }
+        return .link(label: "Open in Calendar", url: t.map { "calshow:\($0)" } ?? "calshow:")
+    }
+    public func callOutput(_ args: [String: JSONValue]) async throws -> ToolOutput {
+        let item = try Self.parse(args)
+        let a = Self.availability(); guard a.available else { throw ToolError("calendar_create is not available here: \(a.reason)") }
+        let saved = try await AgendaStore.current.createEvent(item)
+        return ToolOutput(text: "calendar: added\n" + AgendaStore.line(saved), control: Self.control(saved))
+    }
     public func call(_ args: [String: JSONValue], images: [ImageBlock]) async throws -> ToolOutput { try await callOutput(args) }
 }
 
@@ -339,6 +349,15 @@ public struct RemindersCreateTool: AppleTool {
         let saved = try await AgendaStore.current.createReminder(item)
         return "reminders: added\n" + AgendaStore.line(saved)
     }
-    public func callOutput(_ args: [String: JSONValue]) async throws -> ToolOutput { ToolOutput(text: try await call(args)) }
+    /// Phase 7: "Open in Reminders" (the app's URL scheme; no per-item deep link is public).
+    public static func control(_ item: AgendaItem) -> ToolControl {
+        .link(label: "Open in Reminders", url: "x-apple-reminderkit://")
+    }
+    public func callOutput(_ args: [String: JSONValue]) async throws -> ToolOutput {
+        let item = try Self.parse(args)
+        let a = Self.availability(); guard a.available else { throw ToolError("reminders_create is not available here: \(a.reason)") }
+        let saved = try await AgendaStore.current.createReminder(item)
+        return ToolOutput(text: "reminders: added\n" + AgendaStore.line(saved), control: Self.control(saved))
+    }
     public func call(_ args: [String: JSONValue], images: [ImageBlock]) async throws -> ToolOutput { try await callOutput(args) }
 }

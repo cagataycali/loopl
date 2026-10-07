@@ -36,6 +36,9 @@ struct ChatView: View {
                     onSave: { item, text in engine.edit(item.id, text: text) },
                     onDeleteFrom: { item in engine.deleteFrom(item.id) },
                     onRetry: { item in engine.retry(item.id) }))
+                // Phase 7: control taps on tool rows go through the Engine (same tool path as the model's calls); nil = disabled.
+                .environment(\.looplControlHandler, engine.canTapControls ? ToolControlHandler { id, action in engine.tapControl(id, action) } : nil)
+                .environment(\.looplControlBusy, engine.controlBusy)
                 .contentShape(Rectangle())
                 .onTapGesture { focused = false }
                 .onChange(of: draft) { _, d in engine.userIsTyping = focused && !d.isEmpty }       // a sub-agent wake waits while a sentence is being typed
