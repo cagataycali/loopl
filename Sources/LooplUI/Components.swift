@@ -1019,8 +1019,10 @@ public struct ModelPickerRow: View {
         }
         else if downloaded || !spec.isDownloadable { Image(systemName: "checkmark").foregroundStyle(.secondary).font(.footnote.weight(.semibold)).accessibilityLabel("on this device").transition(.opacity) }
         else if let downloading {
-            ProgressView(value: min(max(downloading, 0), 1)).progressViewStyle(.circular).controlSize(.small).tint(LooplDesign.accent)
-                .frame(width: 18, height: 18).accessibilityLabel("downloading").transition(.opacity)
+            // The row below already draws the bar and the byte count; a third progress affordance (a spinning ring) read
+            // as a hang (IMPROVE-3 audit #16). The percentage is the one number the bar cannot say.
+            Text("\(Int((min(max(downloading, 0), 1) * 100).rounded()))%").font(.caption.monospacedDigit().weight(.medium)).foregroundStyle(LooplDesign.accent)
+                .contentTransition(.numericText()).accessibilityLabel("downloading").transition(.opacity)
         }
         else { Image(systemName: LooplDesign.iconDownload).foregroundStyle(.tertiary).accessibilityLabel("not downloaded").transition(.opacity) }
     }
