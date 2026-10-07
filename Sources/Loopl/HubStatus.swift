@@ -11,7 +11,10 @@ public enum HubStatus {
     /// `.part` sidecar and resumed with a `Range` request, so "what you have is kept" is a fact, not comfort.
     /// `path` names the file or endpoint; it is quoted only where it helps (a 404 says WHICH file went missing).
     public static func sentence(_ code: Int, path: String = "", downloading: Bool) -> String {
-        let kept = downloading ? " What you have downloaded is kept, so it carries on from there." : ""
+        // Short on purpose: the Models row draws this whole sentence in RED next to a Retry button, with no line
+        // limit, so every extra clause is another line of alarm for a fact that is reassuring. "Your progress is
+        // kept" costs four words and saves a line on a 375 pt screen (IMPROVE-5, measured where the string lands).
+        let kept = downloading ? " Your progress is kept." : ""
         switch code {
         case 429:
             return "Hugging Face is limiting requests right now — wait a minute and try again (429)." + kept
