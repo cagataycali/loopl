@@ -10,6 +10,7 @@ import Tokenizers
 import Hub
 import Jinja
 import CoreImage
+import CoreMedia
 import os
 
 private let tokenizerLog = Logger(subsystem: "technology.tiny.loopl", category: "tokenizer")
@@ -351,7 +352,14 @@ enum VisionPrompt {
         case .frames:
             let sampled = try await VideoFrameSampler.frames(of: block.url, plan: block.framePlan, duration: block.duration)
             guard !sampled.isEmpty else { return nil }
-            return .frames(sampled.map { UserInput.VideoFrame(image: .ciImage($0.image), timeStamp: $0.time) })
+            // mlx-swift-lm re-samples a `.frames` video (`targetFrames` evenly spaced over first…last timestamp, each
+            // target → "the last frame at or before it"). With real timestamps the targets land a rounding error
+            // BEFORE some frames and those frames are silently dropped (measured: 10 frames in → 6 used). Index
+            // timestamps (frame i at i seconds) make the targets hit every frame exactly; the processor does not
+            // read the times for anything else (no per-frame timestamp text in 3.32.3).
+            return .frames(sampled.enumerated().map { i, f in
+                UserInput.VideoFrame(image: .ciImage(f.image), timeStamp: CMTime(value: CMTimeValue(i), timescale: 1))
+            })
         }
     }
 }

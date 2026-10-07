@@ -50,9 +50,11 @@ final class MLXVideoTests: XCTestCase {
         // Text-only baseline with the same words → the video's own token cost is prompt − baseline.
         let question = "What happens in this video? Describe the motion in two sentences."
         var baseline = 0
-        var pre = StreamAssembler()
-        for try await ev in model.stream([Message.user(question + " (no video attached — answer 'none')")], toolSpecs: [], systemPrompt: "You are a precise, terse assistant.") { _ = pre.feed(ev) }
-        baseline = pre.finish().metrics.promptTokens - 8   // the parenthetical ≈ 8 tokens
+        if env["LOOPL_VIDEO_NOBASE"] == nil {
+            var pre = StreamAssembler()
+            for try await ev in model.stream([Message.user(question + " (no video attached — answer 'none')")], toolSpecs: [], systemPrompt: "You are a precise, terse assistant.") { _ = pre.feed(ev) }
+            baseline = pre.finish().metrics.promptTokens - 8   // the parenthetical ≈ 8 tokens
+        }
         var assembler = StreamAssembler()
         let msg = Message.user(question, images: [], videos: [block])
         let t1 = Date()
