@@ -22,7 +22,7 @@ final class SystemPromptUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--design-fixture", "sysprompt", "--design-sysprompt", "approved", "--design-tab", "chat"]
         app.launch()
-        let marker = app.staticTexts["system prompt extended by the agent · revert in Settings › System prompt"].firstMatch
+        let marker = app.staticTexts["The model added a rule to its instructions · undo in Settings › System prompt"].firstMatch
         XCTAssertTrue(marker.waitForExistence(timeout: 15), "the quiet marker")
         XCTAssertEqual(app.staticTexts.matching(identifier: "transcript-note").count, 1, "exactly one")
         XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'system_prompt'")).firstMatch.exists, "the tool row is visible")
