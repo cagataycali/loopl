@@ -109,11 +109,12 @@ struct SettingsView: View {
     }
 
     private var askBeforeFooter: String {
-        let base = "Offline mode blocks every network call — downloads and the model's web requests. "
+        // IMPROVE-5 copy pass 3: two lines on a 16 Pro, each toggle's effect in one clause.
+        let base = "Offline mode stops all network use, downloads included. "
         switch settings.askBefore {
-        case .always: return base + "Ask before: every web request waits for your tap."
-        case .mutating: return base + "Ask before: reading a page runs on its own; anything that sends or changes data waits for your tap (2 minutes, then it is denied)."
-        case .never: return base + "Ask before is off — the model's web requests run without asking."
+        case .always: return base + "Every web request waits for your tap."
+        case .mutating: return base + "Reading a page runs on its own; sending or changing data waits for your tap (2 minutes, then it is denied)."
+        case .never: return base + "The model's web requests run without asking."
         }
     }
 
@@ -154,13 +155,13 @@ struct SystemPromptEditor: View {
                         }
                         .accessibilityIdentifier("system-prompt-revert")
                     }
-                } footer: { Text("Changed by the model through the system_prompt tool, after you approved it. Revert puts the previous prompt back.") }
+                } footer: { Text("Changed by the model, with your approval. Revert puts the previous prompt back.") }
             }
             Section {
                 TextEditor(text: $settings.systemPrompt).frame(minHeight: 180).font(.body)
                     .accessibilityIdentifier("system-prompt-editor")
             } footer: {
-                Text("Sent at the start of every conversation, to every model — nothing is added in front of it. When you ask for a standing rule, the model can change this with the system_prompt tool; each change asks you first.")
+                Text("Sent at the start of every conversation, to every model. Ask for a standing rule and the model can add it here — each change asks you first.")
             }
             Section {
                 Button("Reset to default") { settings.systemPrompt = AppSettings.defaultSystemPrompt }
