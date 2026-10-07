@@ -170,3 +170,20 @@ extension RenderUITests {
         XCTAssertEqual(s.issues.count, 2)
     }
 }
+
+extension RenderUITests {
+    /// loopl-0.8b v3 raw calls: `kind` instead of `type` (3/3 map calls, pins right), the type as the key, and no type at all.
+    func testMissingTypeIsInferredAndReported() throws {
+        let s = try RenderSpec(args: ["components": .array([
+            .object(["kind": "map", "pins": .array([.object(["lat": 40.7, "lon": -74.0, "label": "a"])])]),
+            .object(["chart": .object(["kind": "line", "series": .array([.object(["points": .array([.object(["label": "x", "value": 1])])])])])]),
+            .object(["text": "Open → Login"]),
+            .object(["nodes": .array([.object(["id": "a"]), .object(["id": "b"])]), "edges": .array([.object(["from": "a", "to": "b"])])]),
+            .object(["kind": "bar", "points": .array([.object(["label": "x", "value": 2])])])])])
+        XCTAssertEqual(s.components.map(\.kindName), ["map", "chart", "text", "diagram", "chart"])
+        guard case .chart(_, .line, _) = s.components[1] else { return XCTFail() }
+        guard case .text("Open → Login", _) = s.components[2] else { return XCTFail() }
+        XCTAssertEqual(s.issues.count, 5)
+        XCTAssertTrue(s.issues[0].contains("say \"type\": \"map\""))
+    }
+}

@@ -206,7 +206,30 @@ public struct RenderSpec: Sendable, Hashable {
 
     // MARK: per-kind parsing
 
+    /// `type` when the model did not say it: loopl-0.8b wrote `{"kind": "map", "pins": …}` 3/3 (a "map"-named kind),
+    /// `{"chart": {…}}` and `{"text": "…"}` (the type as the key). Inferred from `kind`, from a type-named key, then from
+    /// the fields present — and reported, so the model learns the word is `type`.
+    static func inferType(_ o: inout [String: JSONValue], index n: Int, issues: inout [String]) {
+        if let t = o["type"]?.stringValue, !t.isEmpty { return }
+        func set(_ t: String, _ why: String) { o["type"] = .string(t); issues.append("component \(n): no `type` — read as \(t) (\(why)); say \"type\": \"\(t)\"") }
+        if let k = o["kind"]?.stringValue?.lowercased() {
+            if RenderComponent.knownTypes.contains(k) { set(k, "from kind"); return }
+            if ["bar", "line", "pie"].contains(k) { set("chart", "kind \(k)"); return }
+        }
+        for key in RenderComponent.knownTypes where o[key] != nil {
+            if let inner = o[key]?.objectValue { for (ik, iv) in inner where o[ik] == nil { o[ik] = iv } }
+            else if let text = o[key]?.stringValue { if o["content"] == nil { o["content"] = .string(text) } }
+            o.removeValue(forKey: key); set(key, "from the key \(key)"); return
+        }
+        let byFields: [(String, [String])] = [("map", ["pins", "markers", "route"]), ("diagram", ["nodes", "edges"]), ("chart", ["series", "points"]),
+                                              ("table", ["rows", "headers", "columns"]), ("progress", ["completed", "total"]), ("list", ["items"]),
+                                              ("keyvalue", ["data"]), ("image", ["url", "attachment"]), ("markdown", ["content", "text"])]
+        for (t, keys) in byFields where keys.contains(where: { o[$0] != nil }) { set(t, "from its fields"); return }
+    }
+
     private static func component(_ o: [String: JSONValue], index n: Int, issues: inout [String]) -> RenderComponent {
+        var o = o
+        inferType(&o, index: n, issues: &issues)
         let type = (o["type"]?.stringValue ?? "").lowercased().trimmingCharacters(in: .whitespaces)
         let title = str(o["title"]) ?? str(o["label"])
         switch type {
