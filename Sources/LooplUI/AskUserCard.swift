@@ -255,7 +255,10 @@ public struct AskUserCard: View {
                             .focused($focusedField, equals: field.name).submitLabel(.next).onSubmit { focusNext(after: field) }
                             .accessibilityIdentifier("ask-field-\(field.name)")
                     case .password:
+                        // `.oneTimeCode` keeps iOS from offering to SAVE this password (the "Save Password?" sheet came up on the first
+                        // capture): the value is a one-off handed to the agent, not an account the keychain should keep.
                         SecureField(field.label, text: binding(field))
+                            .textContentType(.oneTimeCode)
                             .textFieldStyle(.plain).padding(.horizontal, 12).padding(.vertical, 9)
                             .background(LooplDesign.tertiaryFill, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
                             .focused($focusedField, equals: field.name).submitLabel(.next).onSubmit { focusNext(after: field) }

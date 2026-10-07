@@ -22,6 +22,7 @@ Fewer tools make a better agent — every tool is one more thing a small model c
 | `http` | any HTTPS request — writes ask first; refused in offline mode |
 | `device_info` | battery, storage, model, OS |
 | `manage_messages` | the model tidies its **own** context in a long chat — `compact` drops old tool calls and results but keeps every message's text, `drop`/`clear` remove old turns, `stats`/`list` show the size. The chat on screen never changes; the transcript gets one quiet line, *"2 turns compacted by the agent · your history is unchanged"*. No approval card — it edits only what the model sees |
+| `ask_user` | the model asks **you** mid-turn with a native card — Yes/No, a radio list, checkboxes, a text field, a row of chips, a small form (text · password · number · toggle), or a note to acknowledge. The agent waits (180 s by default) with a visible *waiting for you* state; **Cancel** is always there and the model is told honestly. Passwords are typed into a secure field and never appear in the chat, History or an export — only the model gets them, once, to use them. [How it works](../sdk/ask-user.md) |
 | `generate_image` | a picture from a prompt (Image Playground) |
 | `generate_voice` | speaks with on-device voices, Personal Voice included |
 | `transcribe` | speech to text, offline — tap the mic, record, send; the model sees `[audio attached: …]` and decides to call it |
