@@ -19,7 +19,11 @@ public struct ApprovalCard: View {
 
     public init(request: ApprovalRequest, decision: ApprovalDecision? = nil, onDecide: @escaping (ApprovalDecision) -> Void) {
         self.request = request; self.decision = decision; self.onDecide = onDecide
+        // An http body is a detail the user may open; a CHANGE preview (old → new, e.g. `system_prompt`) IS the decision — open.
+        _showBody = State(initialValue: request.method == nil && request.url == nil && (request.bodyPreview?.isEmpty == false))
     }
+    /// The disclosure's word: `body` for a request, `change` for a preview without a URL (what the tool will alter).
+    private var bodyWord: String { request.url == nil && request.method == nil ? "change" : "body" }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -104,16 +108,18 @@ public struct ApprovalCard: View {
                 showBody.toggle()
             } label: {
                 HStack(spacing: 6) {
-                    Text("body").font(.caption2.weight(.semibold)).foregroundStyle(.secondary).textCase(.uppercase).kerning(0.5)
+                    Text(bodyWord).font(.caption2.weight(.semibold)).foregroundStyle(.secondary).textCase(.uppercase).kerning(0.5)
                     Text("\(preview.utf8.count) B").font(.caption2.monospacedDigit()).foregroundStyle(.tertiary)
                     DisclosureChevron(expanded: showBody)
                 }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(showBody ? "hide body" : "show body")
+            .accessibilityLabel(showBody ? "hide \(bodyWord)" : "show \(bodyWord)")
+            .accessibilityIdentifier("approval-\(bodyWord)-toggle")
             if showBody {
                 Text(preview).font(.footnote.monospaced()).textSelection(.enabled).lineLimit(14)
+                    .accessibilityIdentifier("approval-\(bodyWord)-preview")
                     .padding(10)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(LooplDesign.tertiaryFill, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
