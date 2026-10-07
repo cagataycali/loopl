@@ -106,7 +106,8 @@ final class HubCollectionTests: XCTestCase {
         // Since 2026-10-06 the collection is PUBLIC and holds exactly the six flagship repos: three MLX 4-bit (vision) + three bf16
         // post-tuning bases. GGUF builds, the LoRA adapter and staging copies stay private and are not in it.
         XCTAssertFalse(l.collection.isPrivate)
-        XCTAssertEqual(l.mlx.map(\.id), ["cagataydev/loopl-4b-4bit", "cagataydev/loopl-2b-4bit", "cagataydev/loopl-0.8b-4bit"])
+        XCTAssertEqual(l.mlx.map(\.id), ["cagataydev/loopl-4b-4bit", "cagataydev/loopl-vl-2b-4bit", "cagataydev/loopl-2b-4bit", "cagataydev/loopl-0.8b-4bit"],
+                       "public collection order: loopl 4B · loopl-vl 2B (Phase 8, 2026-10-07) · 2B · 0.8B")
         XCTAssertTrue(l.gguf.isEmpty)
         XCTAssertTrue(l.rows.allSatisfy { !$0.hit.gated }, "public repos need no token")
     }

@@ -1,4 +1,6 @@
 import XCTest
+import Loopl
+import LooplAppleTools
 #if canImport(CoreLocation)
 import CoreLocation
 
@@ -28,6 +30,26 @@ final class CoreLocationRunLoopProbe: XCTestCase {
         print("[probe] main-thread manager: \(a) · cooperative-pool manager: \(b)")
         // Recorded, not asserted: the OS could change; the point is the measurement in the log.
         XCTAssertTrue(a == .completed, "main-thread manager must fire")
+    }
+}
+#endif
+
+#if canImport(CoreLocation)
+/// The fixed `CoreLocationSource` end to end on a Simulator with a faked location and the permission granted
+/// (`simctl privacy grant location technology.tiny.loopl` + `simctl location set 40.744,-74.0324`): the real `location`
+/// tool call — authorization read on main, `requestLocation` on main, delegate fires, reverse geocode — returns the
+/// place well inside the 10 s deadline. Opt-in like the probe above.
+final class CoreLocationSourceLiveProbe: XCTestCase {
+    func testRealLocationToolReturnsAPlace() async throws {
+        guard ProcessInfo.processInfo.environment["LOOPL_LOCATION_PROBE"] == "1" else { throw XCTSkip("LOOPL_LOCATION_PROBE not set") }
+        LocationStore.use(nil)                              // the real CoreLocationSource, not the fixture
+        let t0 = Date()
+        let text = try await Task.detached { try await LocationTool().call(["purpose": .string("time")]) }.value   // from a pool thread, like a tool call
+        let dt = Date().timeIntervalSince(t0)
+        print("[live-location] \(String(format: "%.2f", dt)) s →\n\(text)")
+        XCTAssertTrue(text.hasPrefix("location: "), text)
+        XCTAssertTrue(text.contains("coordinates: "), text)
+        XCTAssertLessThan(dt, 10, "must answer inside the fix deadline")
     }
 }
 #endif
