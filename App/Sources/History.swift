@@ -65,8 +65,11 @@ struct SavedConversation: Codable, Identifiable, Hashable {
             }
         }
         guard items.contains(where: { if case .user = $0 { return true }; return false }) else { return nil }
-        let first = items.compactMap { if case .user(let s, _, _) = $0 { return s }; return nil }.first ?? "Conversation"
-        return SavedConversation(id: id, title: String(first.prefix(60)), updated: Date(), modelName: modelName, items: items, editedAt: editedAt, modelId: modelId, tools: tools, mounted: mounted)
+        let firstTurn = items.first { if case .user = $0 { return true }; return false }
+        let title: String
+        if case .user(let s, let images, let videos)? = firstTurn { title = ConversationTitle.make(s, hasImages: !(images ?? []).isEmpty, hasVideos: !(videos ?? []).isEmpty) }
+        else { title = ConversationTitle.fallback }
+        return SavedConversation(id: id, title: title, updated: Date(), modelName: modelName, items: items, editedAt: editedAt, modelId: modelId, tools: tools, mounted: mounted)
     }
 
     /// Everything strictly before the item at `index` (History-level "delete from here" / the kept half of an edit).
@@ -83,7 +86,7 @@ struct SavedConversation: Codable, Identifiable, Hashable {
         guard items.indices.contains(index), case .user(_, let images, let videos) = items[index] else { return nil }
         var c = truncated(before: index)
         c.items.append(.user(text, images: images, videos: videos))
-        if index == 0 { c.title = String(text.prefix(60)) }
+        if index == 0 { c.title = ConversationTitle.make(text, hasImages: !(images ?? []).isEmpty, hasVideos: !(videos ?? []).isEmpty) }
         return c
     }
 
@@ -125,6 +128,27 @@ struct SavedConversation: Codable, Identifiable, Hashable {
         }
         t.isRunning = false
         return t
+    }
+}
+
+/// The History row title from the first message (IMPROVE-5 #4). Before: the raw first 60 characters — a message that
+/// started with line breaks gave a row whose first line was blank, a photo-only turn gave an EMPTY row, and long ones
+/// were cut mid-word with no sign that more followed.
+enum ConversationTitle {
+    static let maxLength = 60
+    static let fallback = "Conversation"
+
+    static func make(_ text: String, hasImages: Bool = false, hasVideos: Bool = false) -> String {
+        // One line: every run of whitespace (including newlines) becomes a single space.
+        let flat = text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        if flat.isEmpty { return hasVideos ? "Video" : hasImages ? "Photo" : fallback }
+        if flat.count <= maxLength { return flat }
+        // Cut at the last word boundary that keeps the title under the limit; a single giant word is cut hard.
+        let hard = String(flat.prefix(maxLength - 1))
+        if let space = hard.lastIndex(of: " "), hard.distance(from: hard.startIndex, to: space) >= maxLength / 2 {
+            return String(hard[..<space]).trimmingCharacters(in: .punctuationCharacters.union(.whitespaces)) + "…"
+        }
+        return hard + "…"
     }
 }
 
@@ -173,7 +197,35 @@ final class ConversationArchive {
         let files = (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []
         let dec = JSONDecoder(); dec.dateDecodingStrategy = .iso8601
         conversations = files.filter { $0.pathExtension == "json" }
-            .compactMap { try? dec.decode(SavedConversation.self, from: Data(contentsOf: $0)) }.sorted { $0.updated > $1.updated }
+            .compactMap { try? dec.decode(SavedConversation.self, from: Data(contentsOf: $0)) }
+            .map(Self.retitled).sorted { $0.updated > $1.updated }
+        sweepOrphans(files)
+    }
+
+    /// `<id>.attachments` folders whose `<id>.json` is gone — a delete interrupted between its two removes, a crash
+    /// before the first save, older builds — held recordings and clips forever and counted in Storage with nothing
+    /// to tap (IMPROVE-5 #5). Removed on every reload. Returns how many went.
+    @discardableResult
+    func sweepOrphans(_ listing: [URL]? = nil) -> Int {
+        let fm = FileManager.default
+        let files = listing ?? ((try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? [])
+        let kept = Set(files.filter { $0.pathExtension == "json" }.map { $0.deletingPathExtension().lastPathComponent })
+        var n = 0
+        for dir in files where dir.pathExtension == "attachments" {
+            let id = dir.deletingPathExtension().lastPathComponent
+            if !kept.contains(id), UUID(uuidString: id) != nil { try? fm.removeItem(at: dir); n += 1 }
+        }
+        return n
+    }
+
+    /// Threads saved by earlier builds carry the raw first-60-characters title (blank first lines, empty rows for a
+    /// photo). The title is derived from the first message anyway, so it is recomputed on load — in memory; the file
+    /// catches up on its next save.
+    static func retitled(_ c: SavedConversation) -> SavedConversation {
+        guard case .user(let s, let images, let videos)? = c.items.first(where: { if case .user = $0 { return true }; return false }) else { return c }
+        var c = c
+        c.title = ConversationTitle.make(s, hasImages: !(images ?? []).isEmpty, hasVideos: !(videos ?? []).isEmpty)
+        return c
     }
 
     func upsert(_ c: SavedConversation) {
@@ -276,7 +328,7 @@ struct HistoryList: View {
                                 Text(c.title).lineLimit(2).foregroundStyle(.primary)
                                 HStack(spacing: 6) {
                                     Text(c.updated, format: .relative(presentation: .named))
-                                    if let m = c.modelName { Text("·"); Text(m) }
+                                    if let m = c.modelName { Text("·"); Text(ModelSpec.plainName(m)) }   // "(4-bit)" stays in the file, not on the row
                                     if c.editedAt != nil { Text("·"); Label("edited", systemImage: "pencil").labelStyle(.titleAndIcon).accessibilityLabel("edited") }
                                 }.font(.caption).foregroundStyle(.secondary).lineLimit(1)
                             }
