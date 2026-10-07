@@ -50,10 +50,10 @@ final class VLModelsUITests: XCTestCase {
         for _ in 0..<8 where !progress.exists { app.swipeDown(); _ = progress.waitForExistence(timeout: 2) }
         XCTAssertTrue(progress.waitForExistence(timeout: 60), "download did not start for mlx-community/Qwen3-VL-2B-Thinking-4bit")
         XCTAssertTrue(app.staticTexts["Qwen3-VL 2B Thinking"].firstMatch.exists, "the row now sits under On this iPhone")
-        let bytes = app.staticTexts.matching(NSPredicate(format: "label CONTAINS ' of 1.8 GB' OR label CONTAINS ' of 1,8 GB'")).firstMatch
-        XCTAssertTrue(bytes.waitForExistence(timeout: 60), "progress row with bytes of 1.8 GB")
+        // The progress row is ONE a11y element ("downloading, N percent") — the bytes text is folded into it.
         shoot(app, "vl-thinking-downloading")
-        note("VL-SIM download started: \(bytes.label) · progress: \(progress.label)")
+        note("VL-SIM download started for Qwen3-VL-2B-Thinking-4bit · progress: \(progress.label)")
+        XCTAssertTrue(progress.label.hasPrefix("downloading"), progress.label)
     }
 
     private func shoot(_ app: XCUIApplication, _ name: String) {
