@@ -166,8 +166,9 @@ struct CollectionSection<More: View>: View {
 
     private func footer(_ l: HubCollectionListing) -> String {
         var parts: [String] = []
-        let desc = l.collection.description?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        parts.append(desc.isEmpty ? "Qwen3.5 post-tuned for loopl — tools, the agent loop, identity. Tap a model to download it once; it runs offline." : desc)
+        // The Hub collection's description is written for the Hub ("MLX 4-bit (vision) = what the app downloads, bf16 =
+        // post-tuning base…"); under the rows the app says what a person needs (IMPROVE-3 audit).
+        parts.append("Made for loopl: tools, memory and pictures, tuned to work well on a phone. Tap a model to download it once; it runs offline.")
         var status: [String] = []
         if let d = l.updated { status.append("updated \(d.formatted(.relative(presentation: .named)))") }
         switch l.source {
