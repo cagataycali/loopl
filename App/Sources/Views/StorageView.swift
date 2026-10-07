@@ -152,8 +152,14 @@ struct StorageView: View {
         .confirmationDialog("Forget \(confirmForget?.name ?? "")?", isPresented: Binding(get: { confirmForget != nil }, set: { if !$0 { confirmForget = nil } }), titleVisibility: .visible) {
             Button("Forget drive", role: .destructive) {
                 if let v = confirmForget {
-                    for spec in store.catalog.models where store.storage.location(of: spec.id).volumeId == v.id { engine.didDelete(spec) }
-                    storage.forget(v.id); store.refresh(); LooplDesign.haptic()
+                    // If the model answering right now lives on this drive, its answer is stopped and its weights
+                    // released before the drive leaves the list — `didDelete` is awaited for exactly that reason.
+                    Task {
+                        for spec in store.catalog.models where store.storage.location(of: spec.id).volumeId == v.id {
+                            await engine.didDelete(spec)
+                        }
+                        storage.forget(v.id); store.refresh(); LooplDesign.haptic()
+                    }
                 }
             }
         } message: { Text("The files stay on the drive. Its models leave this list until you pick the folder again.") }

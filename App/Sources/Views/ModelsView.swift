@@ -171,6 +171,10 @@ struct ModelsView: View {
             }
             .confirmationDialog("\(confirmDelete?.isFromHub == true ? "Remove" : "Delete") \(confirmDelete?.name ?? "") from this device?", isPresented: Binding(get: { confirmDelete != nil }, set: { if !$0 { confirmDelete = nil } }), titleVisibility: .visible) {
                 Button(confirmDelete?.isFromHub == true ? "Remove" : "Delete", role: .destructive) { if let s = confirmDelete { delete(s) } }
+            } message: {
+                // No identifier: a confirmationDialog message becomes a UIAlertController message, which drops it
+                // (measured). The test reads the dialog's own static texts instead.
+                if let s = confirmDelete, let line = deleteConsequence(s) { Text(line) }
             }
         }
     }
@@ -381,10 +385,25 @@ struct ModelsView: View {
     }
 
     private func delete(_ spec: ModelSpec) {
-        withAnimation(LooplDesign.Motion.faded(LooplDesign.Motion.spring, reduceMotion)) {
-            engine.didDelete(spec)
-            if spec.isFromHub { store.remove(spec) } else { store.delete(spec) }
+        Task {
+            // Order matters and used to be wrong: `didDelete` returned at once and the files went while the loaded
+            // model still held them. Awaiting it stops the answer in flight, waits for the turn to settle and
+            // releases the weights — THEN the files are unlinked.
+            await engine.didDelete(spec)
+            withAnimation(LooplDesign.Motion.faded(LooplDesign.Motion.spring, reduceMotion)) {
+                if spec.isFromHub { store.remove(spec) } else { store.delete(spec) }
+            }
+            LooplDesign.haptic()
         }
-        LooplDesign.haptic()
+    }
+
+    /// The second line of the delete dialog. Deleting the model that is in use is a perfectly reasonable thing to
+    /// want on your own phone — the app's job is to say what will happen, not to refuse. Nil for any other model:
+    /// a dialog that explains the ordinary case teaches the reader to skip it.
+    private func deleteConsequence(_ spec: ModelSpec) -> String? {
+        guard engine.loadedModel?.id == spec.id else { return nil }
+        let verb = spec.isFromHub ? "Removing" : "Deleting"
+        if engine.isGenerating { return "\(spec.displayName) is answering right now. \(verb) it stops that answer." }
+        return "\(spec.displayName) is the model in use. \(verb) it leaves no model running."
     }
 }
