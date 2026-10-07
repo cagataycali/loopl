@@ -188,12 +188,12 @@ https://loopl.dev
 {"name": "http", "arguments": {"url": "https://loopl.dev", "method": "GET", "timeout": 5}}
 ```
 """#),
-        Shape(model: "Apple FM (macOS 26.4.1)", mode: "fm", ask: "POST {\"hello\": 1} to https://httpbin.org/post", url: "https://httpbin.org/post", method: "GET", raw: #"""
+        Shape(model: "Apple FM (macOS 26.4.1)", mode: "fm", ask: "POST {\"hello\": 1} to https://httpbin.org/post", url: "https://httpbin.org/post", method: "POST", raw: #"""
 ```json
 {"name": "http", "arguments": {"url": "https://httpbin.org/post", "body": "hello: 1"}}
 ```
 """#),
-        Shape(model: "Apple FM (macOS 26.4.1)", mode: "fm", ask: "POST {\"hello\": 1} to https://httpbin.org/post", url: "https://httpbin.org/post", method: "GET", raw: #"""
+        Shape(model: "Apple FM (macOS 26.4.1)", mode: "fm", ask: "POST {\"hello\": 1} to https://httpbin.org/post", url: "https://httpbin.org/post", method: "POST", raw: #"""
 ```json
 {"name": "http", "arguments": {"url": "https://httpbin.org/post", "body": "hello=1"}}
 ```
@@ -213,7 +213,7 @@ https://loopl.dev
 {"name": "http", "arguments": {"url": "https://loopl.dev/sitemap.xml", "method": "GET"}}
 ```
 """#),
-        Shape(model: "Apple FM (macOS 26.4.1)", mode: "fm", ask: "send a PUT request to https://httpbin.org/put with body name=loopl", url: "https://httpbin.org/put", method: "GET", raw: #"""
+        Shape(model: "Apple FM (macOS 26.4.1)", mode: "fm", ask: "send a PUT request to https://httpbin.org/put with body name=loopl", url: "https://httpbin.org/put", method: "POST", raw: #"""
 ```json
 {"name": "http", "arguments": {"url": "https://httpbin.org/put", "body": "name=loopl"}}
 ```
