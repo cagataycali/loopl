@@ -59,7 +59,7 @@ final class AgentCardUITests: XCTestCase {
         let issues = card(app, "agent_i")
         XCTAssertTrue(issues.waitForExistence(timeout: 10))
         XCTAssertEqual(issues.value as? String, "done")
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH '[use_agent agent_i finished]'")).firstMatch.exists, "the parent's wake turn is a quiet line, not a user bubble")
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Helper issues finished'")).firstMatch.exists, "the parent's wake turn is a quiet line, not a user bubble")
         XCTAssertEqual(card(app, "agent_n").value as? String, "failed")
         // No background strip once everything settled.
         XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "agent-strip-agent_i").firstMatch.exists)

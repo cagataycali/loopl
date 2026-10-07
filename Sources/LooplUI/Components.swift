@@ -514,7 +514,9 @@ public struct ToolRow: View {
                     // duration moves under the name instead of fighting it for the line.
                     let nameLayout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 2)) : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 8))
                     nameLayout {
-                        Text(call.name).font(.callout.monospaced()).foregroundStyle(.primary.opacity(0.8))
+                        // Plain words for the row ("Time", "Copy to clipboard"); the id the model called stays in
+                        // the expanded card and in History (IMPROVE-3 audit: `current_time` read as developer voice).
+                        Text(ToolLabel.display(call.name)).font(.callout.weight(.medium)).foregroundStyle(.primary.opacity(0.85))
                             .lineLimit(1).minimumScaleFactor(0.7).layoutPriority(1)
                         if let r = result, r.durationMs > 0 {
                             Text(duration(r.durationMs)).font(.caption2.monospacedDigit()).foregroundStyle(.tertiary)
@@ -609,6 +611,8 @@ public struct ToolCallCard: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            Text(call.name).font(.caption2.monospaced()).foregroundStyle(.tertiary)
+                .accessibilityLabel("tool id \(call.name)")
             labelled("arguments", argsText)
             if let r = result {
                 labelled(r.isError ? "error" : "result", r.content)
