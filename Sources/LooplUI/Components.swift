@@ -753,6 +753,10 @@ public struct AgentTranscriptView<Empty: View, Banner: View>: View {
             .defaultScrollAnchor(pinned ? .bottom : nil, for: .sizeChanges)
             .defaultScrollAnchor(.bottom, for: .initialOffset)
             .scrollDismissesKeyboard(.interactively)
+            // The transcript scrolls under a translucent title bar; with the default soft edge the first lines of a long
+            // chat read straight through the title and the clock (worst on an SE in dark — IMPROVE-3 audit #4). The hard
+            // edge stops the content at the bar, so the title is always legible.
+            .modifier(HardTopEdge())
             .onScrollGeometryChange(for: JumpSample.self) { JumpSample($0) } action: { _, s in JumpLog.record(s) }
             // Only the READER can lift the pin: content growing past the fold is not "scrolling away" (that is
             // the bug the geometry-only test had — the follow un-pinned itself on the first overflowing token).
@@ -1070,4 +1074,11 @@ enum PreviewFixtures {
         ToolRow(call: PreviewFixtures.call, result: PreviewFixtures.result)
         ToolRow(call: PreviewFixtures.call, result: ToolResult(toolUseId: "call_1", name: "calculator", status: .error, content: "error: division by zero", durationMs: 0.4))
     }.padding()
+}
+
+/// iOS/macOS 26 scroll-edge effect `.hard` under the top bar; a no-op on earlier systems (their bars are opaque enough).
+struct HardTopEdge: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, macOS 26.0, *) { content.scrollEdgeEffectStyle(.hard, for: .top) } else { content }
+    }
 }
