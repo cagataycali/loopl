@@ -161,7 +161,9 @@ struct ChatView: View {
                     HistoryList(engine: engine, selection: .constant(.chat)) { showHistory = false }
                         .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { showHistory = false } } }
                 }
-                .presentationDetents([.medium, .large])
+                // A long history opens tall (IMPROVE-5 #10: 200 threads showed three rows at the half-height peek and the
+                // person dragged every time); a short one keeps the peek so the chat stays in view.
+                .presentationDetents(engine.archive.conversations.count >= HistoryGroups.tallSheetThreshold ? [.large] : [.medium, .large])
                 .presentationDragIndicator(.visible)
                 // iOS 18 zoom: the sheet grows out of the History button and shrinks back into it.
                 .navigationTransition(.zoom(sourceID: "history", in: zoom))
