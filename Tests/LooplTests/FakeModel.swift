@@ -27,6 +27,10 @@ public actor FakeModel: Model {
     public private(set) var seenSystemPrompts: [String?] = []
     public private(set) var seenToolSpecs: [[ToolSpec]] = []
     public var fallback: Turn = .text("(script exhausted)")
+    /// Optional: pick the turn from the request itself (system prompt + messages) instead of the queue — for tests where
+    /// several agents share one model and the ORDER of their calls is not deterministic.
+    public var chooser: (@Sendable (_ system: String?, _ messages: [Message]) -> Turn)?
+    public func setChooser(_ f: (@Sendable (String?, [Message]) -> Turn)?) { chooser = f }
     public nonisolated let delayPerChunkNs: UInt64
 
     public init(turns: [Turn], contextLength: Int = 8192, delayPerChunkNs: UInt64 = 0) {
@@ -50,6 +54,7 @@ public actor FakeModel: Model {
 
     private func next(_ messages: [Message], _ specs: [ToolSpec], _ system: String?) -> Turn {
         seenPrompts.append(messages); seenToolSpecs.append(specs); seenSystemPrompts.append(system)
+        if let chooser { return chooser(system, messages) }
         guard !turns.isEmpty else { return fallback }
         return turns.removeFirst()
     }

@@ -742,12 +742,15 @@ public final class Engine {
                     default: break
                     }
                 }
+            } catch is CancellationError {
+                self?.transcript.stopped()
             } catch {
                 self?.haptics.emit(.error)
                 self?.lastError = error.localizedDescription
                 self?.transcript.note("error: \(error.localizedDescription)")
                 self?.transcript.isRunning = false
             }
+            if let self, self.transcript.isRunning { self.transcript.stopped() }   // iteration ended without .result (cancelled task)
             self?.drainWakes()      // a child that finished while this turn ran
         }
     }
@@ -773,10 +776,28 @@ public final class Engine {
         start(agent, Loopl.Message.user(prompt))
     }
 
+    /// The stop button (STOP-LOCATION 2026-10-07). Before: `runTask?.cancel()` cancelled the task ITERATING the
+    /// agent's stream — the iteration ended with nil, `.result` never arrived, `isRunning` stayed true, and a tool
+    /// parked on a continuation (location permission / fix with no run loop behind it) kept the agent's turn alive
+    /// anyway. Now: the AGENT is cancelled (`cancelRun`), so the model stream ends at its next token, a hung tool
+    /// returns "Tool execution cancelled" at once and the host still receives every closing event; children of this
+    /// thread stop too. If the agent has not reported within `stopGrace`, the transcript is settled by hand.
     public func stop() {
-        runTask?.cancel()
         #if DEBUG
         DesignFixture.replay?.cancel()
         #endif
+        guard transcript.isRunning || runTask != nil else { return }
+        agent?.cancelRun()
+        stopChildren()
+        let task = runTask
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(Self.stopGrace * 1_000_000_000))
+            guard let self, self.transcript.isRunning, self.runTask == task else { return }
+            task?.cancel()
+            self.transcript.stopped()
+            self.archiveCurrent()
+        }
     }
+    /// How long the agent gets to end on its own after `stop()` before the transcript is settled from here.
+    nonisolated static let stopGrace: TimeInterval = 1.5
 }

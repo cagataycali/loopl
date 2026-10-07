@@ -5,7 +5,7 @@ import CoreLocation
 #endif
 
 // `location` — where the user is, for the model's own follow-ups (weather through `http` + open-meteo, the time
-// zone, "what's near me"). Lane TOOLS-EXPAND, 2026-10-06. OFF by default; when-in-use permission asked just in time
+// zone, "what's near me"). Lane TOOLS-EXPAND, 2026-10-06. ON by default (since 2026-10-07); when-in-use permission asked just in time
 // (`NSLocationWhenInUseUsageDescription`). COARSE unless the USER says otherwise: the model gets the place name and
 // coordinates rounded to ~1 km (two decimals); Settings › location › "Exact position" (`LocationTool.preciseKey`)
 // switches to the best fix iOS allows. MEASURED 2026-10-06: with a `precise: true` parameter in the schema,
@@ -62,27 +62,38 @@ public enum LocationStore {
 
 #if canImport(CoreLocation)
 /// `CLLocationManager` wrapped for one fix at a time; reverse geocoding gives the place name. Access is requested on first use.
+///
+/// STOP-LOCATION 2026-10-07 — why the owner's "where am I?" hung on build 15: the manager was created lazily by
+/// `static let shared` from whatever thread first touched it — a tool-executor task on the cooperative pool, which has
+/// no run loop. CLLocationManager delivers its delegate callbacks on the run loop of the thread that created it, so
+/// `didChangeAuthorization` / `didUpdateLocations` never fired: the permission dialog answer and the fix went nowhere
+/// and the continuations waited forever (and the stop button could not end the turn — see Agent.cancelRun).
+/// Now: the manager lives on the main thread (created, asked and read there), every wait has a deadline
+/// (`authTimeout` 60 s for the dialog, `fixTimeout` 10 s for a fix), the waits observe task cancellation, and the
+/// errors say what to do.
 final class CoreLocationSource: NSObject, LocationSource, CLLocationManagerDelegate, @unchecked Sendable {
     static let shared = CoreLocationSource()
-    private let manager = CLLocationManager()
+    static let authTimeout: TimeInterval = 60
+    static let fixTimeout: TimeInterval = 10
+    private var manager: CLLocationManager!
     private let lock = NSLock()
-    private var waiters: [CheckedContinuation<CLLocation, any Error>] = []
-    private var authWaiters: [CheckedContinuation<CLAuthorizationStatus, Never>] = []
-    private override init() { super.init(); manager.delegate = self }
+    private var waiters: [ResumeOnce<CLLocation>] = []
+    private var authWaiters: [ResumeOnce<CLAuthorizationStatus>] = []
+    private override init() {
+        super.init()
+        let make = { [self] in let m = CLLocationManager(); m.delegate = self; self.manager = m }
+        if Thread.isMainThread { make() } else { DispatchQueue.main.sync(execute: make) }
+    }
 
     func current(precise: Bool) async throws -> Place {
-        let status = await ensureAuthorised()
+        let status = try await ensureAuthorised()
         switch status {
         case .authorizedWhenInUse, .authorizedAlways: break
-        case .denied: throw ToolError("location access is off — the user can allow it in Settings › Privacy › Location Services › loopl")
+        case .denied: throw ToolError("location access is off for loopl — allow it in Settings › Privacy & Security › Location Services › loopl")
         case .restricted: throw ToolError("location is restricted on this device")
         default: throw ToolError("the user did not allow location access")
         }
-        manager.desiredAccuracy = precise ? kCLLocationAccuracyBest : kCLLocationAccuracyKilometer
-        let loc: CLLocation = try await withCheckedThrowingContinuation { c in
-            lock.withLock { waiters.append(c) }
-            DispatchQueue.main.async { self.manager.requestLocation() }
-        }
+        let loc = try await fix(precise: precise)
         var place = Place(latitude: loc.coordinate.latitude, longitude: loc.coordinate.longitude, accuracy: loc.horizontalAccuracy >= 0 ? loc.horizontalAccuracy : nil,
                           altitude: loc.verticalAccuracy >= 0 ? loc.altitude : nil)
         if let pm = try? await CLGeocoder().reverseGeocodeLocation(loc).first {
@@ -93,12 +104,40 @@ final class CoreLocationSource: NSObject, LocationSource, CLLocationManagerDeleg
         return place
     }
 
-    private func ensureAuthorised() async -> CLAuthorizationStatus {
-        let s = manager.authorizationStatus
+    /// One fix, asked for on the main thread, or a clear error within `fixTimeout`.
+    private func fix(precise: Bool) async throws -> CLLocation {
+        let waiter = ResumeOnce<CLLocation>()
+        lock.withLock { waiters.append(waiter) }
+        DispatchQueue.main.async { [self] in
+            manager.desiredAccuracy = precise ? kCLLocationAccuracyBest : kCLLocationAccuracyKilometer
+            manager.requestLocation()
+        }
+        return try await Self.await(waiter, timeout: Self.fixTimeout, onTimeout: {
+            ToolError("no location fix within \(Int(Self.fixTimeout)) s — try again outdoors or near a window; check Settings › Privacy & Security › Location Services › loopl")
+        }, cancel: { [self] in DispatchQueue.main.async { self.manager.stopUpdatingLocation() } })
+    }
+
+    private func ensureAuthorised() async throws -> CLAuthorizationStatus {
+        let s = await MainActor.run { manager.authorizationStatus }
         if s != .notDetermined { return s }
-        return await withCheckedContinuation { c in
-            lock.withLock { authWaiters.append(c) }
-            DispatchQueue.main.async { self.manager.requestWhenInUseAuthorization() }
+        let waiter = ResumeOnce<CLAuthorizationStatus>()
+        lock.withLock { authWaiters.append(waiter) }
+        DispatchQueue.main.async { [self] in manager.requestWhenInUseAuthorization() }
+        return try await Self.await(waiter, timeout: Self.authTimeout, onTimeout: {
+            ToolError("the location permission dialog was not answered within \(Int(Self.authTimeout)) s")
+        }, cancel: {})
+    }
+
+    /// Wait for `waiter`, or throw `onTimeout()` after `timeout`, or `CancellationError` when the calling task is
+    /// cancelled (the stop button) — the waiter is dropped from the lists either way so a late callback is harmless.
+    private static func await<T: Sendable>(_ waiter: ResumeOnce<T>, timeout: TimeInterval, onTimeout: @escaping @Sendable () -> any Error,
+                                           cancel: @escaping @Sendable () -> Void) async throws -> T {
+        let timer = Task { try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000)); if !Task.isCancelled { waiter.resume(.failure(onTimeout())) } }
+        defer { timer.cancel() }
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (c: CheckedContinuation<T, any Error>) in waiter.park(c) }
+        } onCancel: {
+            waiter.resume(.failure(CancellationError())); cancel()
         }
     }
 
@@ -106,18 +145,26 @@ final class CoreLocationSource: NSObject, LocationSource, CLLocationManagerDeleg
         let s = m.authorizationStatus
         guard s != .notDetermined else { return }
         let ws = lock.withLock { let w = authWaiters; authWaiters = []; return w }
-        ws.forEach { $0.resume(returning: s) }
+        ws.forEach { $0.resume(.success(s)) }
     }
     func locationManager(_ m: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let l = locations.last else { return }
         let ws = lock.withLock { let w = waiters; waiters = []; return w }
-        ws.forEach { $0.resume(returning: l) }
+        ws.forEach { $0.resume(.success(l)) }
     }
     func locationManager(_ m: CLLocationManager, didFailWithError error: any Error) {
         let ws = lock.withLock { let w = waiters; waiters = []; return w }
-        ws.forEach { $0.resume(throwing: ToolError("could not get a location fix: \(error.localizedDescription)")) }
+        let code = (error as? CLError)?.code
+        let text: String
+        switch code {
+        case .denied?: text = "location access is off for loopl — allow it in Settings › Privacy & Security › Location Services › loopl"
+        case .locationUnknown?: text = "no location fix right now — try again in a moment, outdoors or near a window"
+        default: text = "could not get a location fix: \(error.localizedDescription)"
+        }
+        ws.forEach { $0.resume(.failure(ToolError(text))) }
     }
 }
+
 #endif
 
 public struct LocationTool: AppleTool {
@@ -129,7 +176,9 @@ public struct LocationTool: AppleTool {
     ])
     public static let purposes = ["place", "weather", "time"]
     public static let onDeviceCopy = "Tells the model your city and rough coordinates (about 1 km) when it asks. Asks for location access the first time."
-    public static var defaultOn: Bool { false }
+    /// ON by default since STOP-LOCATION 2026-10-07 (was off — the owner's "location is not working" was partly this:
+    /// the model said it could not). Coarse by default and gated by the iOS permission dialog anyway.
+    public static var defaultOn: Bool { true }
 
     /// UserDefaults: the person's choice between ~1 km (default) and the best fix iOS allows. Never the model's.
     public static let preciseKey = "loopl.location.precise"
