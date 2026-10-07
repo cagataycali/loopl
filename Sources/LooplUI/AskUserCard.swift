@@ -92,7 +92,7 @@ public struct AskUserCard: View {
     /// Cancel is always possible and honest: the model is told `{ok:false, cancelled:true}`.
     private var footer: some View {
         HStack(spacing: 8) {
-            Text("The agent waits for your answer").font(.caption2).foregroundStyle(.tertiary).lineLimit(2)
+            Text("Waiting for your answer").font(.caption2).foregroundStyle(.tertiary).lineLimit(2)
             Spacer(minLength: 8)
             Button(role: .cancel) { finish(.cancelled, haptic: LooplDesign.failure) } label: {
                 Text("Cancel").font(.caption.weight(.semibold))

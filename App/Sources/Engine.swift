@@ -413,12 +413,12 @@ public final class Engine {
             // where storage.json says, the row has to say so (needs drive / unreadable / gone), not fetch 500 MB.
             if store.storage.location(of: spec.id).isExternal {
                 store.refresh()
-                let msg = store.storage.anyDriveProblem(for: spec) ?? "\(spec.name) should be on \(store.locationName(spec)) but its files are not there — download it again from Models."
+                let msg = store.storage.anyDriveProblem(for: spec) ?? "\(spec.displayName) should be on \(store.locationName(spec)) but its files are not there — download it again from Models."
                 store.storage.diagnostics.log("\(spec.id): select refused auto-download — \(msg)")
                 readiness = loadedModel.map { .ready($0) } ?? .failed(spec, msg); lastError = msg; haptics.emit(.error); return
             }
             if settings.offline || NetworkPolicy.isOffline {
-                readiness = .failed(spec, "\(spec.name) is not on this device and offline mode is on."); return
+                readiness = .failed(spec, "\(spec.displayName) is not on this device and offline mode is on."); return
             }
             readiness = .downloading(spec, done: 0, total: spec.sizeBytes)
             store.download(spec)
@@ -431,7 +431,7 @@ public final class Engine {
                 case .failed(let msg): readiness = .failed(spec, msg); haptics.emit(.error); return
                 case .paused: readiness = .failed(spec, "Download paused — resume it from Models."); return
                 case .notDownloaded: readiness = .failed(spec, "download stopped"); return
-                case .needsDrive(let d): readiness = .failed(spec, "\(spec.name) is on \(d). Plug it in to use it."); return
+                case .needsDrive(let d): readiness = .failed(spec, "\(spec.displayName) is on \(d). Plug it in to use it."); return
                 case .driveUnreadable(let d, _): readiness = .failed(spec, "\(d) is connected but loopl can't read it — re-grant its folder in Settings › Storage."); return
                 case .moving: continue
                 }
@@ -457,7 +457,7 @@ public final class Engine {
         let dir = spec.isDownloadable ? store.localDirectory(spec) : nil
         if spec.isDownloadable && dir == nil {
             if let problem = store.storage.anyDriveProblem(for: spec) { readiness = .failed(spec, problem); return }
-            readiness = .failed(spec, "\(spec.name) is not downloaded yet"); return
+            readiness = .failed(spec, "\(spec.displayName) is not downloaded yet"); return
         }
         do {
             try await m.load(spec, from: dir) { p in Task { @MainActor in if case .loading = self.readiness { self.readiness = .loading(spec, progress: p) } } }
@@ -466,7 +466,7 @@ public final class Engine {
             agent = nil
             readiness = .ready(spec)
             settings.lastModelId = spec.id
-            if previous != nil || !transcript.items.isEmpty { transcript.note("Switched to \(spec.name)") }
+            if previous != nil || !transcript.items.isEmpty { transcript.note("Switched to \(spec.displayName)") }
             haptics.emit(.modelLoaded)
         } catch {
             if !repaired, spec.isDownloadable, spec.runtime == .mlx, TokenizerFiles.isTokenizerError(error),
@@ -474,29 +474,29 @@ public final class Engine {
                 // The files next to the weights are wrong for this app (e.g. a repo exported with transformers 5 that has
                 // since been fixed on the Hub). Refresh just those — a few KB — and try once more. Never the weights.
                 readiness = .repairing(spec)
-                transcript.note("Repairing \(spec.name)'s model files…")
+                transcript.note("Repairing \(spec.displayName)'s model files…")
                 do {
                     let changed = try await store.repairFiles(spec)
                     if !changed.isEmpty { await load(spec, repaired: true); return }
                     lastError = nil
-                    readiness = .failed(spec, "\(spec.name) can't load: \(error.localizedDescription). Its files match Hugging Face, so the repo itself needs fixing.")
+                    readiness = .failed(spec, "\(spec.displayName) can't load: \(error.localizedDescription). Its files match Hugging Face, so the repo itself needs fixing.")
                 } catch let repairError {
-                    readiness = .failed(spec, TokenizerFiles.repairMessage(for: spec.name) + " Repair failed: \(repairError.localizedDescription)")
+                    readiness = .failed(spec, TokenizerFiles.repairMessage(for: spec.displayName) + " Repair failed: \(repairError.localizedDescription)")
                 }
                 haptics.emit(.error)
                 return
             }
             if TokenizerFiles.isTokenizerError(error), spec.isDownloadable, spec.runtime == .mlx {
-                readiness = .failed(spec, TokenizerFiles.repairMessage(for: spec.name) + " (\(error.localizedDescription))")
+                readiness = .failed(spec, TokenizerFiles.repairMessage(for: spec.displayName) + " (\(error.localizedDescription))")
                 lastError = nil; haptics.emit(.error); return
             }
             // A drive pulled mid-load reads as a missing file: say which drive, not "No such file".
             let reason = store.storage.location(of: spec.id).isExternal && store.storage.directory(for: spec) == nil
-                ? "\(store.locationName(spec)) was disconnected while loading \(spec.name)."
+                ? "\(store.locationName(spec)) was disconnected while loading \(spec.displayName)."
                 : error.localizedDescription
             // Said once: with no model to fall back to, the readiness banner carries the message (and Try again);
             // when the previous model stays loaded, the banner shows nothing and the inline line says what failed.
-            if let previous { readiness = .ready(previous); lastError = "\(spec.name) failed to load: \(reason)" }
+            if let previous { readiness = .ready(previous); lastError = "\(spec.displayName) failed to load: \(reason)" }
             else { readiness = .failed(spec, reason); lastError = nil }
             haptics.emit(.error)
         }
@@ -647,7 +647,7 @@ public final class Engine {
         var sent = images
         if !images.isEmpty, !spec.supportsVision {
             sent = []
-            transcript.note("\(spec.name) can't see pictures — pick a vision model (Qwen3-VL, Qwen3.5…) in Models. Sent the text only.")
+            transcript.note("\(spec.displayName) can't see pictures — pick a vision model (Qwen3-VL, Qwen3.5…) in Models. Sent the text only.")
         }
         // A video stays in the message for every model: a vision checkpoint gets the frames, a text model reads the
         // block's honest stand-in line plus the transcript (`Message.textWithVideoFallback`) — so it still knows
