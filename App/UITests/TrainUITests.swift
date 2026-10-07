@@ -97,7 +97,12 @@ final class TrainUITests: XCTestCase {
     func testFailedNamesTheCause() {
         let app = launch("failed")
         XCTAssertTrue(app.staticTexts["Training failed"].waitForExistence(timeout: 15))
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'CUDA out of memory'")).firstMatch.exists)
+        // IMPROVE-4 #28: the plain sentence leads, the raw line follows (one combined element).
+        let err = app.descendants(matching: .any).matching(identifier: "train-error").firstMatch
+        for _ in 0..<4 where !err.exists { app.swipeUp() }   // below the eight stage rows on an SE
+        XCTAssertTrue(err.waitForExistence(timeout: 5))
+        XCTAssertTrue(err.label.contains("ran out of memory"), err.label)
+        XCTAssertTrue(err.label.contains("CUDA out of memory"), err.label)
         XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "train-cancel").firstMatch.exists)
         shoot(app, "train-failed")
     }

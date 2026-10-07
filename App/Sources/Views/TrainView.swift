@@ -285,7 +285,7 @@ struct TrainView: View {
                     ProgressView(value: s.phase.isActive || s.progress.isDone ? s.progress.fraction : (s.progress.isFailed ? s.progress.fraction : 0))
                         .tint(s.progress.isFailed ? .orange : LooplDesign.accent)
                         .animation(LooplDesign.Motion.faded(LooplDesign.Motion.value, reduceMotion), value: s.progress.fraction)
-                    Text(([s.plan.baseLabel, s.plan.method == .full ? s.plan.method.label : nil, "\(s.plan.conversations) conversations", "passes: \(s.plan.epochs.label.lowercased())", s.plan.flavor.label].compactMap { $0 }).joined(separator: " · "))
+                    Text(([s.plan.baseLabel, s.plan.method == .full ? s.plan.method.label : nil, "\(s.plan.conversations) conversations", "passes: \(s.plan.epochs.label.lowercased())"].compactMap { $0 }).joined(separator: " · "))
                         .font(.footnote).foregroundStyle(.secondary)
                     if let p = s.progress.plan, (p.stitched ?? 0) > 0 || (p.round ?? 1) > 1 {
                         Text([p.stitched.map { "\($0) conversations joined by day" }, p.epochsMax.map { "up to \(Int($0)) passes" }].compactMap { $0 }.joined(separator: " · "))   // round is already on the line above
@@ -297,8 +297,13 @@ struct TrainView: View {
             Section {
                 ForEach(TrainingStage.order, id: \.self) { name in stageRow(name, s) }
                 if let e = s.progress.error {
-                    Label(e, systemImage: LooplDesign.iconWarning).font(.footnote).foregroundStyle(.orange)
-                        .accessibilityIdentifier("train-error")
+                    // The sentence a person can act on first; the raw line one tap away in the Job log (IMPROVE-4 #28).
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label(TrainingFailure.plain(e), systemImage: LooplDesign.iconWarning).font(.footnote.weight(.medium)).foregroundStyle(.orange)
+                        Text(e.split(whereSeparator: \.isNewline).first.map(String.init) ?? e).font(.caption2.monospaced()).foregroundStyle(.secondary).lineLimit(2)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("train-error")
                 }
             } header: { Text("Stages") }
 
