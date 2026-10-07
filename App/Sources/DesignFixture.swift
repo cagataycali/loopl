@@ -169,6 +169,9 @@ enum DesignFixture {
             }
         case "downloading":
             engine.readiness = .downloading(spec, done: 162_000_000, total: spec.sizeBytes)
+        case "nomodel":
+            // The chat with no model running (a failed load, a skipped onboarding): the empty state must lead somewhere.
+            engine.readiness = .failed(spec, "\(spec.name) needs 4.1 GB of free memory; this iPhone has 3.2 GB right now.")
         case "live":
             engine.transcript = t
             replay = Task { await replayLive(engine, loop: CommandLine.arguments.contains("--design-loop")) }

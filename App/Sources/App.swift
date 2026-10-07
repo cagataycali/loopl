@@ -69,8 +69,13 @@ struct RootView: View {
     @State private var selection: Pane = DesignFixture.initialPane
     @State private var columns: NavigationSplitViewVisibility = .automatic
     enum Pane: Hashable { case chat, models, settings }
+    /// Posted by a pane that wants another one in front (the chat's empty state → Models; IMPROVE-4 #9).
+    static let openModels = Notification.Name("loopl.openModels")
 
     var body: some View {
+        panes.onReceive(NotificationCenter.default.publisher(for: Self.openModels)) { _ in selection = .models }
+    }
+    @ViewBuilder private var panes: some View {
         if sizeClass == .regular {
             // iPad / landscape: two columns — history in the sidebar, the conversation as the detail.
             NavigationSplitView(columnVisibility: $columns) {
