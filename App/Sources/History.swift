@@ -556,7 +556,7 @@ struct HistoryList: View {
             if engine.archive.isLoading, engine.archive.conversations.isEmpty {
                 ProgressView().controlSize(.large).accessibilityLabel("Loading your conversations")
             } else if engine.archive.conversations.isEmpty {
-                ContentUnavailableView { LooplMark().frame(width: 56, height: 56) } description: { Text("Conversations you finish appear here.") }
+                ContentUnavailableView { LooplMark().frame(width: 56, height: 56) } description: { Text("Your conversations appear here.") }   // a thread is saved as soon as it starts (IMPROVE-5 #12)
                     .allowsHitTesting(false)
             }
         }
