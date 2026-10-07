@@ -32,12 +32,12 @@ final class TrainUITests: XCTestCase {
         // one-glance form (TRAIN-SIMPLIFY): Base model · Continue a model · Epochs: Auto (recommended) · name; everything else under "Fine-tune manually"
         XCTAssertTrue(find(app, "train-continue", scroll: 1).exists, "'Continue a model' picker missing (Mine bases)")
         let epochs = find(app, "train-epochs", scroll: 1)
-        XCTAssertTrue(epochs.exists && epochs.label.contains("Auto (recommended)"), "Epochs row: \(epochs.label)")
+        XCTAssertTrue(epochs.exists && epochs.label.contains("Auto (recommended)"), "Passes row: \(epochs.label)")
         XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "train-stitch").firstMatch.exists, "the Stitch picker is gone — the script decides")
         XCTAssertFalse(app.sliders.firstMatch.exists, "no 'Stop after' slider — the cost guard is automatic")
         XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "train-epochs-picker").firstMatch.exists, "the 1–4 picker is folded until 'Fine-tune manually' opens")
         let summary = find(app, "train-summary", scroll: 1)
-        XCTAssertTrue(summary.exists && summary.label.hasPrefix("Starts from Qwen3.5 0.8B and learns from your 191 conversations"), "plain-words plan: \(summary.label)")
+        XCTAssertTrue(summary.exists && summary.label.hasPrefix("Starts from loopl 0.8B and learns from your 191 conversations in up to 3 passes, keeping the one that scores best"), "plain-words plan: \(summary.label)")
         let blocked = find(app, "train-continue-blocked", scroll: 1)
         XCTAssertTrue(blocked.exists && blocked.label.contains("loopl-old"), "a Mine model without a bf16 twin is named as not continuable")
         shoot(app, "train-form")
@@ -86,7 +86,7 @@ final class TrainUITests: XCTestCase {
         // 1.2.0 result: per-epoch held-out loss + lineage of a round-2 model
         let chart = find(app, "train-epochs-chart", scroll: 1)
         XCTAssertTrue(chart.exists, "per-epoch eval-loss chart missing")
-        XCTAssertTrue(chart.label.contains("epoch 2 2.15"), "chart reads the epoch lines: \(chart.label)")
+        XCTAssertTrue(chart.label.contains("pass 2 2.15"), "chart reads the pass lines: \(chart.label)")
         let lineage = find(app, "train-lineage", scroll: 1)
         XCTAssertTrue(lineage.exists, "lineage missing")
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Qwen3.5-0.8B → loopl-app-sim'")).firstMatch.exists, "lineage chain text")

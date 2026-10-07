@@ -209,11 +209,11 @@ struct HuggingFaceSection: View {
         if let who = hf.identity {
             let missing = HFAccount.Scope.allCases.filter { !who.scopes.contains($0) }
             var s = "Stored in this device's Keychain, sent only to huggingface.co. "
-            if missing.isEmpty { s += "This token can download your private models, push conversations to your datasets and start training jobs." }
+            if missing.isEmpty { s += "Signed in. loopl can download your private models, share conversations to your account and train there." }
             else { s += "To " + missing.map(\.needed).joined(separator: " and ") + ", create a token with " + missing.map(\.label).joined(separator: " + ") + " access." }
             return s
         }
-        return "Optional. A token lets loopl download your private models, share conversations to a dataset you own and start training jobs on your account. It stays in this device's Keychain and is only ever sent to huggingface.co."
+        return "Optional. Sign in with a Hugging Face token to download your private models, share conversations to your account and train there. The token stays in this device's Keychain and is only ever sent to huggingface.co."
     }
 }
 

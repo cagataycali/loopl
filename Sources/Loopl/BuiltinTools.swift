@@ -208,8 +208,8 @@ public struct HttpTool: Tool {
     public func requiresApproval(for input: [String: JSONValue]) -> ApprovalRequest? {
         guard let r = try? Self.parse(input, maxTimeout: maxTimeout) else { return nil }   // invalid input fails in `call` instead
         let host = r.url.host ?? r.url.absoluteString
-        var detail = r.isMutating ? "Sends a \(r.method) request" : "Reads"
-        if let b = r.body { detail += " · \(ByteCountFormatter.string(fromByteCount: Int64(b.count), countStyle: .file)) body" }
+        // Plain words on the card (IMPROVE-3 audit #11): what happens, not byte counts. The exact body is one tap away.
+        var detail = r.isMutating ? (r.method == "DELETE" ? "Deletes something at \(host)" : "Sends data to \(host)") : "Reads a page from \(host)"
         if !r.headers.isEmpty { detail += " · \(r.headers.count) header\(r.headers.count == 1 ? "" : "s")" }
         return ApprovalRequest(toolName: name, title: "\(r.method) \(host)", method: r.method, url: r.url.absoluteString,
                                headers: ApprovalRequest.redact(r.headers), bodyPreview: r.bodyText, detail: detail, risk: r.risk, input: input)
