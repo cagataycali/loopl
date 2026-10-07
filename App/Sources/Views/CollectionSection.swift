@@ -248,12 +248,26 @@ struct CollectionRowLabel: View {
     /// The catalog's byte count when the row IS a catalog model — the Hub figure is the weights file alone
     /// (1.72 GB) while onboarding and Models › On this iPhone say what is downloaded (1.75 GB): one model, one number (IMPROVE-4 #4).
     var sizeBytes: Int64? = nil
+    @Environment(\.dynamicTypeSize) private var typeSize
     private var shownBytes: Int64? { sizeBytes ?? row.hit.sizeBytes }
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
+        // At an accessibility size the size + marks column goes UNDER the text instead of beside it: sharing the row
+        // left the curator's note ~150 pt wide on an SE and ~175 pt on a 16 Pro ("Smallest — quick answers and tools,
+        // sees pictures" in four words per line) because a monospaced "1.75 GB" at 3x the type is wider than the note.
+        // Same shape as #194 (Settings › Tools), #195 (the approval card) and #198 (the Models version line);
+        // `TypeSqueezeUITests` now measures it on every push.
+        let layout = typeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6))
+            : AnyLayout(HStackLayout(alignment: .top, spacing: 12))
+        return layout {
             VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Text(title).font(.body.weight(loaded ? .semibold : .regular)).lineLimit(1)
+                // The NAME is the one word a person is looking for, so at an accessibility size it gets its own line
+                // and the marks drop below it: sharing the row with "👁 sees pictures" truncated it to "loopl…" on an
+                // SE (photographed). Nothing changes at normal sizes.
+                titleLayout {
+                    Text(title).font(.body.weight(loaded ? .semibold : .regular))
+                        .lineLimit(typeSize.isAccessibilitySize ? 2 : 1)
+                        .fixedSize(horizontal: false, vertical: typeSize.isAccessibilitySize)
                     if row.hit.isVision { (Text(Image(systemName: "eye")) + Text(" sees pictures")).font(.caption.weight(.medium)).foregroundStyle(LooplDesign.accent).accessibilityLabel("sees pictures") }
                     if row.hit.isPrivate { Image(systemName: "lock.fill").font(.caption2).foregroundStyle(.secondary).accessibilityLabel("private") }
                 }
@@ -263,8 +277,8 @@ struct CollectionRowLabel: View {
                     Text(row.hit.name).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
-            Spacer(minLength: 8)
-            VStack(alignment: .trailing, spacing: 4) {
+            if !typeSize.isAccessibilitySize { Spacer(minLength: 8) }
+            marksLayout {
                 if let s = shownBytes, s > 0 { Text(ByteSize.label(s)).font(.footnote.monospacedDigit()).foregroundStyle(.secondary) }
                 if loaded { Image(systemName: LooplDesign.iconLoaded).font(.footnote.weight(.semibold)).foregroundStyle(LooplDesign.accent).accessibilityLabel("in use") }
                 else if added { Image(systemName: "checkmark").font(.footnote.weight(.semibold)).foregroundStyle(.secondary).accessibilityLabel("on this device") }
@@ -278,6 +292,16 @@ struct CollectionRowLabel: View {
         }
         .contentShape(Rectangle())
         .padding(.vertical, 2)
+    }
+    /// Name + marks: one row normally, name above its marks at accessibility sizes.
+    private var titleLayout: AnyLayout {
+        typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 2))
+                                     : AnyLayout(HStackLayout(spacing: 6))
+    }
+    /// The size + state marks: a trailing column beside the text, a leading row under it at accessibility sizes.
+    private var marksLayout: AnyLayout {
+        typeSize.isAccessibilitySize ? AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 10))
+                                     : AnyLayout(VStackLayout(alignment: .trailing, spacing: 4))
     }
     /// "loopl 2B" from "loopl-2b-4bit" / "loopl-0.8b-v1.1-GGUF" → "loopl 0.8B v1.1".
     private var title: String {
