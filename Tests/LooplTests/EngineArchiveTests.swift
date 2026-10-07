@@ -19,7 +19,7 @@ final class EngineArchiveTests: XCTestCase {
     }
 
     private func onDisk(_ e: Engine) -> SavedConversation? {
-        ConversationArchive(root: e.archive.root).conversations.first { $0.id == e.currentId }
+        ConversationArchive(root: e.archive.root, inBackground: false).conversations.first { $0.id == e.currentId }   // #165: the app archive loads in the background; the test wants the synchronous read
     }
 
     private func waitUntilIdle(_ e: Engine, _ timeout: TimeInterval = 5) async {
