@@ -20,12 +20,31 @@ concurrency:
   # and this job takes ~30, so cancelling the previous run means NO run ever finishes — the first one
   # (b7a916c4) was cancelled 3 seconds in by the build-30 bump. A post-merge guard that never reports is
   # not a guard, so runs queue instead.
+  # Honest limit, measured on 190ed598: this does NOT stop every cancellation. GitHub keeps only ONE pending run
+  # per concurrency group, so when main moves twice inside a minute the older PENDING run is still dropped. The net
+  # effect is "the newest main gets verified", which is the right promise for a post-merge guard — so do not read a
+  # cancelled intermediate run as a failure, and do not expect every commit to get its own verdict.
   cancel-in-progress: false
 jobs:
   uitests:
-    name: looplUITests (iOS Simulator, post-merge)
+    name: looplUITests (${{ matrix.device }})
     runs-on: macos-26
     timeout-minutes: 90   # measured: ~5 min to build for testing, ~25-30 min for the suite
+    # Two heights, because the runner's own device choice was a blind spot: it picked the TALLEST iPhone
+    # available, which is exactly how #181's 16 Pro onboarding overlap passed here while failing on a real
+    # phone — and pinning a single model would hide the same class just as well. The SE is where layout
+    # breaks, and it earned its leg immediately: the first full run on one found three tests that were
+    # quietly asserting screen height (CollectionUITests, HistoryUITests, HuggingFaceUITests — all green on
+    # a 16 Pro). The legs run in parallel, so wall time stays ~50 min; fail-fast is off so one device's
+    # verdict never hides the other's.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - device: iPhone 16 Pro
+            type: com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro
+          - device: iPhone SE (3rd generation)
+            type: com.apple.CoreSimulator.SimDeviceType.iPhone-SE-3rd-generation
     steps:
       - uses: actions/checkout@v4
       - name: Select Xcode 26
@@ -44,11 +63,32 @@ jobs:
         run: |
           brew install xcodegen >/dev/null 2>&1 || brew upgrade xcodegen >/dev/null 2>&1 || true
           xcodegen generate -s App/project.yml
-      - name: Pick a simulator
+      # By DEVICE TYPE, not "the tallest iPhone available" — picking by height is what made this job unable to
+      # see a small-screen bug (#181). The type identifier rather than the display name, because a device's name
+      # is whatever whoever created it chose: on this project's own machines the simulators are called `imp7-se`
+      # and would never match "iPhone SE (3rd generation)". If the runner image has no device of that type, create
+      # one — that keeps the matrix honest when Apple drops a model from the image, instead of quietly testing
+      # something else.
+      - name: Pick the simulator for this leg
         id: sim
+        env:
+          WANT: ${{ matrix.device }}
+          TYPE: ${{ matrix.type }}
         run: |
-          UDID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys;d=json.load(sys.stdin)["devices"];c=[x for k,v in d.items() if "iOS" in k for x in v if "iPhone" in x["name"]];c.sort(key=lambda x:x["name"]);print(c[-1]["udid"])')
-          echo "udid=$UDID" >> "$GITHUB_OUTPUT"; xcrun simctl list devices available | grep "$UDID"
+          set -o pipefail
+          # One line each on purpose: code passed to `python3 -c` must not be indented, and inside a YAML block
+          # scalar every line carries the block's indentation — so a readable multi-line version is an
+          # IndentationError on the runner while the file stays perfectly valid YAML. Measured locally.
+          UDID=$(xcrun simctl list devices available -j | python3 -c 'import json,os,sys;d=json.load(sys.stdin)["devices"];t=os.environ["TYPE"];h=[x for k,v in d.items() if "iOS" in k for x in v if x.get("deviceTypeIdentifier")==t];print(h[-1]["udid"] if h else "")')
+          if [ -z "$UDID" ]; then
+            echo "no device of type $TYPE on this runner image, creating one"
+            RUNTIME=$(xcrun simctl list runtimes -j | python3 -c 'import json,sys;r=[x["identifier"] for x in json.load(sys.stdin)["runtimes"] if x.get("isAvailable") and "iOS" in x["identifier"]];print(r[-1])')
+            UDID=$(xcrun simctl create "ui-$GITHUB_RUN_ID" "$TYPE" "$RUNTIME")
+          fi
+          SLUG=$(printf '%s' "$WANT" | tr -cd '[:alnum:]')
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+          echo "slug=$SLUG" >> "$GITHUB_OUTPUT"
+          xcrun simctl list devices available | grep "$UDID"
       - name: Boot the simulator (UI tests need a warm device)
         run: |
           xcrun simctl boot "${{ steps.sim.outputs.udid }}" || true
@@ -85,7 +125,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO -skipPackagePluginValidation -skipMacroValidation \
             $SKIP -resultBundlePath DerivedData/ui.xcresult \
             test-without-building 2>&1 | tee ui.log | tail -n 120
-          echo "### looplUITests: $(( ($(date +%s) - START) / 60 )) min" >> "$GITHUB_STEP_SUMMARY"
+          echo "### looplUITests on ${{ matrix.device }}: $(( ($(date +%s) - START) / 60 )) min" >> "$GITHUB_STEP_SUMMARY"
           grep -E "Executed [0-9]+ tests" ui.log | tail -n 1 >> "$GITHUB_STEP_SUMMARY" || true
       # The slowest suites, so the next person trimming this job has numbers instead of a guess.
       - name: Where the time went
@@ -103,7 +143,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ui-xcresult
+          name: ui-xcresult-${{ steps.sim.outputs.slug }}
           path: DerivedData/ui.xcresult
           retention-days: 7
           if-no-files-found: ignore
