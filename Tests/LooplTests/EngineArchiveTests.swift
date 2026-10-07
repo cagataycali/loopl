@@ -80,11 +80,27 @@ final class EngineArchiveTests: XCTestCase {
     }
 
     /// `saveNow()` (scenePhase → background) writes the partial answer while the model is still streaming.
+    ///
+    /// WAIT FOR THE PRECONDITION, do not sleep a fixed amount. This test used to `sleep(200ms)` and then assert
+    /// in one shot that two rows were on disk. 200 ms is plenty on this Mac and not always enough on a loaded CI
+    /// box, where the model's first chunk had not been applied to the transcript yet — so the archive honestly
+    /// held one row and the test reported it as "the partial answer is not saved". It went red on main `55f2b9dc`
+    /// and again on PR #187, which touches only UI tests. (Same shape as the `ApprovalTests` race IMPROVE-6 fixed
+    /// on #184; any one-shot assertion about asynchronous work is a candidate.)
+    ///
+    /// The thing under test is still exactly what it was: a `saveNow()` DURING streaming writes the partial row.
+    /// The wait is only for streaming to have actually produced something, with a ceiling so a real regression
+    /// fails instead of hanging.
     func testSaveNowWritesThePartialAnswer() async {
         let e = engine(FakeModel(turns: [.hang(after: 2)], delayPerChunkNs: 5_000_000))
         defer { e.archive.delete(id: e.currentId) }
         e.send("go")
-        try? await Task.sleep(for: .milliseconds(200))
+        let deadline = Date().addingTimeInterval(5)
+        while e.transcript.items.last(where: { if case .assistant = $0.kind { return true }; return false }) == nil,
+              Date() < deadline {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertTrue(e.isGenerating, "the model should still be streaming when saveNow() is called")
         e.saveNow()
         let saved = onDisk(e)
         XCTAssertEqual(saved?.items.count, 2, "user row + the partial assistant row: \(String(describing: saved?.items))")
