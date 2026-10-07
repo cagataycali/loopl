@@ -63,9 +63,32 @@ public enum TokenizerFiles {
         return false
     }
 
-    /// The copy shown when a load fails on the tokenizer: what is wrong and the one action that fixes it.
-    public static func repairMessage(for modelName: String) -> String {
-        "\(modelName)'s tokenizer files are out of date — tap Repair to refresh them from Hugging Face (a few KB; the weights stay)."
+    // The copy shown when a load fails on the tokenizer: what is wrong, and an action that is really there.
+    //
+    // **There is no Repair button in loopl, and there never was.** The repair is automatic: `Engine.load`
+    // catches a tokenizer error, shows `.repairing`, and calls `ModelStore.repairFiles` itself. The only
+    // control the reader is offered in the failed state is **Try again** (`ChatView`'s readiness row).
+    //
+    // IMPROVE-9: the old single `repairMessage` said "tap Repair to refresh them from Hugging Face" at all
+    // three failure sites, so the one piece of guidance a stuck reader gets named a control that does not
+    // exist — and at the fetch-failed site it read "tap Repair ... Repair failed: ...", telling them to do
+    // the thing it had just said failed. One message for three different states is why; each state now has
+    // its own, and each names only an action that is really there.
+
+    /// Offline: loopl *can* fix this, but not without the network.
+    public static func needsInternetMessage(for modelName: String) -> String {
+        "\(modelName) can't start: some of its small setup files are out of date. loopl can fetch fresh ones — a few kilobytes, and the model itself stays on your device — but it needs the internet. Connect and tap Try again."
+    }
+
+    /// loopl tried to fetch those files and the fetch itself failed. Retrying is worth it.
+    public static func fetchFailedMessage(for modelName: String) -> String {
+        "\(modelName) can't start: some of its small setup files are out of date, and loopl could not fetch fresh ones just now. Tap Try again."
+    }
+
+    /// The files already match Hugging Face, or have just been refreshed, and the model still will not load.
+    /// Nothing on this device changes that, so say so and give the reader the move that is theirs.
+    public static func cannotBeFixedMessage(for modelName: String) -> String {
+        "\(modelName) can't start, and nothing here will fix it: its files already match Hugging Face, so the problem is in how the model was published rather than on your device. Try another model — you can delete this one under Models to get the space back."
     }
 
     /// Git's blob hash — `sha1("blob <size>\0" + bytes)` — which is the `oid` the Hub tree API reports for every
