@@ -136,7 +136,7 @@ working history, so the prompt the model gets right after the tool result is alr
 
 What shrinks is the agent's *working context*, not the user's record. A `Transcript` is built from events,
 so every row stays; the agent announces each edit as `AgentEvent.historyEdited` carrying a `HistoryEdit`,
-and the transcript folds it into one quiet note — *"3 turns compacted by the agent · your history is
+and the transcript folds it into one quiet note — *"The model tidied 3 turns of notes · your conversation is
 unchanged"*. Reopening a saved conversation already starts the model on a fresh context, so nothing else
 changes for the host.
 
@@ -166,7 +166,7 @@ Every write is **human-in-the-loop**: `requiresApproval` returns a medium-risk `
 the default, skips the card and answers honestly. Once approved, `Agent.changeSystemPrompt` installs the new
 prompt for the **next model call of the same turn** and the store persists it for every later one; the agent
 announces it as `AgentEvent.systemPromptChanged(SystemPromptChange)` and the transcript shows one quiet note —
-*"system prompt extended by the agent · revert in Settings › System prompt"*. `SystemPromptToolTests` (5)
+*"The model added a rule to its instructions · undo in Settings › System prompt"*. `SystemPromptToolTests` (5)
 include the end-to-end check: call *n* saw the old prompt, call *n + 1* ran on the new one.
 
 ## Transcript
