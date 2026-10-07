@@ -25,6 +25,6 @@ final class PlainWordsTests: XCTestCase {
         XCTAssertEqual(PendingRow.caption(after: 0), "…")
         XCTAssertEqual(PendingRow.caption(after: 3.9), "…")
         XCTAssertEqual(PendingRow.caption(after: 4), "Reading your message and the tools…")
-        XCTAssertEqual(PendingRow.caption(after: 20), "Still reading — a long conversation takes longer.")
+        XCTAssertEqual(PendingRow.caption(after: 20), "Still reading — a big prompt takes longer on this device.")
     }
 }

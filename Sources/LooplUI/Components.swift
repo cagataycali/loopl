@@ -950,11 +950,13 @@ public struct PendingRow: View {
             .accessibilityIdentifier("transcript-pending")
         }
     }
-    /// "…" → "Reading your message and the tools…" → "Still reading — a long conversation takes longer."
+    /// "…" → "Reading your message and the tools…" → "Still reading — a big prompt takes longer on this device."
     public static func caption(after seconds: TimeInterval) -> String {
         if seconds < 4 { return "…" }
         if seconds < 20 { return "Reading your message and the tools…" }
-        return "Still reading — a long conversation takes longer."
+        // Seen on a FIRST turn in a fresh thread (IMPROVE-4 re-audit): "a long conversation" was wrong there — the system prompt
+        // and two dozen tools are the long part. Name the size and the device, not the conversation.
+        return "Still reading — a big prompt takes longer on this device."
     }
 }
 
