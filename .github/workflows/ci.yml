@@ -54,7 +54,11 @@ jobs:
           set -o pipefail
           xcodebuild -project App/LooplApp.xcodeproj -scheme loopl -configuration Debug \
             -destination "id=${{ steps.sim.outputs.udid }}" -derivedDataPath DerivedData \
-            CODE_SIGNING_ALLOWED=NO -skipPackagePluginValidation -skipMacroValidation test 2>&1 | tail -n 120
+            CODE_SIGNING_ALLOWED=NO -skipPackagePluginValidation -skipMacroValidation test 2>&1 | tee ios-test.log | tail -n 120
+      # `tail -n 120` hides WHICH test failed when the suite is long — print the names too.
+      - name: Which tests failed (names, not a tail)
+        if: failure()
+        run: grep -E "error: -\[|Test Case .* failed|with [1-9][0-9]* failure" ios-test.log | head -n 60 || true
   package:
     name: swift build · swift test (pure Loopl package, macOS)
     runs-on: macos-26
@@ -67,9 +71,19 @@ jobs:
       - name: Select Xcode 26
         if: steps.pkg.outputs.present == 'true'
         run: sudo xcode-select -s "$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)" && swift --version
+      # `| tail` without pipefail reports TAIL's exit status, so this job was green for days while
+      # `swift test` could not even BUILD (Tests/LooplRuntimesTests referenced llama-only symbols) and
+      # the two catalog tests were failing on a stale fixture. Keep `set -o pipefail` here.
       - name: swift build (Loopl core only — no MLX/Metal on macOS CI)
         if: steps.pkg.outputs.present == 'true'
-        run: swift build --product Loopl 2>&1 | tail -n 60
+        run: |
+          set -o pipefail
+          swift build --product Loopl 2>&1 | tail -n 60
       - name: swift test
         if: steps.pkg.outputs.present == 'true'
-        run: swift test 2>&1 | tail -n 120
+        run: |
+          set -o pipefail
+          swift test 2>&1 | tee swift-test.log | tail -n 120
+      - name: Which tests failed (names, not a tail)
+        if: failure() && steps.pkg.outputs.present == 'true'
+        run: grep -E "error: -\[|with [1-9][0-9]* failure|error:" swift-test.log | head -n 60 || true
