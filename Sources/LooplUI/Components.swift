@@ -533,7 +533,7 @@ public struct ToolRow: View {
                         // the expanded card and in History (IMPROVE-3 audit: `current_time` read as developer voice).
                         Text(ToolLabel.display(call.name)).font(.callout.weight(.medium)).foregroundStyle(.primary.opacity(0.85))
                             .lineLimit(1).minimumScaleFactor(0.7).layoutPriority(1)
-                        if let r = result, r.durationMs > 0 {
+                        if let r = result, r.durationMs > 0, !r.reportsPending {
                             Text(duration(r.durationMs)).font(.caption2.monospacedDigit()).foregroundStyle(.tertiary)
                                 .contentTransition(.numericText())
                                 .transition(.opacity)
