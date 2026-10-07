@@ -56,7 +56,7 @@ struct ModelsView: View {
     /// Header of section 1: the device this is — a model on a drive carries its own "On SanDisk" line.
     private var deviceName: String { UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone" }
     /// For the section-order test and the animation key: the headers, top to bottom, as a first-time user reads them.
-    static let sectionOrder = ["On this iPhone", "Browse Hugging Face", "Train your own", "loopl models", "Mine", "Storage"]
+    static let sectionOrder = ["On this iPhone", "Browse Hugging Face", "Your own model", "loopl models", "Mine", "Storage"]
 
     var body: some View {
         NavigationStack {
@@ -117,7 +117,8 @@ struct ModelsView: View {
                     }
                     .accessibilityIdentifier("models-train")
                 } header: {
-                    Text("Train your own").accessibilityIdentifier("models-header-train")
+                    // Not "Train your own" again — the row already says it (IMPROVE-3 audit #12).
+                    Text("Your own model").accessibilityIdentifier("models-header-train")
                 }
                 // 4 — the loopl models (the collection), with the GGUF builds and the rest of the catalog folded under them.
                 CollectionSection(engine: engine, store: store, settings: settings, hf: engine.hf, model: collection, selected: $collectionSelected, zoom: zoom) {
