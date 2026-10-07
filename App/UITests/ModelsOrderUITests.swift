@@ -79,4 +79,27 @@ final class ModelsOrderUITests: XCTestCase {
             let att = XCTAttachment(screenshot: shot); att.lifetime = .keepAlways; att.name = name; a.add(att)
         }
     }
+
+    /// The chat's empty state with no model running offers a real way out: a button that opens the Models tab
+    /// (IMPROVE-4 #9 — "Pick a model in **Models**" was bold text nobody could tap).
+    func testEmptyChatOffersPickAModel() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--design-fixture", "nomodel"]
+        app.launch()
+        let pick = app.descendants(matching: .any).matching(identifier: "chat-empty-pick-model").firstMatch
+        XCTAssertTrue(pick.waitForExistence(timeout: 10), "button under the empty-state hint")
+        pick.tap()
+        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "models-header-device").firstMatch.waitForExistence(timeout: 5), "Models tab in front")
+    }
+
+    /// Rows under "On this iPhone" carry no ✓ (the section already says it); the model in use is the one marked (IMPROVE-4 #7).
+    func testOnDeviceRowsHaveNoCheckmark() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--design-fixture", "empty", "--design-tab", "models", "--design-models", "shelf", "--design-collection", "bundled", "--storage-fixture", "none"]
+        app.launch()
+        let device = app.descendants(matching: .any).matching(identifier: "models-header-device").firstMatch
+        XCTAssertTrue(device.waitForExistence(timeout: 10))
+        XCTAssertEqual(app.descendants(matching: .any).matching(NSPredicate(format: "label == 'on this device'")).count, 0, "no ✓ under On this iPhone")
+        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label == 'loaded'")).firstMatch.exists, "the model in use keeps its mark")
+    }
 }

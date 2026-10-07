@@ -30,7 +30,7 @@ struct ChatView: View {
                 AgentTranscriptView(engine.transcript, showPerformance: settings.showPerformance, expandTools: DesignFixture.expandTools) {
                     readinessBanner
                 } empty: {
-                    EmptyState(hint: emptyHint)
+                    EmptyState(hint: emptyHint, action: emptyAction)
                 }
                 .onApproval { req, decision in engine.resolve(req, decision) }
                 .onAsk { id, answer in engine.answer(ask: id, answer) }
@@ -189,9 +189,14 @@ struct ChatView: View {
         switch engine.readiness {
         case .ready(let s): "**\(s.displayName)** is ready. Everything runs on this device."
         case .downloading, .loading, .repairing: "Getting your model ready — the first launch downloads it once."
-        case .failed: "Pick a model in **Models** to get started."
+        case .failed: "No model is running yet."
         case .idle: "Runs on this \(LooplDesign.deviceName). Nothing leaves it."
         }
+    }
+    /// "Pick a model in Models" used to be bold text nobody could tap (IMPROVE-4 #9): now a button that opens the tab.
+    private var emptyAction: EmptyState.Action? {
+        guard case .failed = engine.readiness, !inSplit else { return nil }
+        return .init(title: "Pick a model", id: "chat-empty-pick-model") { NotificationCenter.default.post(name: RootView.openModels, object: nil) }
     }
 
     /// Inline, never modal: download → load → (nothing) at the top of the document.
