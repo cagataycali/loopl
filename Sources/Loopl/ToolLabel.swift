@@ -46,4 +46,20 @@ public enum ToolLabel {
         guard let first = words.first else { return id }
         return ([first.prefix(1).uppercased() + first.dropFirst()] + words.dropFirst()).joined(separator: " ")
     }
+
+}
+
+
+public extension ToolResult {
+    /// The result says the work is NOT finished — so the tool's own duration measures the hand-off, not the job,
+    /// and a transcript row must not print it. `use_agent` hands back an envelope the moment the child starts
+    /// (`{"pending": true, …}`), which made the row read "Helper · 4 ms" above a sub-agent 42 seconds into a
+    /// background run: a person reads that as "the helper took 4 ms". The child's own card carries its elapsed
+    /// time, so nothing is lost by staying quiet. Deliberately read off the RESULT and not off the tool's name:
+    /// the same `use_agent` call that WAITED for its child did do the work in that time, and keeps its number.
+    /// (IMPROVE-5 #16)
+    var reportsPending: Bool {
+        guard content.contains("\"pending\"") else { return false }       // cheap guard before parsing
+        return JSONValue.parse(content)?["pending"]?.boolValue == true
+    }
 }
