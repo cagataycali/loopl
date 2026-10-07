@@ -205,8 +205,10 @@ enum DesignFixture {
                                           items: [.user("Explain what an agent loop is, in three short points"),
                                                   .assistant("1. **Ask** — the model reads the conversation and either answers or asks for a tool.\n2. **Act** — the app runs the tool and appends the result.\n3. **Repeat** — until the model answers plainly.")],
                                           modelId: other, tools: [CurrentTimeTool().toolSpec])
-            engine.archive.upsert(saved)
+            // seedHistory FIRST: it now clears the archive (see its comment), which would otherwise delete the
+            // thread this scene is about.
             seedHistory(engine, spec: spec)
+            engine.archive.upsert(saved)
             if let reread = engine.archive.conversations.first(where: { $0.id == saved.id }) { engine.open(reread) }
             return
         case "ask":
@@ -848,7 +850,19 @@ enum DesignFixture {
     }
 
     /// `history` scene: fixed ids so the UITest and the proof push are reproducible run to run.
+    ///
+    /// It also CLEARS the archive first, which it did not have to before #166. That change made the app save a
+    /// conversation on every exit — the right behaviour, and it means every other fixture scene now leaves a
+    /// thread behind. So by the time `HistoryUITests` ran inside a full suite, "Select all" selected six
+    /// conversations and asserting on three was order-dependent nonsense. A design fixture exists to produce a
+    /// KNOWN screen; starting from a known-empty archive is part of that. DEBUG-only code, never in a release.
     @MainActor static func seedHistory(_ engine: Engine, spec: ModelSpec) {
+        // `reload()` first, ON PURPOSE: the app's archive reads its folder in the BACKGROUND (#165), so at fixture
+        // time `conversations` is still empty and `deleteAll()` alone would delete nothing — and then the background
+        // read would put the old threads back. The synchronous read fills the list, `deleteAll()` removes those files
+        // and marks the ids as touched, so the in-flight read drops them in its merge.
+        engine.archive.reload()
+        engine.archive.deleteAll()
         let tools: [ToolSpec] = [CurrentTimeTool().toolSpec, CalculatorTool().toolSpec]
         let day: TimeInterval = 86_400
         let threads: [SavedConversation] = [
