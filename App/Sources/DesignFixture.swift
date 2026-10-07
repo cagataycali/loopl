@@ -136,6 +136,11 @@ enum DesignFixture {
         let spec = engine.store.catalog.models.first { $0.id == specId } ?? engine.store.catalog.models.first!
         engine.readiness = models == "empty" ? .idle : .ready(spec)
         #if DEBUG
+        // The composer asks the LOADED model whether it can see pictures, and a fixture loads nothing (MLX cannot
+        // run on a simulator), so the attach menu was absent in exactly the scenes that are about pictures.
+        if scene == "vision" || scene == "video" || spec.supportsVision { engine.designVision = true }
+        #endif
+        #if DEBUG
         if let mounted {
             let names = mounted.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
             let registry = engine.registry

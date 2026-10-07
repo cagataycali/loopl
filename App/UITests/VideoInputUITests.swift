@@ -29,7 +29,10 @@ final class VideoInputUITests: XCTestCase {
 
     func testAttachMenuOffersVideoForAVisionModel() {
         let app = launch(scene: "vision")
-        let attach = app.buttons["composer-attach"].firstMatch
+        // `descendants(matching: .any)`, not `.buttons`: the attach control is a SwiftUI `Menu`, which XCUITest
+        // exposes as a pop-up/other element, so `app.buttons[…]` never matched it. LooplModelsUITests already
+        // reaches it this way.
+        let attach = app.descendants(matching: .any).matching(identifier: "composer-attach").firstMatch
         XCTAssertTrue(attach.waitForExistence(timeout: 10), "vision fixture shows the attach button")
         attach.tap()
         XCTAssertTrue(app.buttons["Photo or Video"].waitForExistence(timeout: 5), "the picker takes photos and videos")
