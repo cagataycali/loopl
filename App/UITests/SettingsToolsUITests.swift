@@ -104,6 +104,20 @@ final class SettingsToolsUITests: XCTestCase {
         let http = app.switches["tool.http"].firstMatch
         for _ in 0..<6 where !http.isHittable { app.swipeUp() }
         XCTAssertTrue(http.isHittable)
+        // `isHittable` is not "safe to tap". MEASURED on an iPhone SE: the http row is **126.5 pt tall** (name,
+        // description and the "asks first" note all wrap) and sat at `{{16, -0.5}, {343, 126.5}}` — hittable,
+        // because part of it showed, while the point this knob coordinate is measured from (dy 0.5 → y ≈ 63) sat
+        // UNDER the navigation bar. The tap landed on the bar, the switch never moved (value 1 → 1), and the test
+        // reported it as "summary counts what the model gets" failing — a tap that missed, dressed up as a
+        // product bug. Nudge the row clear of the bar first, in quarter-screen drags rather than full swipes so
+        // it cannot be flung off the bottom instead.
+        func nudgeDown() {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
+                .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6)))
+        }
+        for _ in 0..<6 where http.frame.minY < 100 { nudgeDown() }
+        XCTAssertGreaterThan(http.frame.minY, 44,
+                             "the row must be clear of the navigation bar before its knob is tapped: \(http.frame)")
         let knob = { http.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap() }   // the row IS the Toggle; its centre is the label text
         knob()                                   // the row moves to the Off group (off screen); the summary says so
         for _ in 0..<8 where !summary.exists { app.swipeDown() }

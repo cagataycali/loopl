@@ -46,15 +46,7 @@ jobs:
             extra_skip: ""
           - device: iPhone SE (3rd generation)
             type: com.apple.CoreSimulator.SimDeviceType.iPhone-SE-3rd-generation
-            # One test still stops early HERE and only here. Its original failure (hunting named tool rows with a
-            # swipe loop each, which walked past `location`) is fixed in this PR, and that uncovered the next
-            # assertion along — one which had never run on a short screen, because the test aborts on first
-            # failure: switching `http` off does not change the "18 of 24" summary on an iPhone SE, while it does
-            # on a 16 Pro (3/3 there, 118 s). That is a genuinely different question — possibly the product, not
-            # the test — and it deserves its own look rather than being bundled in here. Delete this line when it
-            # is answered: a skip that outlives its reason is a hole.
-            extra_skip: >-
-              -skip-testing:LooplUITests/SettingsToolsUITests/testOneCollapsibleToolsRowWithGroupsTagsAndNotes
+            extra_skip: ""
     steps:
       - uses: actions/checkout@v4
       - name: Select Xcode 26
