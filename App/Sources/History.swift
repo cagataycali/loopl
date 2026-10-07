@@ -10,10 +10,12 @@ struct SavedConversation: Codable, Identifiable, Hashable {
     enum Item: Codable, Hashable {
         /// `images`: the pictures the user attached / a tool produced, kept as ≤ 512 px thumbnails (see `HistoryImage`)
         /// so a reopened vision thread still shows what was sent. Optional + decodeIfPresent — 0.1 files decode as nil.
-        case user(String, images: [ImageBlock]?), assistant(String), tool(name: String, args: [String: JSONValue], result: String?, isError: Bool, ms: Double, images: [ImageBlock]?), note(String)
+        /// `videos` (Phase 8): the clips the user attached — file path + poster + transcript, never the bytes. Optional too.
+        case user(String, images: [ImageBlock]?, videos: [VideoBlock]?), assistant(String), tool(name: String, args: [String: JSONValue], result: String?, isError: Bool, ms: Double, images: [ImageBlock]?), note(String)
 
         /// Text-only spellings (fixtures, tests, the pre-images call sites).
-        static func user(_ s: String) -> Item { .user(s, images: nil) }
+        static func user(_ s: String) -> Item { .user(s, images: nil, videos: nil) }
+        static func user(_ s: String, images: [ImageBlock]?) -> Item { .user(s, images: images, videos: nil) }
         static func tool(name: String, args: [String: JSONValue], result: String?, isError: Bool, ms: Double) -> Item {
             .tool(name: name, args: args, result: result, isError: isError, ms: ms, images: nil)
         }
@@ -41,11 +43,13 @@ struct SavedConversation: Codable, Identifiable, Hashable {
     static func from(_ t: Transcript, id: UUID, modelName: String?, editedAt: Date? = nil, modelId: String? = nil, tools: [ToolSpec]? = nil, mounted: [String]? = nil) -> SavedConversation? {
         let items: [Item] = t.items.compactMap {
             switch $0.kind {
-            case .user(let s): .user(s, images: HistoryImage.thumbnails($0.images))
+            case .user(let s): .user(s, images: HistoryImage.thumbnails($0.images), videos: $0.videos.isEmpty ? nil : $0.videos)
             case .assistant(let s): .assistant(s)
             case .toolUse(let c, let r): .tool(name: c.name, args: c.input, result: r?.content, isError: r?.isError ?? false, ms: r?.durationMs ?? 0, images: HistoryImage.thumbnails($0.images))
             case .note(let s): .note(s)
             case .agent(let run): .note("agent \(run.info.name) (\(run.status.rawValue))" + (run.resultText.map { ": \($0)" } ?? ""))   // summary only; the child's rows are not replayed
+            // Phase 7 ask_user: saved as the tool pair it was, with the MASKED answer (passwords never reach disk); an open card is saved cancelled.
+            case .ask(_, let request, let answer): .tool(name: AskUserTool.toolName, args: request.toolArgs, result: (answer ?? .cancelled).masked(for: request).toolResult.compact, isError: false, ms: 0, images: nil)
             case .approval(let req, let d):
                 switch d {
                 case nil: nil                                   // still waiting — the agent will not be there on reopen
@@ -56,7 +60,7 @@ struct SavedConversation: Codable, Identifiable, Hashable {
             }
         }
         guard items.contains(where: { if case .user = $0 { return true }; return false }) else { return nil }
-        let first = items.compactMap { if case .user(let s, _) = $0 { return s }; return nil }.first ?? "Conversation"
+        let first = items.compactMap { if case .user(let s, _, _) = $0 { return s }; return nil }.first ?? "Conversation"
         return SavedConversation(id: id, title: String(first.prefix(60)), updated: Date(), modelName: modelName, items: items, editedAt: editedAt, modelId: modelId, tools: tools, mounted: mounted)
     }
 
@@ -71,9 +75,9 @@ struct SavedConversation: Codable, Identifiable, Hashable {
 
     /// Replace the user message at `index` (must be a `.user` item) and drop everything after it.
     func replacing(userAt index: Int, with text: String) -> SavedConversation? {
-        guard items.indices.contains(index), case .user(_, let images) = items[index] else { return nil }
+        guard items.indices.contains(index), case .user(_, let images, let videos) = items[index] else { return nil }
         var c = truncated(before: index)
-        c.items.append(.user(text, images: images))
+        c.items.append(.user(text, images: images, videos: videos))
         if index == 0 { c.title = String(text.prefix(60)) }
         return c
     }
@@ -86,7 +90,7 @@ struct SavedConversation: Codable, Identifiable, Hashable {
             switch item {
             // Pictures go along (as the ≤ 512 px thumbnails History keeps) — ConversationExport writes them to images/<sha>.png
             // unless the person ticks "Remove pictures". Dropping them here made every shared dataset text-only (TRAIN-E2E-VISION).
-            case .user(let s, let images): messages.append(images.map { $0.isEmpty ? .user(s) : .user(s, images: $0) } ?? .user(s))
+            case .user(let s, let images, let videos): messages.append(.user(s, images: images ?? [], videos: videos ?? []))
             case .assistant(let s): messages.append(.assistant(s))
             case .tool(let name, let args, let result, let isError, let ms, _):
                 guard let result else { continue }
@@ -103,10 +107,13 @@ struct SavedConversation: Codable, Identifiable, Hashable {
         var t = Transcript()
         t.items = items.map {
             switch $0 {
-            case .user(let s, let images): return TranscriptItem(kind: .user(s), images: images ?? [])
+            case .user(let s, let images, let videos): return TranscriptItem(kind: .user(s), images: images ?? [], videos: videos ?? [])
             case .assistant(let s): return TranscriptItem(kind: .assistant(s))
             case .tool(let name, let args, let result, let isError, let ms, let images):
                 let use = ToolUse(name: name, input: args)
+                if name == AskUserTool.toolName, let request = try? AskUserRequest(args: args), let result, let answer = AskUserAnswer(toolResult: result) {
+                    return TranscriptItem(kind: .ask(toolUseId: use.toolUseId, request, answer: answer))   // reopened as the settled card
+                }
                 return TranscriptItem(kind: .toolUse(use, result: result.map { ToolResult(toolUseId: use.toolUseId, name: name, status: isError ? .error : .success, content: $0, durationMs: ms) }), images: images ?? [])
             case .note(let s): return TranscriptItem(kind: .note(s))
             }
@@ -398,7 +405,8 @@ struct HistoryList: View {
     private func copyTranscript(_ c: SavedConversation) {
         let text = c.items.compactMap { item -> String? in
             switch item {
-            case .user(let s, let imgs): (imgs?.isEmpty == false ? "You: [\(imgs!.count) image\(imgs!.count == 1 ? "" : "s")] " : "You: ") + s
+            case .user(let s, let imgs, let vids):
+                (imgs?.isEmpty == false ? "You: [\(imgs!.count) image\(imgs!.count == 1 ? "" : "s")] " : "You: ") + (vids?.isEmpty == false ? "[\(vids!.count) video\(vids!.count == 1 ? "" : "s")] " : "") + s
             case .assistant(let s): "loopl: \(s)"
             case .tool(let n, _, let r, _, _, _): "[\(n)] \(r ?? "…")"
             case .note: nil

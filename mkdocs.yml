@@ -152,6 +152,8 @@ nav:
       - Human in the loop: sdk/hitl.md
       - Sub-agents: sdk/sub-agents.md
       - Render UI: sdk/render-ui.md
+      - Asking the user: sdk/ask-user.md
+      - Video input: sdk/video.md
       - Structured output: sdk/structured-output.md
       - Checkpoints: sdk/checkpoints.md
       - Tracing: sdk/tracing.md

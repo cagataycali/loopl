@@ -1,5 +1,6 @@
 import Foundation
 import AVFoundation
+import CoreImage
 import LooplUI
 import Loopl
 import LooplAppleTools
@@ -130,7 +131,7 @@ enum DesignFixture {
         // `loopl`: a loopl model is loaded (its identity is in the weights, nothing in Settings). The row says vision (v1 mlx_vlm export) but the
         // files on this phone are the OLD text-only download (the owner's 07:5xZ situation): config.json without vision_config wins,
         // so the composer has no photo button. `--design-local-vision` keeps the files = row (button shown).
-        let specId = switch scene { case "vision": "qwen3.5-0.8b-4bit"; case "loopl": "loopl-0.8b-4bit"; default: models == "shelf" ? "loopl-2b-4bit" : "qwen3-0.6b-4bit" }
+        let specId = switch scene { case "vision": "qwen3.5-0.8b-4bit"; case "video": "qwen3-vl-2b-instruct-4bit"; case "loopl": "loopl-0.8b-4bit"; default: models == "shelf" ? "loopl-2b-4bit" : "qwen3-0.6b-4bit" }
         if scene == "loopl", !CommandLine.arguments.contains("--design-local-vision") { engine.store.overrideLocalVision(specId, false) }
         let spec = engine.store.catalog.models.first { $0.id == specId } ?? engine.store.catalog.models.first!
         engine.readiness = models == "empty" ? .idle : .ready(spec)
@@ -200,6 +201,11 @@ enum DesignFixture {
             seedHistory(engine, spec: spec)
             if let reread = engine.archive.conversations.first(where: { $0.id == saved.id }) { engine.open(reread) }
             return
+        case "ask":
+            // Phase 7 ask_user: `--design-ask confirm|select|multiselect|input|buttons|form|message` (default select) shows the
+            // native card waiting for the human; `--design-ask-state answered|cancelled|timeout` shows it settled (+ the model's
+            // follow-up). Answering a pending card scripts the follow-up (`DesignFixture.answer`), like the approval scene.
+            seedAsk(&t, type: value("--design-ask") ?? "select", state: value("--design-ask-state"))
         case "approval":
             t.user("Post a note to my notes API saying the build is green.")
             t.apply(.startEventLoop(cycle: 1))
@@ -417,6 +423,24 @@ enum DesignFixture {
             engine.transcript = t
             Task { await writeFixtureRecording(to: url) }
             return
+        case "video":
+            // Phase 8: the user attached a clip. The exact exchange the macOS proof produced with Qwen3-VL-2B-Instruct-4bit
+            // on video-test.mp4 (synthetic: a red and a blue square drifting on a dark background, 10 s, a sine tone).
+            // The clip is copied into the thread's attachments folder so the poster, the chip and a reopen all work.
+            let dir = AudioAttachment.directory(for: engine.currentId)
+            let url = dir.appendingPathComponent("C1A2B3.mp4")
+            if !FileManager.default.fileExists(atPath: url.path), let src = Bundle.main.url(forResource: "video-test", withExtension: "mp4") {
+                try? FileManager.default.copyItem(at: src, to: url)
+            }
+            var block = VideoBlock(path: url.path, mime: "video/mp4", duration: 10, width: 640, height: 360,
+                                   framePlan: VideoFramePlan(maxFrames: 16, fps: 1, maxEdge: 448), transcript: nil)
+            block.thumbnail = fixtureVideoPoster(url)
+            t.user("What happens in this video?", videos: [block])
+            t.apply(.startEventLoop(cycle: 1))
+            t.apply(.text("A small, light blue square appears on a dark background, initially positioned in the lower-left area of the screen. The blue square then begins to grow in size and gradually expands outward, becoming larger and more prominent."))
+            t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("A small, light blue square appears on a dark background, initially positioned in the lower-left area of the screen. The blue square then begins to grow in size and gradually expands outward, becoming larger and more prominent."), metrics: EventLoopMetrics())))
+            engine.transcript = t
+            return
         case "render":
             // Phase 7 `render_ui`: `--design-render chart|map|diagram|table|keyvalue|list|progress|misc|unknown` = one card per kind;
             // default = the mixed card (title + markdown + chart + keyvalue) the owner asked for ("maps, graphs, diagrams").
@@ -476,6 +500,107 @@ enum DesignFixture {
             t.apply(.metrics(m))
         }
         engine.transcript = t
+    }
+
+    // MARK: ask scene (Phase 7 lane B)
+
+    static let askUseId = "tooluse_ask_1"
+    /// The question each type asks in the scene — one realistic story per type, all answerable.
+    static func askRequest(_ type: String) -> (user: String, lead: String, request: AskUserRequest, followUp: (AskUserAnswer) -> String) {
+        switch type {
+        case "confirm":
+            return ("Clear all my reminders for today.", "That removes 4 reminders — let me check first.",
+                    AskUserRequest(type: .confirm, text: "Delete all 4 reminders due today? This cannot be undone.", title: "Delete reminders"),
+                    { a in if case .answered(.bool(true)) = a { return "Done — the 4 reminders are gone." }; return "Okay, I left them as they were." })
+        case "multiselect":
+            return ("Order my usual pizza.", "Which toppings this time?",
+                    AskUserRequest(type: .multiselect, text: "Pick the toppings for a large pizza.", title: "Toppings",
+                                   options: ["Mozzarella", "Mushrooms", "Olives", "Basil", "Pepperoni", "Hot honey"].map { .init(value: $0) }),
+                    { a in "Ordered a large with \(a.summary(for: AskUserRequest(type: .multiselect, text: ""))) — about 35 minutes." })
+        case "input":
+            return ("Rename this conversation.", "What should it be called?",
+                    AskUserRequest(type: .input, text: "New name for this conversation", title: "Rename", default: "Pizza night planning"),
+                    { a in "Renamed it to **\(a.summary(for: AskUserRequest(type: .input, text: "")))**." })
+        case "buttons":
+            return ("Set a timer.", "How long?",
+                    AskUserRequest(type: .buttons, text: "How long should the timer run?", title: "Timer",
+                                   options: ["5 min", "10 min", "25 min", "1 hour"].map { .init(value: $0) }, default: "25 min"),
+                    { a in "Timer set for \(a.summary(for: AskUserRequest(type: .buttons, text: "")))." })
+        case "form":
+            return ("Sign me in to the office Wi-Fi.", "I need the network details.",
+                    AskUserRequest(type: .form, text: "Enter the Wi-Fi details. The password stays on this device.", title: "Wi-Fi",
+                                   fields: [.init(name: "ssid", label: "Network", type: .text, default: "loopl-office", required: true),
+                                            .init(name: "password", label: "Password", type: .password, required: true),
+                                            .init(name: "devices", label: "Devices to connect", type: .number, default: "1"),
+                                            .init(name: "remember", label: "Remember this network", type: .toggle, default: "true")]),
+                    { _ in "Connected to **loopl-office** — the password is saved on this device only." })
+        case "message":
+            return ("Update all my models.", "Before I start:",
+                    AskUserRequest(type: .message, text: "Updating 3 models downloads about 2.4 GB over Wi-Fi and takes around 6 minutes. You can keep chatting meanwhile.", title: "Heads-up"),
+                    { _ in "Starting the update — I'll say when each model is ready." })
+        default:
+            return ("Book me a table tonight.", "Which place?",
+                    AskUserRequest(type: .select, text: "Where should I book for tonight at 20:00, for two?", title: "Pick a restaurant",
+                                   options: [.init(value: "Antica Pesa", label: "Antica Pesa · Italian"), .init(value: "Oda", label: "Oda · Turkish"),
+                                             .init(value: "Blue Ribbon", label: "Blue Ribbon · Sushi")]),
+                    { a in "Booked **\(a.summary(for: AskUserRequest(type: .select, text: "")))** tonight at 20:00 for two. The confirmation is in your calendar." })
+        }
+    }
+    static func seedAsk(_ t: inout Transcript, type: String, state: String?) {
+        let story = askRequest(type)
+        t.user(story.user)
+        t.apply(.startEventLoop(cycle: 1))
+        t.apply(.text(story.lead))
+        let use = ToolUse(toolUseId: askUseId, name: AskUserTool.toolName, input: story.request.toolArgs)
+        t.apply(.modelMessage(.assistant(text: story.lead, toolUses: [use])))
+        t.apply(.toolStarted(use))
+        t.apply(.interruptRaised(Interrupt(id: AskUserTool.interruptId(toolUseId: askUseId), name: AskUserTool.interruptName, reason: story.request.interruptReason)))
+        guard let state else { return }
+        let answer: AskUserAnswer = switch state {
+        case "cancelled": .cancelled
+        case "timeout": .timedOut
+        default: sampleAnswer(story.request)
+        }
+        t.apply(.interruptResolved(id: AskUserTool.interruptId(toolUseId: askUseId), response: answer.interruptResponse))
+        t.apply(.toolResult(ToolResult(toolUseId: askUseId, name: AskUserTool.toolName, content: answer.toolResult.compact, durationMs: 4_200)))
+        t.apply(.startEventLoop(cycle: 2))
+        let reply = switch answer {
+        case .answered: story.followUp(answer.masked(for: story.request))
+        case .cancelled: "Okay — I stopped there. Ask again whenever you like."
+        case .timedOut: "I didn't get an answer, so I left it. Ask again whenever you like."
+        }
+        t.apply(.text(reply))
+        t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant(reply), metrics: EventLoopMetrics())))
+    }
+    static func sampleAnswer(_ r: AskUserRequest) -> AskUserAnswer {
+        switch r.type {
+        case .confirm: .answered(.bool(true))
+        case .select, .buttons: .answered(.string(r.default ?? r.options.first?.value ?? ""))
+        case .multiselect: .answered(.array(r.options.prefix(3).map { .string($0.value) }))
+        case .input: .answered(.string(r.default ?? "Pizza night planning"))
+        case .form: .answered(.object(["ssid": "loopl-office", "password": "hunter2-not-shown", "devices": 1, "remember": true]))
+        case .message: .answered(.string("acknowledged"))
+        }
+    }
+    /// A pending ask card answered in the fixture (no model): settle the card, then script the follow-up.
+    @MainActor static func answer(_ engine: Engine, _ toolUseId: String, _ answer: AskUserAnswer) async {
+        func sleep(_ s: Double) async { try? await Task.sleep(for: .seconds(s)) }
+        guard let idx = engine.transcript.items.firstIndex(where: { if case .ask(let id, _, nil) = $0.kind { return id == toolUseId }; return false }),
+              case .ask(_, let request, _) = engine.transcript.items[idx].kind else { return }
+        let story = askRequest(value("--design-ask") ?? "select")
+        _ = engine.transcript.apply(.interruptResolved(id: AskUserTool.interruptId(toolUseId: toolUseId), response: answer.interruptResponse))
+        _ = engine.transcript.apply(.toolResult(ToolResult(toolUseId: toolUseId, name: AskUserTool.toolName, content: answer.toolResult.compact, durationMs: 4_200)))
+        engine.haptics.emit(.toolFinish)
+        await sleep(0.5)
+        _ = engine.transcript.apply(.startEventLoop(cycle: 2))
+        await sleep(0.3)
+        let reply = switch answer {
+        case .answered: story.followUp(answer.masked(for: request))
+        case .cancelled: "Okay — I stopped there. Ask again whenever you like."
+        case .timedOut: "I didn't get an answer, so I left it. Ask again whenever you like."
+        }
+        for w in reply.split(separator: " ") { _ = engine.transcript.apply(.text(String(w) + " ")); await sleep(0.04) }
+        _ = engine.transcript.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant(reply), metrics: EventLoopMetrics())))
     }
 
     // MARK: agents scene (Phase 6 lane E)
@@ -1068,5 +1193,20 @@ extension DesignFixture {
                 ["type": "list", "items": [["title": "Keep the Saturday walk", "icon": "figure.walk"], ["title": "Bed before 23:00 twice", "icon": "moon.zzz"]]]]],
                  answer: "A good week — Saturday carried it. Shall I set the two reminders?")
         }
+    }
+}
+
+
+extension DesignFixture {
+    /// Poster for the fixture clip — synchronous (the fixture builds its transcript in one pass); nil = grey tile.
+    static func fixtureVideoPoster(_ url: URL) -> ImageBlock? {
+        let gen = AVAssetImageGenerator(asset: AVURLAsset(url: url))
+        gen.appliesPreferredTrackTransform = true
+        gen.maximumSize = CGSize(width: 256, height: 256)
+        guard let cg = try? gen.copyCGImage(at: CMTime(seconds: 1, preferredTimescale: 600), actualTime: nil) else { return nil }
+        let ci = CIImage(cgImage: cg)
+        guard let cs = CGColorSpace(name: CGColorSpace.sRGB),
+              let jpeg = CIContext().jpegRepresentation(of: ci, colorSpace: cs, options: [kCGImageDestinationLossyCompressionQuality as CIImageRepresentationOption: 0.8]) else { return nil }
+        return ImageBlock(data: jpeg, mime: "image/jpeg", width: cg.width, height: cg.height, alt: "video poster")
     }
 }

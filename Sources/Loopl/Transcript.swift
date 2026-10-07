@@ -14,12 +14,17 @@ public struct TranscriptItem: Identifiable, Sendable, Hashable {
         case note(String)
         /// A sub-agent (`use_agent`): header + its own nested transcript — the card the UI draws under the parent's tool row.
         case agent(SubAgentRun)
+        /// Phase 7 `ask_user`: a question for the human (`answer == nil` → the card is waiting) or its settled state.
+        /// Replaces the tool's own row; `toolUseId` is what the card answers through `agent.resolve(interrupt:)`.
+        case ask(toolUseId: String, AskUserRequest, answer: AskUserAnswer?)
     }
     public var id = UUID()
     public var kind: Kind
     /// Pictures attached to this item — a user turn's attachments, or a tool's produced images (`ToolResult.images`).
     public var images: [ImageBlock] = []
-    public init(id: UUID = UUID(), kind: Kind, images: [ImageBlock] = []) { self.id = id; self.kind = kind; self.images = images }
+    /// Clips attached to a user turn (Phase 8). The file stays on disk; the block carries the poster + transcript.
+    public var videos: [VideoBlock] = []
+    public init(id: UUID = UUID(), kind: Kind, images: [ImageBlock] = [], videos: [VideoBlock] = []) { self.id = id; self.kind = kind; self.images = images; self.videos = videos }
 }
 
 /// The conversation as a UI renders it: rows built from agent events, plus metrics.
@@ -36,13 +41,17 @@ public struct Transcript: Sendable, Hashable {
     public var pendingApprovals: [ApprovalRequest] {
         items.compactMap { if case .approval(let r, nil) = $0.kind { return r }; return nil }
     }
+    /// `ask_user` cards still waiting for an answer (toolUseIds).
+    public var pendingAsks: [String] {
+        items.compactMap { if case .ask(let id, _, nil) = $0.kind { return id }; return nil }
+    }
     /// Internal (not private): `TranscriptEditing` resets them when the thread is truncated.
     var streamingIndex: Int?
     var reasoningIndex: Int?
 
     public init() {}
 
-    public mutating func user(_ text: String, images: [ImageBlock] = []) { items.append(.init(kind: .user(text), images: images)); isRunning = true }
+    public mutating func user(_ text: String, images: [ImageBlock] = [], videos: [VideoBlock] = []) { items.append(.init(kind: .user(text), images: images, videos: videos)); isRunning = true }
     public mutating func note(_ text: String) { items.append(.init(kind: .note(text))) }
     public mutating func clear() { items.removeAll(); metrics = Metrics(); cycle = 0; streamingIndex = nil; reasoningIndex = nil; isRunning = false; lastResult = nil }
 
@@ -94,10 +103,26 @@ public struct Transcript: Sendable, Hashable {
                 items[idx].kind = .approval(r, decision: decision)
             }
         case .interruptRaised(let interrupt):
-            // A non-approval interrupt (a hook or a tool asking the human something):
-            // show it as a note so no event is silently dropped from the transcript.
-            items.append(.init(kind: .note("waiting for input: \(interrupt.name)")))
-        case .interruptResolved: break
+            if let toolUseId = AskUserTool.toolUseId(fromInterruptId: interrupt.id),
+               let reason = interrupt.reason, let request = AskUserRequest(interruptReason: reason) {
+                // `ask_user`: the question takes the place of the tool's own row (it was started just before).
+                if let idx = items.lastIndex(where: { if case .toolUse(let u, nil) = $0.kind { return u.toolUseId == toolUseId }; return false }) {
+                    items[idx].kind = .ask(toolUseId: toolUseId, request, answer: nil)
+                } else if !items.contains(where: { if case .ask(let id, _, _) = $0.kind { return id == toolUseId }; return false }) {
+                    items.append(.init(kind: .ask(toolUseId: toolUseId, request, answer: nil)))
+                }
+            } else {
+                // Any other non-approval interrupt (a hook or a tool asking the human something):
+                // show it as a note so no event is silently dropped from the transcript.
+                items.append(.init(kind: .note("waiting for input: \(interrupt.name)")))
+            }
+        case .interruptResolved(let id, let response):
+            if let toolUseId = AskUserTool.toolUseId(fromInterruptId: id),
+               let idx = items.lastIndex(where: { if case .ask(let t, _, nil) = $0.kind { return t == toolUseId }; return false }),
+               case .ask(_, let request, _) = items[idx].kind {
+                // Passwords never reach the transcript: the card keeps the masked answer, only the tool result has the value.
+                items[idx].kind = .ask(toolUseId: toolUseId, request, answer: AskUserAnswer(interruptResponse: response).masked(for: request))
+            }
         case .toolStarted(let use):
             if !items.contains(where: { if case .toolUse(let u, _) = $0.kind { return u.toolUseId == use.toolUseId }; return false }) {
                 items.append(.init(kind: .toolUse(use, result: nil)))
@@ -106,6 +131,9 @@ public struct Transcript: Sendable, Hashable {
             if let idx = items.lastIndex(where: { if case .toolUse(let u, nil) = $0.kind { return u.toolUseId == r.toolUseId }; return false }),
                case .toolUse(let u, _) = items[idx].kind {
                 items[idx].kind = .toolUse(u, result: r); items[idx].images = r.images
+            } else if let idx = items.lastIndex(where: { if case .ask(let id, _, _) = $0.kind { return id == r.toolUseId }; return false }) {
+                // The ask card already holds the (masked) answer; a card still open here (an error result) settles as cancelled.
+                if case .ask(let id, let request, nil) = items[idx].kind { items[idx].kind = .ask(toolUseId: id, request, answer: .cancelled) }
             } else {
                 items.append(.init(kind: .toolUse(ToolUse(toolUseId: r.toolUseId, name: r.name, input: [:]), result: r), images: r.images))
             }
