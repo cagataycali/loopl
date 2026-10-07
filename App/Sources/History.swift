@@ -10,14 +10,19 @@ struct SavedConversation: Codable, Identifiable, Hashable {
     enum Item: Codable, Hashable {
         /// `images`: the pictures the user attached / a tool produced, kept as ≤ 512 px thumbnails (see `HistoryImage`)
         /// so a reopened vision thread still shows what was sent. Optional + decodeIfPresent — 0.1 files decode as nil.
+        /// `control` (Phase 7): the live control the result carried (flashlight → "Turn off"), saved so a reopened thread
+        /// re-renders it. Optional + tolerant: older files decode as nil; an unknown future control type reads as nil.
         /// `videos` (Phase 8): the clips the user attached — file path + poster + transcript, never the bytes. Optional too.
-        case user(String, images: [ImageBlock]?, videos: [VideoBlock]?), assistant(String), tool(name: String, args: [String: JSONValue], result: String?, isError: Bool, ms: Double, images: [ImageBlock]?), note(String)
+        case user(String, images: [ImageBlock]?, videos: [VideoBlock]?), assistant(String), tool(name: String, args: [String: JSONValue], result: String?, isError: Bool, ms: Double, images: [ImageBlock]?, control: ToolControl?), note(String)
 
         /// Text-only spellings (fixtures, tests, the pre-images call sites).
         static func user(_ s: String) -> Item { .user(s, images: nil, videos: nil) }
         static func user(_ s: String, images: [ImageBlock]?) -> Item { .user(s, images: images, videos: nil) }
         static func tool(name: String, args: [String: JSONValue], result: String?, isError: Bool, ms: Double) -> Item {
-            .tool(name: name, args: args, result: result, isError: isError, ms: ms, images: nil)
+            .tool(name: name, args: args, result: result, isError: isError, ms: ms, images: nil, control: nil)
+        }
+        static func tool(name: String, args: [String: JSONValue], result: String?, isError: Bool, ms: Double, images: [ImageBlock]?) -> Item {
+            .tool(name: name, args: args, result: result, isError: isError, ms: ms, images: images, control: nil)
         }
     }
     var id: UUID
@@ -45,7 +50,7 @@ struct SavedConversation: Codable, Identifiable, Hashable {
             switch $0.kind {
             case .user(let s): .user(s, images: HistoryImage.thumbnails($0.images), videos: $0.videos.isEmpty ? nil : $0.videos)
             case .assistant(let s): .assistant(s)
-            case .toolUse(let c, let r): .tool(name: c.name, args: c.input, result: r?.content, isError: r?.isError ?? false, ms: r?.durationMs ?? 0, images: HistoryImage.thumbnails($0.images))
+            case .toolUse(let c, let r): .tool(name: c.name, args: c.input, result: r?.content, isError: r?.isError ?? false, ms: r?.durationMs ?? 0, images: HistoryImage.thumbnails($0.images), control: r?.control)
             case .note(let s): .note(s)
             case .agent(let run): .note("agent \(run.info.name) (\(run.status.rawValue))" + (run.resultText.map { ": \($0)" } ?? ""))   // summary only; the child's rows are not replayed
             // Phase 7 ask_user: saved as the tool pair it was, with the MASKED answer (passwords never reach disk); an open card is saved cancelled.
@@ -92,7 +97,7 @@ struct SavedConversation: Codable, Identifiable, Hashable {
             // unless the person ticks "Remove pictures". Dropping them here made every shared dataset text-only (TRAIN-E2E-VISION).
             case .user(let s, let images, let videos): messages.append(.user(s, images: images ?? [], videos: videos ?? []))
             case .assistant(let s): messages.append(.assistant(s))
-            case .tool(let name, let args, let result, let isError, let ms, _):
+            case .tool(let name, let args, let result, let isError, let ms, _, _):
                 guard let result else { continue }
                 let use = ToolUse(name: name, input: args)
                 messages.append(.assistant(text: "", toolUses: [use]))
@@ -109,12 +114,12 @@ struct SavedConversation: Codable, Identifiable, Hashable {
             switch $0 {
             case .user(let s, let images, let videos): return TranscriptItem(kind: .user(s), images: images ?? [], videos: videos ?? [])
             case .assistant(let s): return TranscriptItem(kind: .assistant(s))
-            case .tool(let name, let args, let result, let isError, let ms, let images):
+            case .tool(let name, let args, let result, let isError, let ms, let images, let control):
                 let use = ToolUse(name: name, input: args)
                 if name == AskUserTool.toolName, let request = try? AskUserRequest(args: args), let result, let answer = AskUserAnswer(toolResult: result) {
                     return TranscriptItem(kind: .ask(toolUseId: use.toolUseId, request, answer: answer))   // reopened as the settled card
                 }
-                return TranscriptItem(kind: .toolUse(use, result: result.map { ToolResult(toolUseId: use.toolUseId, name: name, status: isError ? .error : .success, content: $0, durationMs: ms) }), images: images ?? [])
+                return TranscriptItem(kind: .toolUse(use, result: result.map { ToolResult(toolUseId: use.toolUseId, name: name, status: isError ? .error : .success, content: $0, durationMs: ms, control: control) }), images: images ?? [])
             case .note(let s): return TranscriptItem(kind: .note(s))
             }
         }
@@ -408,7 +413,7 @@ struct HistoryList: View {
             case .user(let s, let imgs, let vids):
                 (imgs?.isEmpty == false ? "You: [\(imgs!.count) image\(imgs!.count == 1 ? "" : "s")] " : "You: ") + (vids?.isEmpty == false ? "[\(vids!.count) video\(vids!.count == 1 ? "" : "s")] " : "") + s
             case .assistant(let s): "loopl: \(s)"
-            case .tool(let n, _, let r, _, _, _): "[\(n)] \(r ?? "…")"
+            case .tool(let n, _, let r, _, _, _, _): "[\(n)] \(r ?? "…")"
             case .note: nil
             }
         }.joined(separator: "\n\n")

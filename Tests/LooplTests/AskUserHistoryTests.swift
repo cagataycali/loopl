@@ -20,7 +20,7 @@ final class AskUserHistoryTests: XCTestCase {
         t.items.append(TranscriptItem(kind: .ask(toolUseId: "a1", r, answer: .answered(["ssid": "office", "password": .string(AskUserAnswer.mask)]))))
         t.items.append(TranscriptItem(kind: .assistant("Connected to office.")))
         let saved = try XCTUnwrap(SavedConversation.from(t, id: UUID(), modelName: "m"))
-        guard case .tool(let name, let args, let result, _, _, _) = saved.items[1] else { return XCTFail("saved as the tool pair: \(saved.items[1])") }
+        guard case .tool(let name, let args, let result, _, _, _, _) = saved.items[1] else { return XCTFail("saved as the tool pair: \(saved.items[1])") }
         XCTAssertEqual(name, "ask_user")
         XCTAssertEqual(args["type"], "form")
         XCTAssertFalse(result?.contains("hunter2") ?? true)
@@ -43,14 +43,14 @@ final class AskUserHistoryTests: XCTestCase {
         t.user("join")
         t.items.append(TranscriptItem(kind: .ask(toolUseId: "a2", r, answer: nil)))
         let saved = try XCTUnwrap(SavedConversation.from(t, id: UUID(), modelName: nil))
-        guard case .tool(_, _, let result, _, _, _) = saved.items[1] else { return XCTFail() }
+        guard case .tool(_, _, let result, _, _, _, _) = saved.items[1] else { return XCTFail() }
         XCTAssertEqual(AskUserAnswer(toolResult: result ?? ""), .cancelled)
 
         // Defence in depth: even an UNMASKED answer handed to the saver is masked on the way to disk.
         var t2 = Transcript(); t2.user("join")
         t2.items.append(TranscriptItem(kind: .ask(toolUseId: "a3", r, answer: .answered(["ssid": "office", "password": "hunter2"]))))
         let saved2 = try XCTUnwrap(SavedConversation.from(t2, id: UUID(), modelName: nil))
-        guard case .tool(_, _, let result2, _, _, _) = saved2.items[1] else { return XCTFail() }
+        guard case .tool(_, _, let result2, _, _, _, _) = saved2.items[1] else { return XCTFail() }
         XCTAssertFalse(result2?.contains("hunter2") ?? true, result2 ?? "")
     }
 
