@@ -398,9 +398,11 @@ public struct UserTurn: View {
     public var text: String
     /// Pictures the user attached — rendered as tiles above the text (tap to zoom).
     public var images: [ImageBlock]
+    /// Clips the user attached (Phase 8): a chip each, plus the transcript row when the clip had speech.
+    public var videos: [VideoBlock]
     /// The built-in Copy menu. `EditableUserTurn` passes false and supplies the richer hold menu itself.
     public var menu: Bool
-    public init(_ text: String, images: [ImageBlock] = [], menu: Bool = true) { self.text = text; self.images = images; self.menu = menu }
+    public init(_ text: String, images: [ImageBlock] = [], videos: [VideoBlock] = [], menu: Bool = true) { self.text = text; self.images = images; self.videos = videos; self.menu = menu }
     public var body: some View {
         // An EMPTY `.contextMenu {}` still installs the interaction and eats the long-press, so the Copy menu is
         // attached only when asked for; with menu == false (EditableUserTurn) the outer hold menu owns the gesture.
@@ -412,6 +414,13 @@ public struct UserTurn: View {
         return VStack(alignment: .leading, spacing: 6) {
             Text("You").font(.caption.weight(.semibold)).foregroundStyle(.secondary).textCase(.uppercase).kerning(0.6)
             if !images.isEmpty { ImageStrip(images).padding(.bottom, 2) }
+            ForEach(Array(videos.enumerated()), id: \.offset) { _, v in
+                VStack(alignment: .leading, spacing: 4) {
+                    VideoClipChip(video: v)
+                    if let t = v.transcript, !t.isEmpty { VideoTranscriptRow(t).padding(.leading, 4) }
+                }
+                .padding(.bottom, 2)
+            }
             if !parts.clips.isEmpty {
                 HStack(spacing: 8) {
                     ForEach(parts.clips, id: \.self) { AudioClipChip(url: $0.url, duration: $0.duration) }
@@ -433,6 +442,7 @@ public struct UserTurn: View {
     private func accessibilityText(_ parts: (text: String, clips: [AudioAttachmentMarker])) -> String {
         var sent: [String] = []
         if !images.isEmpty { sent.append("\(images.count) image\(images.count == 1 ? "" : "s")") }
+        if !videos.isEmpty { sent.append("\(videos.count) video\(videos.count == 1 ? "" : "s")") }
         if !parts.clips.isEmpty { sent.append("\(parts.clips.count) recording\(parts.clips.count == 1 ? "" : "s")") }
         return sent.isEmpty ? "You said: \(parts.text)" : "You sent \(sent.joined(separator: " and ")): \(parts.text)"
     }
@@ -818,7 +828,7 @@ public struct AgentTranscriptView<Empty: View, Banner: View>: View {
         switch item.kind {
         case .user(let s):
             if let actions { EditableUserTurn(item: item, text: s, actions: actions).padding(.top, 8) }
-            else { UserTurn(s, images: item.images).padding(.top, 8) }
+            else { UserTurn(s, images: item.images, videos: item.videos).padding(.top, 8) }
         case .assistant(let s):
             let streaming = transcript.isRunning && item.id == transcript.items.last?.id
             if let actions { RetryableAssistantTurn(item: item, text: s, streaming: streaming, actions: actions) }

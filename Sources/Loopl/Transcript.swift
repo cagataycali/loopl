@@ -24,7 +24,9 @@ public struct TranscriptItem: Identifiable, Sendable, Hashable {
     public var images: [ImageBlock] = []
     /// Phase 7: how many times the user tapped this tool row's control (the result shown is the LATEST one). 0 = never.
     public var controlTaps = 0
-    public init(id: UUID = UUID(), kind: Kind, images: [ImageBlock] = []) { self.id = id; self.kind = kind; self.images = images }
+    /// Clips attached to a user turn (Phase 8). The file stays on disk; the block carries the poster + transcript.
+    public var videos: [VideoBlock] = []
+    public init(id: UUID = UUID(), kind: Kind, images: [ImageBlock] = [], videos: [VideoBlock] = []) { self.id = id; self.kind = kind; self.images = images; self.videos = videos }
 }
 
 /// The conversation as a UI renders it: rows built from agent events, plus metrics.
@@ -51,7 +53,7 @@ public struct Transcript: Sendable, Hashable {
 
     public init() {}
 
-    public mutating func user(_ text: String, images: [ImageBlock] = []) { items.append(.init(kind: .user(text), images: images)); isRunning = true }
+    public mutating func user(_ text: String, images: [ImageBlock] = [], videos: [VideoBlock] = []) { items.append(.init(kind: .user(text), images: images, videos: videos)); isRunning = true }
     public mutating func note(_ text: String) { items.append(.init(kind: .note(text))) }
     public mutating func clear() { items.removeAll(); metrics = Metrics(); cycle = 0; streamingIndex = nil; reasoningIndex = nil; isRunning = false; lastResult = nil }
 

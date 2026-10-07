@@ -576,7 +576,7 @@ public final class Engine {
         guard !isGenerating, loadedModel != nil, let item = transcript.item(itemId), case .user = item.kind else { return }
         let kept = transcript.truncated(before: itemId)
         rewrite(kept)
-        regenerate(text, images: item.images)
+        regenerate(text, images: item.images, videos: item.videos)
     }
 
     /// Re-run the agent from the user turn that owns `itemId` (an assistant row, a tool row — or a user row itself).
@@ -584,14 +584,14 @@ public final class Engine {
         guard !isGenerating, loadedModel != nil, let turn = transcript.userTurn(before: itemId), case .user(let text) = turn.kind else { return }
         let kept = transcript.truncated(before: turn.id)
         rewrite(kept)
-        regenerate(text, images: turn.images)
+        regenerate(text, images: turn.images, videos: turn.videos)
     }
 
     /// The edited / retried turn goes through `send` like any other. DEBUG design fixtures have no model
     /// behind the "ready" state, so they replay a scripted answer instead (captures only).
-    private func regenerate(_ text: String, images: [ImageBlock]) {
+    private func regenerate(_ text: String, images: [ImageBlock], videos: [VideoBlock] = []) {
         if model == nil, DesignFixture.requested { Task { await DesignFixture.regenerate(self, text: text, images: images) }; return }
-        send(text, images: images)
+        send(text, images: images, videos: videos)
     }
 
     /// Remove `itemId` and everything after it. The thread stays open for a new message.
@@ -621,7 +621,7 @@ public final class Engine {
     /// models carry their identity in their weights (loopl-train bakes it in), so nothing is prepended here.
     public var effectiveSystemPrompt: String { settings.systemPrompt }
 
-    public func send(_ text: String, images: [ImageBlock] = []) {
+    public func send(_ text: String, images: [ImageBlock] = [], videos: [VideoBlock] = []) {
         guard !isGenerating else { return }
         #if DEBUG
         // A design fixture is "ready" with nothing behind it. Replay the scripted answer instead of refusing —
@@ -634,7 +634,7 @@ public final class Engine {
         #endif
         guard let model, let spec = loadedModel else { lastError = "the model is still loading"; haptics.emit(.error); return }
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty || !images.isEmpty else { return }
+        guard !text.isEmpty || !images.isEmpty || !videos.isEmpty else { return }
         lastError = nil
         haptics.emit(.send)
         continuedHere = true   // #21: from here on the thread also holds this model's answers
@@ -649,9 +649,15 @@ public final class Engine {
             sent = []
             transcript.note("\(spec.name) can't see pictures — pick a vision model (Qwen3-VL, Qwen3.5…) in Models. Sent the text only.")
         }
-        transcript.user(text, images: images)
-        let prompt = text.isEmpty ? "What's in this image?" : text
-        start(agent, Loopl.Message.user(prompt, images: sent))
+        // A video stays in the message for every model: a vision checkpoint gets the frames, a text model reads the
+        // block's honest stand-in line plus the transcript (`Message.textWithVideoFallback`) — so it still knows
+        // what was said, and is told plainly that it cannot see the frames.
+        if !videos.isEmpty, !spec.supportsVision {
+            transcript.note("\(spec.name) can't watch video — it gets the words that were spoken only. Pick a Qwen3-VL model in Models to send the frames.")
+        }
+        transcript.user(text, images: images, videos: videos)
+        let prompt = text.isEmpty ? (videos.isEmpty ? "What's in this image?" : "What happens in this video?") : text
+        start(agent, Loopl.Message.user(prompt, images: sent, videos: videos))
     }
 
     // MARK: - Phase 7: control taps (a tool row's "Turn off" / mini player / "Vibrate again")

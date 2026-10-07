@@ -1,5 +1,6 @@
 import Foundation
 import AVFoundation
+import CoreImage
 import LooplUI
 import Loopl
 import LooplAppleTools
@@ -130,7 +131,7 @@ enum DesignFixture {
         // `loopl`: a loopl model is loaded (its identity is in the weights, nothing in Settings). The row says vision (v1 mlx_vlm export) but the
         // files on this phone are the OLD text-only download (the owner's 07:5xZ situation): config.json without vision_config wins,
         // so the composer has no photo button. `--design-local-vision` keeps the files = row (button shown).
-        let specId = switch scene { case "vision": "qwen3.5-0.8b-4bit"; case "loopl": "loopl-0.8b-4bit"; default: models == "shelf" ? "loopl-2b-4bit" : "qwen3-0.6b-4bit" }
+        let specId = switch scene { case "vision": "qwen3.5-0.8b-4bit"; case "video": "qwen3-vl-2b-instruct-4bit"; case "loopl": "loopl-0.8b-4bit"; default: models == "shelf" ? "loopl-2b-4bit" : "qwen3-0.6b-4bit" }
         if scene == "loopl", !CommandLine.arguments.contains("--design-local-vision") { engine.store.overrideLocalVision(specId, false) }
         let spec = engine.store.catalog.models.first { $0.id == specId } ?? engine.store.catalog.models.first!
         engine.readiness = models == "empty" ? .idle : .ready(spec)
@@ -460,6 +461,24 @@ enum DesignFixture {
             t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("You said: **\"hello from loopl, this is a recording.\"**"), metrics: EventLoopMetrics())))
             engine.transcript = t
             Task { await writeFixtureRecording(to: url) }
+            return
+        case "video":
+            // Phase 8: the user attached a clip. The exact exchange the macOS proof produced with Qwen3-VL-2B-Instruct-4bit
+            // on video-test.mp4 (synthetic: a red and a blue square drifting on a dark background, 10 s, a sine tone).
+            // The clip is copied into the thread's attachments folder so the poster, the chip and a reopen all work.
+            let dir = AudioAttachment.directory(for: engine.currentId)
+            let url = dir.appendingPathComponent("C1A2B3.mp4")
+            if !FileManager.default.fileExists(atPath: url.path), let src = Bundle.main.url(forResource: "video-test", withExtension: "mp4") {
+                try? FileManager.default.copyItem(at: src, to: url)
+            }
+            var block = VideoBlock(path: url.path, mime: "video/mp4", duration: 10, width: 640, height: 360,
+                                   framePlan: VideoFramePlan(maxFrames: 16, fps: 1, maxEdge: 448), transcript: nil)
+            block.thumbnail = fixtureVideoPoster(url)
+            t.user("What happens in this video?", videos: [block])
+            t.apply(.startEventLoop(cycle: 1))
+            t.apply(.text("A small, light blue square appears on a dark background, initially positioned in the lower-left area of the screen. The blue square then begins to grow in size and gradually expands outward, becoming larger and more prominent."))
+            t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("A small, light blue square appears on a dark background, initially positioned in the lower-left area of the screen. The blue square then begins to grow in size and gradually expands outward, becoming larger and more prominent."), metrics: EventLoopMetrics())))
+            engine.transcript = t
             return
         case "render":
             // Phase 7 `render_ui`: `--design-render chart|map|diagram|table|keyvalue|list|progress|misc|unknown` = one card per kind;
@@ -1246,5 +1265,20 @@ extension DesignFixture {
                 ["type": "list", "items": [["title": "Keep the Saturday walk", "icon": "figure.walk"], ["title": "Bed before 23:00 twice", "icon": "moon.zzz"]]]]],
                  answer: "A good week — Saturday carried it. Shall I set the two reminders?")
         }
+    }
+}
+
+
+extension DesignFixture {
+    /// Poster for the fixture clip — synchronous (the fixture builds its transcript in one pass); nil = grey tile.
+    static func fixtureVideoPoster(_ url: URL) -> ImageBlock? {
+        let gen = AVAssetImageGenerator(asset: AVURLAsset(url: url))
+        gen.appliesPreferredTrackTransform = true
+        gen.maximumSize = CGSize(width: 256, height: 256)
+        guard let cg = try? gen.copyCGImage(at: CMTime(seconds: 1, preferredTimescale: 600), actualTime: nil) else { return nil }
+        let ci = CIImage(cgImage: cg)
+        guard let cs = CGColorSpace(name: CGColorSpace.sRGB),
+              let jpeg = CIContext().jpegRepresentation(of: ci, colorSpace: cs, options: [kCGImageDestinationLossyCompressionQuality as CIImageRepresentationOption: 0.8]) else { return nil }
+        return ImageBlock(data: jpeg, mime: "image/jpeg", width: cg.width, height: cg.height, alt: "video poster")
     }
 }

@@ -73,6 +73,7 @@ final class RenderUITests: XCTestCase {
         XCTAssertEqual(t, "gauge")
         XCTAssertTrue(s.resultText.contains("unknown(gauge)"))
         XCTAssertTrue(s.issues[0].contains("known: markdown, keyvalue"))
+        XCTAssertTrue(s.resultText.contains("already drawn — do not send it again"))
     }
 
     func testMissingComponentsThrowsWithTheTypeList() {
@@ -100,5 +101,90 @@ final class RenderUITests: XCTestCase {
         let out = try await tool.call(["components": .array([.object(["type": "image", "attachment": 0]), .object(["type": "image", "attachment": 3])])], images: [img])
         XCTAssertEqual(out.images, [img])
         XCTAssertTrue(out.text.contains("attachment 3 does not exist"))
+    }
+}
+
+extension RenderUITests {
+    /// MEASURED on loopl-2b (2026-10-07): `components` arrives as a JSON string 4/9 runs, twice in the `["diagram", "nodes": …]` shape.
+    func testComponentsAsJSONStringIsDecodedAndReported() throws {
+        let args: [String: JSONValue] = ["components": .string(#"[{"type": "map", "pins": [{"lat": 40.7447, "lon": -74.0323, "label": "bwè kafe"}]}]"#)]
+        let s = try RenderSpec(args: args)
+        guard case .map(_, let pins, _) = s.components[0] else { return XCTFail("\(s.components)") }
+        XCTAssertEqual(pins[0].label, "bwè kafe")
+        XCTAssertEqual(s.issues, ["`components` was sent as a JSON string — send a plain array next time"])
+    }
+
+    func testCollapsedTypeShapeWithTrailingCommasIsRepaired() throws {
+        let text = """
+        [
+          "diagram",
+          "nodes": [
+            {"id": "start", "label": "1. Open App"},
+            {"id": "home", "label": "4. Home Screen"},
+          ],
+          "edges": [
+            {"from": "start", "to": "home"},
+          ]
+        ]
+        """
+        let s = try RenderSpec(args: ["components": .string(text)])
+        guard case .diagram(_, let nodes, let edges) = s.components[0] else { return XCTFail("\(s.components)") }
+        XCTAssertEqual(nodes.map(\.id), ["start", "home"]); XCTAssertEqual(edges.count, 1)
+    }
+
+    func testUnparseableStringIsAnHonestIssue() {
+        XCTAssertThrowsError(try RenderSpec(args: ["components": .string("not json at all")]))
+    }
+}
+
+extension RenderUITests {
+    /// ToolValidation wraps a non-array into `[value]` before the tool runs — the double-encoded string shows up as a one-element array.
+    func testStringElementInsideTheArrayIsUnwrapped() throws {
+        let s = try RenderSpec(args: ["components": .array([.string(#"[{"type":"map","pins":[{"lat":1,"lon":2,"label":"a"}]},{"type":"rule"}]"#)])])
+        XCTAssertEqual(s.components.map(\.kindName), ["map", "rule"])
+        XCTAssertEqual(s.issues.count, 1)
+    }
+}
+
+extension RenderUITests {
+    /// loopl-2b v3 raw calls: an extra `}` at the end, a key missing its closing quote, and `edges` beside three edge-less diagrams.
+    func testExtraCloserAndDroppedQuoteAreRepaired() throws {
+        let a = try RenderSpec(args: ["components": .string(#"[{"type": "diagram", "nodes": [{"id": "a"}, {"id": "b"}], "edges": [{"from": "a", "to": "b"}]}]}"#)])
+        guard case .diagram(_, let n, let e) = a.components[0] else { return XCTFail("\(a.components)") }
+        XCTAssertEqual(n.count, 2); XCTAssertEqual(e.count, 1)
+        let b = try RenderSpec(args: ["components": .string(#"[{"type": "chart", "kind": "line", "series": [{"name": "steps", "points: [{"label": "Mon", "value": 4000}]}]}]"#)])
+        guard case .chart(_, .line, let s) = b.components[0] else { return XCTFail("\(b.components)") }
+        XCTAssertEqual(s[0].points.count, 1)
+        XCTAssertEqual(RenderSpec.balanced(#"[{"a": [1, 2"#), #"[{"a": [1, 2]}]"#)
+        XCTAssertEqual(RenderSpec.balanced(#"[{"a": 1, "b":"#), #"[{"a": 1}]"#)
+    }
+
+    func testStrayEdgesMergeSplitDiagrams() throws {
+        let args: [String: JSONValue] = [
+            "components": .array([.object(["type": "diagram", "nodes": .array([.object(["id": "open"]), .object(["id": "form"])])]),
+                                  .object(["type": "diagram", "nodes": .array([.object(["id": "wrong"])])])]),
+            "edges": .string(#"[{"from": "open", "to": "form"}, {"from": "form", "to": "wrong"}]"#)]
+        let s = try RenderSpec(args: args)
+        XCTAssertEqual(s.components.count, 1)
+        guard case .diagram(_, let n, let e) = s.components[0] else { return XCTFail("\(s.components)") }
+        XCTAssertEqual(n.map(\.id), ["open", "form", "wrong"]); XCTAssertEqual(e.count, 2)
+        XCTAssertEqual(s.issues.count, 2)
+    }
+}
+
+extension RenderUITests {
+    /// loopl-0.8b v3 raw calls: `kind` instead of `type` (3/3 map calls, pins right), the type as the key, and no type at all.
+    func testMissingTypeIsInferredAndReported() throws {
+        let s = try RenderSpec(args: ["components": .array([
+            .object(["kind": "map", "pins": .array([.object(["lat": 40.7, "lon": -74.0, "label": "a"])])]),
+            .object(["chart": .object(["kind": "line", "series": .array([.object(["points": .array([.object(["label": "x", "value": 1])])])])])]),
+            .object(["text": "Open → Login"]),
+            .object(["nodes": .array([.object(["id": "a"]), .object(["id": "b"])]), "edges": .array([.object(["from": "a", "to": "b"])])]),
+            .object(["kind": "bar", "points": .array([.object(["label": "x", "value": 2])])])])])
+        XCTAssertEqual(s.components.map(\.kindName), ["map", "chart", "text", "diagram", "chart"])
+        guard case .chart(_, .line, _) = s.components[1] else { return XCTFail() }
+        guard case .text("Open → Login", _) = s.components[2] else { return XCTFail() }
+        XCTAssertEqual(s.issues.count, 5)
+        XCTAssertTrue(s.issues[0].contains("say \"type\": \"map\""))
     }
 }
