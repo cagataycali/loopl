@@ -1,6 +1,6 @@
 {
   "version": 4,
-  "updated": "2026-10-06",
+  "updated": "2026-10-07",
   "default": "qwen3-0.6b-4bit",
   "models": [
     {
@@ -140,6 +140,38 @@
         "enable_thinking": false
       },
       "notes": "Sees pictures. Qwen3-VL 4B Instruct, 4-bit MLX — best vision quality that fits an 8 GB phone."
+    },
+    {
+      "id": "qwen3-vl-2b-thinking-4bit",
+      "name": "Qwen3-VL 2B Thinking",
+      "repo": "mlx-community/Qwen3-VL-2B-Thinking-4bit",
+      "runtime": "mlx",
+      "family": "hermes",
+      "params_b": 2.0,
+      "size_bytes": 1798021421,
+      "ctx_nominal": 262144,
+      "ctx_usable_8gb": 12288,
+      "min_ram_gb": 3,
+      "gated": false,
+      "vision": true,
+      "thinking": true,
+      "notes": "Sees pictures and thinks before answering. Qwen3-VL 2B Thinking, 4-bit MLX. The template always opens a <think> block (no enable_thinking switch) — loopl shows the reasoning, then the answer. Slower than Instruct: expect a few hundred reasoning tokens per turn."
+    },
+    {
+      "id": "qwen3-vl-4b-thinking-4bit",
+      "name": "Qwen3-VL 4B Thinking",
+      "repo": "mlx-community/Qwen3-VL-4B-Thinking-4bit",
+      "runtime": "mlx",
+      "family": "hermes",
+      "params_b": 4.0,
+      "size_bytes": 3109729983,
+      "ctx_nominal": 262144,
+      "ctx_usable_8gb": 8192,
+      "min_ram_gb": 5,
+      "gated": false,
+      "vision": true,
+      "thinking": true,
+      "notes": "Sees pictures and thinks before answering. Qwen3-VL 4B Thinking, 4-bit MLX — best vision reasoning that fits an 8 GB phone. The template always opens a <think> block (no enable_thinking switch) — loopl shows the reasoning, then the answer. Slower than Instruct."
     },
     {
       "id": "llama-3.2-1b-instruct-4bit",

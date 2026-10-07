@@ -136,6 +136,7 @@ public actor MLXModel: Model {
                     // processor renders it and places the image tokens — images never reach a text model.
                     let promptCount: Int
                     var promptTokens: [Int] = []
+                    var promptTail = ""      // last few prompt tokens decoded — tells the gate when the template opened `<think>`
                     let gen: AsyncStream<Generation>
                     if isVLM && hasImages {
                         let chat = VisionPrompt.chat(systemPrompt: systemPrompt, messages: messages)
@@ -145,6 +146,8 @@ public actor MLXModel: Model {
                         let lmInput = try await container.prepare(input: input)
                         promptCount = lmInput.text.tokens.size
                         if trace != nil { promptTokens = lmInput.text.tokens.asArray(Int.self) }
+                        let visionIds: [Int] = lmInput.text.tokens.asArray(Int.self)
+                        promptTail = try await container.perform { context in PromptEncoder.tail(of: visionIds, tokenizer: context.tokenizer) }
                         if promptCount >= params.contextLength - 16 {
                             throw ContextWindowOverflowError("prompt is \(promptCount) tokens (images included); context window is \(params.contextLength)")
                         }
@@ -165,6 +168,7 @@ public actor MLXModel: Model {
                         }
                         promptCount = prompt.count
                         promptTokens = prompt
+                        promptTail = try await container.perform { context in PromptEncoder.tail(of: prompt, tokenizer: context.tokenizer) }
                         stats.promptTokens = prompt.count
                         stats.contextUsed = prompt.count
                         continuation.yield(.metadata(stats))
@@ -173,13 +177,17 @@ public actor MLXModel: Model {
                         let budget = params.maxTokens ?? max(1, params.contextLength - prompt.count - 1)
                         let gp = GenerateParameters(maxTokens: budget, maxKVSize: params.contextLength, temperature: params.temperature, topP: params.topP)
                         gen = try await container.perform { context in
-                            let input = LMInput(tokens: MLXArray(prompt))
+                            // A VLM's `prepare` (mlx-swift-lm 3.32.3 Qwen3VL) reads dim(1) of the ids on the short cold path
+                            // (≤ 512 tokens) — a rank-1 prompt is a fatal `SmallVector out of range`. Hand it 2-D like the vision path.
+                            let input = LMInput(tokens: isVLM ? MLXArray(prompt).expandedDimensions(axis: 0) : MLXArray(prompt))
                             return try MLXLMCommon.generate(input: input, parameters: gp, context: context, tools: specDicts.isEmpty ? nil : specDicts)
                         }
                     }
                     let prompt = promptCount
 
-                    var gate = ToolCallStreamGate(family: spec.family)
+                    // Thinking checkpoints (Qwen3-VL-*-Thinking) render `<|im_start|>assistant\n<think>\n` as the generation
+                    // prompt: the decode starts inside the reasoning block, so the gate must start there too.
+                    var gate = ToolCallStreamGate(family: spec.family, startsInThink: PromptEncoder.endsInsideThink(promptTail))
                     var native: [ToolUse] = []
                     var firstToken: Date?
                     var chunks = 0
@@ -330,10 +338,26 @@ enum PromptEncoder {
         return ctx
     }
 
+    /// The last few prompt tokens as text (special tokens kept) — enough to see how the template opened the assistant turn.
+    static func tail(of tokens: [Int], tokenizer: any MLXLMCommon.Tokenizer, count: Int = 6) -> String {
+        tokenizer.decode(tokenIds: Array(tokens.suffix(count)), skipSpecialTokens: false)
+    }
+
+    /// `true` when the rendered prompt ends with an OPEN `<think>` (Qwen3-VL-*-Thinking: `<|im_start|>assistant\n<think>\n`).
+    /// Qwen3 / Qwen3.5 with `enable_thinking: false` end with a CLOSED `<think>\n\n</think>\n\n` → false.
+    static func endsInsideThink(_ tail: String) -> Bool {
+        let t = tail.trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.hasSuffix("<think>")
+    }
+
+    static let forceManualDialect = ProcessInfo.processInfo.environment["LOOPL_PROMPT_MANUAL"] == "1"
+
     static func encode(systemPrompt: String?, messages: [Loopl.Message], toolSpecs: [Loopl.ToolSpec], family: ToolFamily, kwargs: [String: any Sendable]?, tokenizer: any MLXLMCommon.Tokenizer) throws -> [Int] {
         // 1. Native template with tools (Qwen3/3.5, Llama 3.x, Phi-4, SmolLM3…). The specs travel through
         //    `additionalContext` as ordered Jinja values — the `tools:` parameter would re-sort their keys.
-        if !toolSpecs.isEmpty, let ids = try? tokenizer.applyChatTemplate(messages: Loopl.Message.templateDictionaries(systemPrompt: systemPrompt, messages: messages), tools: nil, additionalContext: toolsContext(toolSpecs, kwargs: kwargs)) { return ids }
+        //    Measurement switch (harnesses only): LOOPL_PROMPT_MANUAL=1 skips the native path so the manual loopl dialect
+        //    (PromptBuilder) can be scored against it on the same checkpoint.
+        if !toolSpecs.isEmpty, !forceManualDialect, let ids = try? tokenizer.applyChatTemplate(messages: Loopl.Message.templateDictionaries(systemPrompt: systemPrompt, messages: messages), tools: nil, additionalContext: toolsContext(toolSpecs, kwargs: kwargs)) { return ids }
         // 2. Template without tools: inject the manual spec into the system prompt, fold tool turns.
         let folded = PromptBuilder.foldToolMessages(messages)
         let sys = PromptBuilder.toolSystemPrompt(toolSpecs: toolSpecs, family: family, base: systemPrompt)
