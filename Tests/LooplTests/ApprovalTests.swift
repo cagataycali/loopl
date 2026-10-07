@@ -1,5 +1,6 @@
 import XCTest
 import Loopl
+import LooplUI
 
 /// Human-in-the-loop: a flagged tool call suspends inside the actor until
 /// `resolve(approval:)`, the timeout, or cancellation; the other tools of the
@@ -234,5 +235,18 @@ final class ApprovalTests: XCTestCase {
         let h = ApprovalRequest.redact(["Authorization": "Bearer abc", "X-Api-Key": "k", "Cookie": "s=1", "Accept": "application/json"])
         XCTAssertEqual(h["Authorization"], "•••"); XCTAssertEqual(h["X-Api-Key"], "•••"); XCTAssertEqual(h["Cookie"], "•••")
         XCTAssertEqual(h["Accept"], "application/json")
+    }
+
+    // MARK: card title (AUDIT improve-3 #1: "Add reminder · Call the…" truncated the thing being approved)
+    func testCardSplitsLabelFromPayloadForNonHttpTitles() {
+        let reminder = ApprovalRequest(toolName: "reminders_create", title: "Add reminder · Call the dentist back about the crown", method: "ADD")
+        let parts = ApprovalCard.titleParts(of: reminder)
+        XCTAssertEqual(parts.head, "Add reminder"); XCTAssertEqual(parts.what, "Call the dentist back about the crown")
+        let http = ApprovalRequest(toolName: "http", title: "POST notes.example.com", method: "POST", url: "https://notes.example.com/api/notes")
+        XCTAssertNil(ApprovalCard.titleParts(of: http).what, "http cards keep host + path")
+        let plain = ApprovalRequest(toolName: "system_prompt", title: "Add to my instructions")
+        XCTAssertEqual(ApprovalCard.titleParts(of: plain).head, "Add to my instructions"); XCTAssertNil(ApprovalCard.titleParts(of: plain).what)
+        let bare = ApprovalRequest(toolName: "clipboard_write", title: "Copy to clipboard · ")
+        XCTAssertNil(ApprovalCard.titleParts(of: bare).what, "an empty payload falls back to the whole title")
     }
 }
