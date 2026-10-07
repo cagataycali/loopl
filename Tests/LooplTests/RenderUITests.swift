@@ -102,3 +102,45 @@ final class RenderUITests: XCTestCase {
         XCTAssertTrue(out.text.contains("attachment 3 does not exist"))
     }
 }
+
+extension RenderUITests {
+    /// MEASURED on loopl-2b (2026-10-07): `components` arrives as a JSON string 4/9 runs, twice in the `["diagram", "nodes": …]` shape.
+    func testComponentsAsJSONStringIsDecodedAndReported() throws {
+        let args: [String: JSONValue] = ["components": .string(#"[{"type": "map", "pins": [{"lat": 40.7447, "lon": -74.0323, "label": "bwè kafe"}]}]"#)]
+        let s = try RenderSpec(args: args)
+        guard case .map(_, let pins, _) = s.components[0] else { return XCTFail("\(s.components)") }
+        XCTAssertEqual(pins[0].label, "bwè kafe")
+        XCTAssertEqual(s.issues, ["`components` was sent as a JSON string — send a plain array next time"])
+    }
+
+    func testCollapsedTypeShapeWithTrailingCommasIsRepaired() throws {
+        let text = """
+        [
+          "diagram",
+          "nodes": [
+            {"id": "start", "label": "1. Open App"},
+            {"id": "home", "label": "4. Home Screen"},
+          ],
+          "edges": [
+            {"from": "start", "to": "home"},
+          ]
+        ]
+        """
+        let s = try RenderSpec(args: ["components": .string(text)])
+        guard case .diagram(_, let nodes, let edges) = s.components[0] else { return XCTFail("\(s.components)") }
+        XCTAssertEqual(nodes.map(\.id), ["start", "home"]); XCTAssertEqual(edges.count, 1)
+    }
+
+    func testUnparseableStringIsAnHonestIssue() {
+        XCTAssertThrowsError(try RenderSpec(args: ["components": .string("not json at all")]))
+    }
+}
+
+extension RenderUITests {
+    /// ToolValidation wraps a non-array into `[value]` before the tool runs — the double-encoded string shows up as a one-element array.
+    func testStringElementInsideTheArrayIsUnwrapped() throws {
+        let s = try RenderSpec(args: ["components": .array([.string(#"[{"type":"map","pins":[{"lat":1,"lon":2,"label":"a"}]},{"type":"rule"}]"#)])])
+        XCTAssertEqual(s.components.map(\.kindName), ["map", "rule"])
+        XCTAssertEqual(s.issues.count, 1)
+    }
+}

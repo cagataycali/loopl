@@ -89,8 +89,22 @@ public struct RenderSpec: Sendable, Hashable {
         var issues: [String] = []
         title = args["title"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 }
         var raw = args["components"]?.arrayValue ?? []
+        if raw.isEmpty, let text = args["components"]?.stringValue {
+            // MEASURED (loopl-2b, 2026-10-07): the model sends `components` as a JSON *string* 4/9 times — the right
+            // pins and nodes, double-encoded. Decode it (with the two repairs below) instead of drawing the string as prose.
+            if let decoded = Self.decodeComponents(text) { raw = decoded; issues.append("`components` was sent as a JSON string — send a plain array next time") }
+            else { issues.append("`components` was a string that is not valid JSON — send an array of {type, …} objects") }
+        }
         if raw.isEmpty, args["type"]?.stringValue != nil { raw = [.object(args)] }   // a single component passed at the top level
         guard !raw.isEmpty else { throw ToolError("render_ui: `components` is required — a non-empty array of {type, …} objects. Types: \(RenderComponent.knownTypes.joined(separator: ", ")).") }
+        // The agent's schema pre-check (ToolValidation) wraps a non-array `components` into a one-element array, so the
+        // double-encoded string also arrives as `[ "[{…}]" ]` — unwrap any element that is itself JSON text.
+        raw = raw.flatMap { item -> [JSONValue] in
+            guard let s = item.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines), s.hasPrefix("[") || s.hasPrefix("{") else { return [item] }
+            if let decoded = Self.decodeComponents(s) { issues.append("`components` was sent as a JSON string — send a plain array next time"); return decoded }
+            issues.append("a component was a string that is not valid JSON — send {type, …} objects"); return []
+        }
+        guard !raw.isEmpty else { throw ToolError("render_ui: `components` must be a non-empty array of {type, …} objects" + (issues.isEmpty ? "" : " — " + issues.joined(separator: "; ")) + ". Types: \(RenderComponent.knownTypes.joined(separator: ", ")).") }
         if raw.count > Self.maxComponents { issues.append("only the first \(Self.maxComponents) of \(raw.count) components were drawn"); raw = Array(raw.prefix(Self.maxComponents)) }
         var out: [RenderComponent] = []
         for (i, item) in raw.enumerated() {
@@ -103,6 +117,32 @@ public struct RenderSpec: Sendable, Hashable {
         }
         components = out
         self.issues = issues
+    }
+
+    /// A `components` value that arrived as text. Tries the text as-is, then with trailing commas removed, then with the
+    /// shape loopl-2b produced 2/3 times for a diagram — `["diagram", "nodes": […], "edges": […]]` (the opening `{"type":`
+    /// collapsed into a bare string) — rewritten to `[{"type": "diagram", …}]`.
+    static func decodeComponents(_ text: String) -> [JSONValue]? {
+        func parse(_ t: String) -> [JSONValue]? {
+            guard let data = t.data(using: .utf8), let v = try? JSONDecoder().decode(JSONValue.self, from: data) else { return nil }
+            if let a = v.arrayValue { return a }
+            if let o = v.objectValue { return o["components"]?.arrayValue ?? [.object(o)] }
+            return nil
+        }
+        var t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let a = parse(t) { return a }
+        // Trailing commas before a closing bracket/brace are the most common model slip.
+        t = t.replacingOccurrences(of: #",\s*([\]}])"#, with: "$1", options: .regularExpression)
+        if let a = parse(t) { return a }
+        // `[ "kind", "field": …, … ]` → `[{"type": "kind", "field": …, …}]`
+        if let r = t.range(of: #"^\[\s*"([a-z_]+)"\s*,"#, options: .regularExpression) {
+            let kind = String(t[r]).replacingOccurrences(of: #"[\[\s",]"#, with: "", options: .regularExpression)
+            var body = String(t[r.upperBound...])
+            if body.hasSuffix("]") { body.removeLast() }
+            let fixed = "[{\"type\": \"\(kind)\", " + body + "}]"
+            if let a = parse(fixed) { return a }
+        }
+        return nil
     }
 
     // MARK: per-kind parsing
@@ -309,14 +349,15 @@ public struct RenderUITool: Tool {
     public init() {}
     public let name = RenderUITool.toolName
     public let description = """
-    Show the user a native card instead of prose: a chart, a map, a diagram, a table, a key/value grid, a list, a progress bar, \
-    markdown or an image. Use it whenever the answer is numbers over categories or time (chart), places (map), steps or a flow \
-    (diagram), or structured data (table/keyvalue/list). Pass components as an array; each has a `type` and that type's fields: \
-    chart{title, kind: bar|line|pie, series:[{name, points:[{label, value}]}]} · map{title, pins:[{lat, lon, label}], route:[[lat,lon]]} · \
-    diagram{title, nodes:[{id, label}], edges:[{from, to, label}]} · table{title, headers:[…], rows:[[…]]} · keyvalue{title, data:{key: value}} · \
-    list{title, items:[string | {title, subtitle}]} · progress{description, total, completed} · markdown{content} · text{content, style} · \
-    image{url | attachment, caption} · rule{title}. Values are numbers (4000, not "4k"). The card appears in the chat; afterwards \
-    answer in one short sentence and do not repeat the data.
+    Show the user a native card instead of prose — call it DIRECTLY with the data (no calculator first) whenever the answer is \
+    numbers over categories or time (a chart), places (a map), steps or a flow (a diagram), or structured data (table, keyvalue, list). \
+    components is an ARRAY of objects, each with a type: \
+    {"type":"chart","kind":"bar","series":[{"name":"steps","points":[{"label":"Mon","value":4000},{"label":"Tue","value":6200}]}]} · \
+    {"type":"map","pins":[{"lat":40.74,"lon":-74.03,"label":"bwè kafe"}],"route":[[40.74,-74.03],[40.75,-74.02]]} · \
+    {"type":"diagram","nodes":[{"id":"open","label":"Open app"},{"id":"home","label":"Home"}],"edges":[{"from":"open","to":"home","label":"ok"}]} · \
+    table{headers,rows} · keyvalue{data:{key:value}} · list{items} · progress{description,total,completed} · markdown{content} · text{content} · image{url|attachment} · rule{title}. \
+    kind is bar, line or pie; values are numbers (4000, not "4k"). The card appears in the chat; afterwards answer in one short \
+    sentence and do not repeat the data.
     """
     public let parameters: JSONValue = ["type": "object", "properties": [
         "title": ["type": "string", "description": "optional heading for the whole card"],
