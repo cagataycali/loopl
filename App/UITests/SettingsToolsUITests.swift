@@ -59,14 +59,23 @@ final class SettingsToolsUITests: XCTestCase {
             }
         }
 
-        // Off group: the off-by-default ones (and whatever the Simulator cannot run).
+        // `location` moved to ON by default in #138 — the owner's report was that the location tool did not work,
+        // and a tool nobody switches on cannot. So this now proves it is listed as on-by-default; the off group is
+        // checked below with a tool that is still off (`reminders_create`).
         var found = false
         for _ in 0..<6 {
             if app.staticTexts["tool.location.default"].firstMatch.exists { found = true; break }
             app.swipeUp()
         }
-        XCTAssertTrue(found, "location is listed under Off")
-        XCTAssertEqual(app.staticTexts["tool.location.default"].firstMatch.label, "off by default")
+        XCTAssertTrue(found, "location is listed with its default")
+        XCTAssertEqual(app.staticTexts["tool.location.default"].firstMatch.label, "on by default")
+        var foundOff = false
+        for _ in 0..<6 {
+            if app.staticTexts["tool.reminders_create.default"].firstMatch.exists { foundOff = true; break }
+            app.swipeUp()
+        }
+        XCTAssertTrue(foundOff, "an off-by-default tool is listed too")
+        XCTAssertEqual(app.staticTexts["tool.reminders_create.default"].firstMatch.label, "off by default")
         shot(app, "settings-tools-off")
 
         // Switching a tool off moves it to the Off group and the summary follows (read the summary with the row on screen —

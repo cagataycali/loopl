@@ -651,7 +651,19 @@ public final class Engine {
     }
 
     /// Can the loaded model look at pictures? (`ModelSpec.vision`, MLX runtime.) Gates the composer's attach button.
-    public var canSeeImages: Bool { loadedModel?.supportsVision == true }
+    public var canSeeImages: Bool {
+        #if DEBUG
+        // A design fixture declares a vision model READY without loading one — MLX cannot run on a simulator at
+        // all. Without this the composer's attach menu never appears in those scenes, so the picker that takes
+        // photos and videos had no guard that could run anywhere (VideoInputUITests failed on every machine).
+        if let designVision { return designVision }
+        #endif
+        return loadedModel?.supportsVision == true
+    }
+    #if DEBUG
+    /// Set only by `DesignFixture` (`--design-fixture vision|video`): pretends the ready model can see pictures.
+    public var designVision: Bool?
+    #endif
 
     /// The system prompt the model gets: Settings › System prompt, as the user wrote it, for every model. loopl's own
     /// models carry their identity in their weights (loopl-train bakes it in), so nothing is prepended here.
