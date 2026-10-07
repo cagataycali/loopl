@@ -114,8 +114,7 @@ struct RenderComponentView: View {
             VStack(alignment: .leading, spacing: 6) {
                 sectionTitle(title)
                 RenderMap(pins: pins, route: route)
-            }
-            .accessibilityIdentifier("render-map-\(index)")
+            }   // no identifier on the wrapper: SwiftUI would stamp it on every child and hide the map button's own `render-map`
         case .diagram(let title, let nodes, let edges):
             VStack(alignment: .leading, spacing: 6) {
                 sectionTitle(title)
@@ -403,13 +402,18 @@ struct RenderMap: View {
                     .background(.regularMaterial, in: Capsule()).padding(8)
                     .accessibilityHidden(true)
             }
-            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .onTapGesture { openInMaps() }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(RenderA11y.map(pins: pins, route: route))
-            .accessibilityHint("opens in Maps")
-            .accessibilityAddTraits(.isButton)
-            .accessibilityIdentifier("render-map")
+            .accessibilityHidden(true)   // MapKit's own tree is noise here; the tap layer below is the one spoken element
+            .overlay {
+                // One clear layer owns the tap and the accessibility: a button named by its pins ("map with 3 pins: …"),
+                // which XCUITest and VoiceOver both see — MapKit's view does not reliably expose an identifier.
+                Button(action: openInMaps) {
+                    Color.clear.contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(RenderA11y.map(pins: pins, route: route))
+                .accessibilityHint("opens in Maps")
+                .accessibilityIdentifier("render-map")
+            }
             if !pins.isEmpty {
                 // The pins as text under the map: what the labels say, readable without the map and by VoiceOver.
                 Text(pins.enumerated().map { i, p in p.label ?? "pin \(i + 1)" }.joined(separator: " · "))
