@@ -944,7 +944,7 @@ public struct ModelPickerRow: View {
     public var body: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(spec.name).font(.body.weight(loaded ? .semibold : .regular))
+                Text(spec.displayName).font(.body.weight(loaded ? .semibold : .regular))
                     .fixedSize(horizontal: false, vertical: true)
                 // ONE Text so the facts stay on one line: on an SE they shrink a little instead of wrapping "ctx / 12,288".
                 // At accessibility sizes even 0.72× lost the tail ("1.75 GB · 2B · ctx 12,2…" on an SE at AX-XL) — there the
@@ -969,10 +969,13 @@ public struct ModelPickerRow: View {
         .contentShape(Rectangle())
     }
     private var metaRow: Text {
+        // What a person decides on: size, and whether it sees pictures (IMPROVE-3 audit — "2B · ctx 12,288 · MLX" meant
+        // nothing to a first-time user; the size class is in the name, context and engine stay in the accessibility label).
         var t = meta(spec.isDownloadable ? spec.sizeLabel : "built in")
-        t = t + meta(" · \(spec.paramsB.formatted(.number.precision(.fractionLength(0...1))))B · ctx \(spec.ctxUsable8GB.formatted()) · \(spec.runtime.label)")
         if spec.supportsVision {
-            t = t + meta(" · ") + (Text(Image(systemName: "eye")) + Text(" vision")).font(.caption2.weight(.semibold)).foregroundColor(LooplDesign.accent)
+            t = t + meta(" · ") + (Text(Image(systemName: "eye")) + Text(" sees pictures")).font(.caption2.weight(.semibold)).foregroundColor(LooplDesign.accent)
+        } else {
+            t = t + meta(" · text only")
         }
         if spec.isThinking {
             t = t + meta(" · ") + (Text(Image(systemName: "brain")) + Text(" thinks")).font(.caption2.weight(.semibold)).foregroundColor(.secondary)
@@ -984,7 +987,7 @@ public struct ModelPickerRow: View {
     }
     private var metaAccessibility: String {
         var parts = [spec.isDownloadable ? spec.sizeLabel : "built in", "\(spec.paramsB.formatted(.number.precision(.fractionLength(0...1))))B", "context \(spec.ctxUsable8GB.formatted())", spec.runtime.label]
-        if spec.supportsVision { parts.append("sees pictures") }
+        parts.append(spec.supportsVision ? "sees pictures" : "text only")
         if spec.isThinking { parts.append("thinks before answering") }
         if spec.toolsUnverified == true { parts.append("tool calls unverified for this model") }
         return parts.joined(separator: ", ")

@@ -66,6 +66,13 @@ public struct ModelSpec: Sendable, Codable, Hashable, Identifiable {
     /// "968.1 MB" — or "size unknown" for a repo whose blob sizes Hugging Face did not report
     /// (never "Zero KB", see ``ByteSize``). Apple Intelligence rows are not downloadable at all.
     public var sizeLabel: String { ByteSize.label(sizeBytes, zero: "size unknown") }
+    /// The name where a person reads it (chat title, Models rows): the catalog name without its build suffix —
+    /// "Qwen3-0.6B (4-bit)" → "Qwen3-0.6B". `name` stays as is for History, sharing and the dataset.
+    public var displayName: String {
+        var n = name
+        while let r = n.range(of: #"\s*\((\d+-bit|bf16|fp16|q\d\w*)\)\s*$"#, options: [.regularExpression, .caseInsensitive]) { n.removeSubrange(r) }
+        return n.isEmpty ? name : n
+    }
 
     /// Apple Intelligence rows have no download.
     public var isDownloadable: Bool { runtime != .appleFM }

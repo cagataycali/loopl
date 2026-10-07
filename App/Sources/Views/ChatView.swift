@@ -97,12 +97,12 @@ struct ChatView: View {
                 #endif
             }
             .animation(LooplDesign.Motion.faded(LooplDesign.Motion.spring, reduceMotion), value: engine.lastError)
-            .navigationTitle(engine.loadedModel?.name ?? "loopl")
+            .navigationTitle(engine.loadedModel?.displayName ?? "loopl")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 // The active model's name changes in place (interpolated, spring) instead of cutting.
                 ToolbarItem(placement: .principal) {
-                    Text(engine.loadedModel?.name ?? "loopl").font(.headline)
+                    Text(engine.loadedModel?.displayName ?? "loopl").font(.headline)
                         .lineLimit(1).minimumScaleFactor(0.8)
                         // An inline bar title does not grow past the large sizes (UIKit's own never scales at all):
                         // at AX-XL it was shoved against the History button and clipped under the trailing group.
@@ -184,7 +184,7 @@ struct ChatView: View {
 
     private var emptyHint: String {
         switch engine.readiness {
-        case .ready(let s): "**\(s.name)** is ready. Everything runs on this device."
+        case .ready(let s): "**\(s.displayName)** is ready. Everything runs on this device."
         case .downloading, .loading, .repairing: "Getting your model ready — the first launch downloads it once."
         case .failed: "Pick a model in **Models** to get started."
         case .idle: "Runs on this \(LooplDesign.deviceName). Nothing leaves it."
@@ -224,13 +224,13 @@ struct ChatView: View {
         switch engine.readiness {
         case .downloading(let spec, let done, let total):
             // "Zero KB of 335.5 MB" is what the formatter says at byte 0 — "Starting" is what is happening.
-            ReadinessRow(title: "Downloading \(spec.name)", detail: (done == 0 ? "Starting" : "\(ByteCountFormatter.string(fromByteCount: done, countStyle: .file)) of \(ByteCountFormatter.string(fromByteCount: total, countStyle: .file))") + " · once, then offline",
+            ReadinessRow(title: "Downloading \(spec.displayName)", detail: (done == 0 ? "Starting" : "\(ByteCountFormatter.string(fromByteCount: done, countStyle: .file)) of \(ByteCountFormatter.string(fromByteCount: total, countStyle: .file))") + " · once, then offline",
                          progress: total > 0 ? Double(done) / Double(total) : nil,
                          action: ("Pause", { store.pause(spec) }))   // the first-launch download could not be stopped from here
         case .loading(let spec, let p):
-            ReadinessRow(title: "Loading \(spec.name)", detail: p > 0 && p < 1 ? "\(Int(p * 100))%" : "warming up", progress: p > 0 ? p : nil)
+            ReadinessRow(title: "Loading \(spec.displayName)", detail: p > 0 && p < 1 ? "\(Int(p * 100))%" : "warming up", progress: p > 0 ? p : nil)
         case .repairing(let spec):
-            ReadinessRow(title: "Repairing \(spec.name)", detail: "refreshing its tokenizer files from Hugging Face · weights stay", progress: nil)
+            ReadinessRow(title: "Repairing \(spec.displayName)", detail: "fetching a few small files again from Hugging Face · the model itself stays", progress: nil)
         case .failed(let spec, let msg):
             VStack(alignment: .leading, spacing: 8) {
                 Label(msg, systemImage: LooplDesign.iconWarning).font(.footnote).foregroundStyle(.secondary)
