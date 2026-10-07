@@ -258,6 +258,50 @@ final class ConversationArchive {
     func deleteAll() { delete(ids: Set(conversations.map(\.id))) }
 }
 
+/// History at scale (IMPROVE-5 #3): 200 threads were one flat list under a single "History" header with no way to
+/// search. Rows are grouped by when they were last touched, and a search field filters by title and by what was said.
+enum HistoryGroups {
+    struct Group: Identifiable { let label: String; let conversations: [SavedConversation]; var id: String { label } }
+
+    /// Today · Yesterday · This week · This month · then one group per month ("September 2026"). Order is kept (newest first).
+    static func group(_ conversations: [SavedConversation], now: Date = Date(), calendar: Calendar = .current) -> [Group] {
+        var order: [String] = [], buckets: [String: [SavedConversation]] = [:]
+        let startOfToday = calendar.startOfDay(for: now)
+        let weekAgo = calendar.date(byAdding: .day, value: -6, to: startOfToday) ?? startOfToday
+        let startOfMonth = calendar.date(from: calendar.dateComponents([.year, .month], from: now)) ?? startOfToday
+        let monthFormat = Date.FormatStyle().month(.wide).year()
+        for c in conversations {
+            let label: String
+            if c.updated >= startOfToday { label = "Today" }
+            else if c.updated >= (calendar.date(byAdding: .day, value: -1, to: startOfToday) ?? startOfToday) { label = "Yesterday" }
+            else if c.updated >= weekAgo { label = "This week" }
+            else if c.updated >= startOfMonth { label = "This month" }
+            else { label = c.updated.formatted(monthFormat) }
+            if buckets[label] == nil { order.append(label) }
+            buckets[label, default: []].append(c)
+        }
+        return order.map { Group(label: $0, conversations: buckets[$0] ?? []) }
+    }
+
+    /// Case- and diacritic-insensitive match on the title and on what the person and the model said (not tool payloads).
+    static func matches(_ c: SavedConversation, _ query: String) -> Bool {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return true }
+        if c.title.localizedStandardContains(q) { return true }
+        return c.items.contains {
+            switch $0 {
+            case .user(let s, _, _), .assistant(let s): return s.localizedStandardContains(q)
+            default: return false
+            }
+        }
+    }
+
+    /// The search field earns its row only once there is something to search through.
+    static let searchThreshold = 6
+    /// A long history opens the iPhone sheet tall; a short one keeps the half-height peek (IMPROVE-5 #10).
+    static let tallSheetThreshold = 8
+}
+
 /// The sidebar (iPad) / sheet (iPhone) list of saved conversations. Swipe left deletes one; Select → the bottom
 /// bar offers **Delete N** (after a confirmation) and **Share to Hugging Face** for many.
 struct HistoryList: View {
@@ -273,7 +317,16 @@ struct HistoryList: View {
     @State private var sharing: ShareBatch? = nil
     /// The "Delete N conversations?" dialog is up. Deleting is the one action here with no undo, so it always asks.
     @State private var confirmingDelete = false
+    /// Search (IMPROVE-5 #3): filters the list; while a query is typed the groups give way to one "Results" section.
+    @State private var query = ""
     struct ShareBatch: Identifiable { let id = UUID(); var conversations: [SavedConversation] }
+
+    private var searching: Bool { !query.trimmingCharacters(in: .whitespaces).isEmpty }
+    private var filtered: [SavedConversation] { engine.archive.conversations.filter { HistoryGroups.matches($0, query) } }
+    private var groups: [HistoryGroups.Group] {
+        searching ? [HistoryGroups.Group(label: filtered.isEmpty ? "No matches" : "Results · \(filtered.count)", conversations: filtered)]
+                  : HistoryGroups.group(engine.archive.conversations)
+    }
 
     private var allSelected: Bool { !engine.archive.conversations.isEmpty && selected.count == engine.archive.conversations.count }
     private var deleteLabel: String { selected.isEmpty ? "Delete" : "Delete \(selected.count)" }
@@ -318,8 +371,9 @@ struct HistoryList: View {
                 .accessibilityHint("starts an empty conversation")
             }
             if !engine.archive.conversations.isEmpty {
-                Section("History") {
-                    ForEach(engine.archive.conversations) { c in
+                ForEach(groups) { group in
+                  Section(group.label) {
+                    ForEach(group.conversations) { c in
                         Button {
                             if selecting { toggle(c.id); return }
                             LooplDesign.haptic(); engine.open(c); selection = .chat; dismiss?()
@@ -348,6 +402,7 @@ struct HistoryList: View {
                         .accessibilityLabel("\(c.title), \(c.updated.formatted(.relative(presentation: .named)))")
                         .accessibilityHint("opens the conversation; swipe up or down for delete")
                     }
+                  }
                 }
             }
             if dismiss == nil {
@@ -361,6 +416,7 @@ struct HistoryList: View {
         // in either case, so only the home-indicator air applies.
         .looplBottomBar(false)
         .looplScrollClearance()
+        .searchableIf(engine.archive.conversations.count >= HistoryGroups.searchThreshold, text: $query, prompt: "Search conversations")
         .navigationTitle(selecting ? "\(selected.count) selected" : "loopl")
         .environment(\.editMode, .constant(selecting ? .active : .inactive))
         .toolbar {
@@ -495,4 +551,11 @@ struct HistoryList: View {
 @MainActor func copy(_ s: String) {
     UIPasteboard.general.string = s
     LooplDesign.haptic()
+}
+
+private extension View {
+    /// `.searchable` only when there is enough to search (a one-thread history should not open with a search field).
+    @ViewBuilder func searchableIf(_ on: Bool, text: Binding<String>, prompt: String) -> some View {
+        if on { self.searchable(text: text, placement: .navigationBarDrawer(displayMode: .automatic), prompt: prompt) } else { self }
+    }
 }
