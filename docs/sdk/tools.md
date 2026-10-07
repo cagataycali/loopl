@@ -86,6 +86,35 @@ A recording reaches `transcribe` as a line in the user's message, not as hidden 
 
 `open_app` merges `params` into the link's query string, so the next app starts with context; `fallback_url` opens when the app is missing.
 
+## A result can carry a control
+
+A tool's result is text the model reads — plus, optionally, one small **typed control** the transcript draws live: a "Turn off" switch under a flashlight result, a mini player under `music`, a pin on a map under `location`. The *tool* attaches it; the model never emits or sees it (zero tokens, nothing a small model can get wrong).
+
+```swift
+// snippet: compile
+import Loopl
+
+struct Lamp: Tool {
+    let name = "lamp"
+    let description = "Turn the desk lamp on or off."
+    let parameters = ToolSchema.object(["state": ToolSchema.string("on or off")], required: ["state"])
+    func call(_ args: [String: JSONValue]) async throws -> String { try await callOutput(args).text }
+    func callOutput(_ args: [String: JSONValue]) async throws -> ToolOutput {
+        let on = args["state"]?.stringValue == "on"
+        return ToolOutput(text: on ? "lamp: on" : "lamp: off",
+                          control: .toggle(label: on ? "Turn off" : "Turn on", on: on,
+                                           action: ControlAction(tool: "lamp", args: ["state": .string(on ? "off" : "on")])))
+    }
+    func call(_ args: [String: JSONValue], images: [ImageBlock]) async throws -> ToolOutput { try await callOutput(args) }
+}
+```
+
+`ToolControl` is one of: `toggle{label, on, action}` · `button{label, action}` (do it again) · `player{title, subtitle?, playing, volume?, tool}` (previous / play-pause / next / volume, every button an action on `tool`) · `mapPin{lat, lon, label?}` · `timer{until, label?}` · `link{label, url}` (open another app). It travels on `ToolResult.control`, is `Codable` as a flat `{"type": …}` object (so History files and datasets can read it; an unknown future type decodes as none), and stays out of `promptContent`.
+
+A tap runs **the same tool with the control's `args` through the agent's normal tool path** — `Agent.invokeTool(_:)`: hooks and the approval policy apply, a registry may mount the tool, `.toolStarted` / `.toolResult` stream as usual — with **no model call**. The fresh result replaces the card's. The model's history gets one tool-use + tool-result pair whose result starts with `[the user tapped this in the app]`, so the next turn knows the lamp is off and who did it. `Transcript.applyControlResult(for:_:)` updates the tapped row in place (`controlTaps` counts).
+
+The on-device tools that ship controls: `flashlight` (Turn off / Turn on), `vibrate` (Vibrate again), `music` (mini player), `location` (map pin, at the same rounding the model got), `calendar_create` / `reminders_create` (Open in Calendar / Reminders).
+
 ## Built in
 
 | Tool | |

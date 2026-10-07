@@ -262,7 +262,18 @@ public struct MusicTool: AppleTool {
         return lines.joined(separator: "\n")
     }
 
-    public func call(_ args: [String: JSONValue]) async throws -> String {
+    /// Phase 7: the mini player under every music result. Title falls back to "Music" when the library is not
+    /// readable; the volume slider shows only when the tool knows the level.
+    public static func control(_ np: NowPlaying, volume: Int? = nil) -> ToolControl {
+        let subtitle = [np.artist, np.album].compactMap { $0 }.joined(separator: " · ")
+        return .player(.init(title: np.title ?? (np.state == .stopped ? "Nothing queued" : "Music"),
+                             subtitle: subtitle.isEmpty ? nil : subtitle,
+                             playing: np.state == .playing, volume: volume ?? np.volume, tool: "music"))
+    }
+
+    public func call(_ args: [String: JSONValue]) async throws -> String { try await callOutput(args).text }
+
+    public func callOutput(_ args: [String: JSONValue]) async throws -> ToolOutput {
         let r = try Self.parse(args)
         let a = Self.availability(); guard a.available else { throw ToolError("music is not available here: \(a.reason)") }
         let src = MusicStore.current
@@ -278,12 +289,12 @@ public struct MusicTool: AppleTool {
                 target = max(0, min(100, now + d))
             }
             try await src.setVolume(target)
-            return Self.render(try await src.nowPlaying(), after: "volume", level: target)
+            let np = try await src.nowPlaying()
+            return ToolOutput(text: Self.render(np, after: "volume", level: target), control: Self.control(np, volume: target))
         default: break
         }
         let np = try await src.nowPlaying()
-        return Self.render(np, after: r.action, level: r.level)
+        return ToolOutput(text: Self.render(np, after: r.action, level: r.level), control: Self.control(np))
     }
-    public func callOutput(_ args: [String: JSONValue]) async throws -> ToolOutput { ToolOutput(text: try await call(args)) }
     public func call(_ args: [String: JSONValue], images: [ImageBlock]) async throws -> ToolOutput { try await callOutput(args) }
 }

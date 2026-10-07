@@ -22,6 +22,8 @@ public struct TranscriptItem: Identifiable, Sendable, Hashable {
     public var kind: Kind
     /// Pictures attached to this item — a user turn's attachments, or a tool's produced images (`ToolResult.images`).
     public var images: [ImageBlock] = []
+    /// Phase 7: how many times the user tapped this tool row's control (the result shown is the LATEST one). 0 = never.
+    public var controlTaps = 0
     /// Clips attached to a user turn (Phase 8). The file stays on disk; the block carries the poster + transcript.
     public var videos: [VideoBlock] = []
     public init(id: UUID = UUID(), kind: Kind, images: [ImageBlock] = [], videos: [VideoBlock] = []) { self.id = id; self.kind = kind; self.images = images; self.videos = videos }
@@ -74,6 +76,23 @@ public struct Transcript: Sendable, Hashable {
         if touched { items.append(.init(kind: .note(note))) }
     }
     public mutating func clear() { items.removeAll(); metrics = Metrics(); cycle = 0; streamingIndex = nil; reasoningIndex = nil; isRunning = false; lastResult = nil }
+
+    /// Phase 7 (controls): the result of a control TAP on the tool row `toolUseId` (the row's original call). The row keeps
+    /// its arguments and id; its result becomes the fresh one (content, control, pictures) so the card shows the truth —
+    /// "flashlight: off" with a "Turn on" switch — and `controlTaps` counts it. The row is NOT duplicated: a tap is not a
+    /// model turn. An ERROR result (denied approval, torch busy) does not replace the row — the card keeps the last true
+    /// state and the host shows the error elsewhere. Returns false when the row is gone or the result is an error.
+    @discardableResult
+    public mutating func applyControlResult(for toolUseId: String, _ r: ToolResult) -> Bool {
+        guard !r.isError,
+              let idx = items.lastIndex(where: { if case .toolUse(let u, _) = $0.kind { return u.toolUseId == toolUseId }; return false }),
+              case .toolUse(let u, _) = items[idx].kind else { return false }
+        var fresh = r; fresh.toolUseId = toolUseId
+        items[idx].kind = .toolUse(u, result: fresh)
+        items[idx].images = r.images
+        items[idx].controlTaps += 1
+        return true
+    }
 
     /// Fold one event. Returns true when the loop ended.
     @discardableResult

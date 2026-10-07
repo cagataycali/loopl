@@ -405,6 +405,7 @@ public actor Agent {
         }
     }
 
+<<<<<<< HEAD
     /// Stop the run in flight (the user's stop button): the model stream ends at its next token, a tool call that
     /// never returns becomes an immediate "Tool execution cancelled" result (`runTool` races the tool against
     /// cancellation), waits on approvals/interrupts answer with their timeout response, and the loop reports
@@ -412,6 +413,38 @@ public actor Agent {
     public nonisolated func cancelRun() { runHandle.cancel() }
     /// True while a `stream()` is in flight.
     public nonisolated var isRunning: Bool { runHandle.isRunning }
+=======
+    // MARK: Phase 7 — a control tap runs one tool for the user (no model call)
+
+    /// The text the model reads in front of a tapped tool's result, so the next turn knows the state changed and WHO did it.
+    public static let tappedResultPrefix = "[the user tapped this in the app] "
+
+    /// Run ONE tool on the user's behalf — a tap on a result card's control ("Turn off" under a flashlight result).
+    /// Same `runTool` path as a model's call: hooks, the approval policy (`.approvalRequested` → `resolve(approval:)`),
+    /// the registry's mount-on-call, `.toolStarted` / `.toolResult` events — and NO model call. The model's history
+    /// gets one assistant tool-use + tool-result pair whose result text starts with `tappedResultPrefix`, so a later
+    /// "is the flashlight still on?" is answered from the truth. The stream finishes after the result (no `.result`).
+    public nonisolated func invokeTool(_ use: ToolUse) -> AsyncThrowingStream<AgentEvent, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                let result = await self.runTapped(use) { continuation.yield($0) }
+                continuation.yield(.toolResult(result))
+                continuation.finish()
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
+    private func runTapped(_ use: ToolUse, _ yield: @Sendable @escaping (AgentEvent) -> Void) async -> ToolResult {
+        let result = await runTool(use, yield)
+        var forModel = result
+        forModel.content = Self.tappedResultPrefix + result.content
+        forModel.images = []; forModel.control = nil
+        try? await appendMessage(.assistant(text: "", toolUses: [use]))
+        try? await appendMessage(.toolResults([forModel]))
+        return result
+    }
+>>>>>>> origin/main
 
     // MARK: `_run_loop`
 
@@ -785,7 +818,7 @@ public actor Agent {
                     flushHistoryEdits(yield)
                     result = ToolResult(toolUseId: toolUse.toolUseId, name: toolUse.name, status: .success,
                                         content: (mountedOnCall ? "(\(toolUse.name) was not mounted — mounted it for this conversation.)\n" : "") + out.text,
-                                        durationMs: Date().timeIntervalSince(t0) * 1000, images: out.images)
+                                        durationMs: Date().timeIntervalSince(t0) * 1000, images: out.images, control: out.control)
                     break
                 } catch let raised as InterruptException {
                     interruptState.register([raised.interrupt])
