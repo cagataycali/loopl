@@ -49,11 +49,21 @@ final class ScreenAuditUITests: XCTestCase {
     /// inset by design; the scroll canvas, legitimately wider than its viewport; and a decoration under 4 pt tall,
     /// because `IndeterminateBar`'s accent segment sweeps by `.offset(x: w)` inside a `clipShape`, so its frame
     /// leaves the screen ([63…451] against a track at [63…362]) while nothing of it is ever drawn out there.
-    private func collectOutside(_ app: XCUIApplication, into found: inout [String: String]) {
+    /// `full` sweeps all five element classes; otherwise only the text and buttons.
+    ///
+    /// Measured, because it is the whole cost of this file: `otherElements.allElementsBoundByIndex` on a long list
+    /// is by far the most expensive query here, and asking for it at every step of a walk took Settings from 27 s
+    /// to 141 s on an iPhone 16 Pro. So the full sweep runs once per screen, on the first viewport — exactly the
+    /// guarantee the one-viewport guard gave before this merge — and the walk carries the two classes every real
+    /// find has ever been in: a label or a button inside a card.
+    private func collectOutside(_ app: XCUIApplication, _ texts: [XCUIElement], full: Bool,
+                                into found: inout [String: String]) {
         let screen = app.windows.firstMatch.frame
-        for el in app.staticTexts.allElementsBoundByIndex + app.buttons.allElementsBoundByIndex
-                + app.switches.allElementsBoundByIndex + app.textFields.allElementsBoundByIndex
-                + app.otherElements.allElementsBoundByIndex {
+        let pool = full
+            ? texts + app.buttons.allElementsBoundByIndex + app.switches.allElementsBoundByIndex
+              + app.textFields.allElementsBoundByIndex + app.otherElements.allElementsBoundByIndex
+            : texts + app.buttons.allElementsBoundByIndex
+        for el in pool {
             let label = el.label
             guard !label.isEmpty, !label.hasSuffix("pages"), !label.contains("scroll bar") else { continue }
             let f = el.frame
@@ -71,9 +81,9 @@ final class ScreenAuditUITests: XCTestCase {
     /// 834 pt iPad a perfectly formatted chat bubble is 324 pt (39 %), a History subtitle 263 pt and a tool row's
     /// note 357 pt — all flagged, none a bug. The real squeezes sit far lower in ABSOLUTE terms: 90, 132, 139,
     /// 150, 163, 175 pt. 220 pt separates the two sets, and on a small screen 45 % of 375 pt (169 pt) still binds.
-    private func collectSqueezed(_ app: XCUIApplication, into found: inout [String: String]) {
+    private func collectSqueezed(_ app: XCUIApplication, _ texts: [XCUIElement], into found: inout [String: String]) {
         let w = app.windows.firstMatch.frame.width
-        for el in app.staticTexts.allElementsBoundByIndex {
+        for el in texts {
             let f = el.frame, label = el.label
             guard label.count >= 25, f.width > 1, f.height > 4 else { continue }
             // A monospaced value (a header value, a path, a sha) is not prose and may sit in a column, and an
@@ -95,26 +105,35 @@ final class ScreenAuditUITests: XCTestCase {
     private func audit(_ app: XCUIApplication, _ screen: String, settle: XCUIElement? = nil, scrolls: Int = 12) {
         if let settle { XCTAssertTrue(settle.waitForExistence(timeout: 20), "\(screen) drew") }
         var outside: [String: String] = [:], squeezed: [String: String] = [:]
-        var lastSeen = ""
-        for _ in 0..<scrolls {
-            collectOutside(app, into: &outside)
-            collectSqueezed(app, into: &squeezed)
-            let fingerprint = app.staticTexts.allElementsBoundByIndex.map { $0.label }.joined(separator: "|")
-            if fingerprint == lastSeen { break }
+
+        // One enumeration of the texts per step, shared by both questions AND by the fingerprint. Querying
+        // `allElementsBoundByIndex` is the expensive part of a walk — asking for the same set twice per step cost
+        // ~a third of this suite's wall time for nothing.
+        var firstViewport = true
+        func step(_ swipe: (XCUIApplication) -> Void, _ lastSeen: inout String) -> Bool {
+            let texts = app.staticTexts.allElementsBoundByIndex
+            collectOutside(app, texts, full: firstViewport, into: &outside)
+            firstViewport = false
+            collectSqueezed(app, texts, into: &squeezed)
+            let fingerprint = texts.map { $0.label }.joined(separator: "|")
+            if fingerprint == lastSeen { return false }
             lastSeen = fingerprint
-            app.swipeUp()
+            swipe(app)
+            return true
         }
-        // Back up, measuring on the way: a test that only ever scrolls one way leaves the screen somewhere it did
-        // not start, and never sees a layout in the order a person scrolling back sees it.
-        lastSeen = ""
-        for _ in 0..<scrolls {
-            collectOutside(app, into: &outside)
-            collectSqueezed(app, into: &squeezed)
-            let fingerprint = app.staticTexts.allElementsBoundByIndex.map { $0.label }.joined(separator: "|")
-            if fingerprint == lastSeen { break }
-            lastSeen = fingerprint
-            app.swipeDown()
-        }
+
+        var seen = ""
+        var down = 0
+        for _ in 0..<scrolls { if !step({ $0.swipeUp() }, &seen) { break }; down += 1 }
+        // Then back up, measuring on the way — a test that only ever scrolls one way never sees a layout in the
+        // order a person scrolling back sees it, and leaves the screen somewhere it did not start.
+        //
+        // BOUNDED, and the bound is measured rather than tidy. A full return walk is a second complete pass: it
+        // took this suite from 198 s (the two suites it replaces) to 485 s, and found nothing on any of the nine
+        // screens. The value of coming back is re-measuring rows in their SETTLED state, which happens in the
+        // first few steps; the value of re-walking the whole screen a second time is, on the evidence, zero.
+        seen = ""
+        for _ in 0..<min(down, 3) { if !step({ $0.swipeDown() }, &seen) { break } }
         let worstOutside = outside.values.sorted().prefix(6).joined(separator: " · ")
         XCTAssertTrue(outside.isEmpty, "\(screen): outside the screen — \(worstOutside)")
         XCTAssertTrue(squeezed.isEmpty, "\(screen): a sentence squeezed into a column — "
