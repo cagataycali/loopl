@@ -169,6 +169,21 @@ public enum Readiness: Hashable, Sendable {
     public var isFailed: Bool { if case .failed = self { return true }; return false }
 }
 
+extension Engine {
+    /// A download failure, with the model it was about. The downloader's sentence says what went wrong
+    /// and what to do (`HubStatus`) but never what it was fetching — fine inside the Models row, which
+    /// names the model one line above, and useless on the chat screen, where the banner stands alone.
+    /// Never prefixes a message that already opens with the model's name.
+    /// Pure text, so it is `nonisolated`: the tests and the design fixture call it off the main actor.
+    nonisolated static func downloadFailed(_ spec: ModelSpec, _ message: String) -> String {
+        let m = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !m.isEmpty else { return "\(spec.displayName) didn't finish downloading." }
+        if m.hasPrefix(spec.displayName) || m.hasPrefix(spec.name) { return m }
+        let stop = m.hasSuffix(".") || m.hasSuffix("!") || m.hasSuffix(")") ? "" : "."
+        return "\(spec.displayName) didn't finish downloading. \(m)\(stop)"
+    }
+}
+
 /// The main-actor face of the SDK: owns the active `Model`, the `Agent`, the
 /// readiness state and the `Transcript` the Chat tab renders.
 @MainActor @Observable
@@ -435,9 +450,12 @@ public final class Engine {
                 switch store.states[spec.id] ?? .notDownloaded {
                 case .downloading(let done, let total, _, _): readiness = .downloading(spec, done: done, total: total); continue
                 case .downloaded: haptics.emit(.downloadFinished); break
-                case .failed(let msg): readiness = .failed(spec, msg); haptics.emit(.error); return
-                case .paused: readiness = .failed(spec, "Download paused — resume it from Models."); return
-                case .notDownloaded: readiness = .failed(spec, "download stopped"); return
+                // The store's message is about the TRANSFER ("Hugging Face is limiting requests right now…").
+                // On the chat screen there is no row naming the model, so the sentence arrived with no subject —
+                // "Your progress is kept" above "No model is running yet." told a person nothing about what failed.
+                case .failed(let msg): readiness = .failed(spec, Self.downloadFailed(spec, msg)); haptics.emit(.error); return
+                case .paused: readiness = .failed(spec, "\(spec.displayName) is paused part-way — resume it in Models."); return
+                case .notDownloaded: readiness = .failed(spec, "\(spec.displayName) stopped downloading before it finished."); return
                 case .needsDrive(let d): readiness = .failed(spec, "\(spec.displayName) is on \(d). Plug it in to use it."); return
                 case .driveUnreadable(let d, _): readiness = .failed(spec, "\(d) is connected but loopl can't read it — re-grant its folder in Settings › Storage."); return
                 case .moving: continue

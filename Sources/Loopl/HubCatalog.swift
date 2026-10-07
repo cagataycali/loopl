@@ -13,7 +13,7 @@ import Foundation
 /// Network goes through `NetworkPolicy.session` and honours the offline switch;
 /// responses are cached on disk so a repo you browsed once still renders offline.
 public struct HubCatalog: Sendable {
-    public var host = "https://huggingface.co"
+    public var host = HubHost.current
     public var cache: HubCache? = HubCache()
     /// `nil` → anonymous. Consulted per request (see `HFTokenProvider`).
     public var token: HFTokenProvider?

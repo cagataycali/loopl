@@ -290,7 +290,7 @@ struct ModelsView: View {
                 HStack {
                     Text("Paused · \(ByteCountFormatter.string(fromByteCount: done, countStyle: .file)) of \(ByteCountFormatter.string(fromByteCount: total, countStyle: .file))").font(.caption).foregroundStyle(.secondary)
                     Spacer()
-                    Button("Resume") { Task { await engine.select(spec) } }.font(.caption.weight(.semibold)).disabled(settings.offline)
+                    Button("Resume") { Task { await engine.select(spec) } }.font(.caption.weight(.semibold)).disabled(settings.offline).looplHitTarget()
                 }
             case .failed(let msg):
                 HStack(alignment: .top) {
@@ -301,6 +301,7 @@ struct ModelsView: View {
                         Spacer(minLength: 8)
                         Button("Sign in") { LooplDesign.haptic(); gatedPick = spec }
                             .font(.caption.weight(.semibold)).disabled(settings.offline || busy)
+                            .looplHitTarget()
                             .accessibilityIdentifier("models-signin-\(spec.id)")
                     } else {
                         Text(msg).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
@@ -308,6 +309,7 @@ struct ModelsView: View {
                         Spacer(minLength: 8)
                         Button("Retry") { LooplDesign.haptic(1); Task { await engine.select(spec) } }
                             .font(.caption.weight(.semibold)).disabled(settings.offline || busy)
+                            .looplHitTarget()
                             .accessibilityIdentifier("models-retry-\(spec.id)")
                     }
                 }

@@ -307,3 +307,35 @@ public extension LooplDesign {
         return content <= band + 1 || visibleBottom >= content - followSlack
     }
 }
+
+// MARK: - Touch targets for inline text buttons
+
+/// Grows a small inline button's TOUCH area to Apple's 44 × 44 pt minimum without moving the text
+/// one point: the label is padded, then the same padding is subtracted from the outside, so the hit
+/// rectangle overflows the layout instead of changing it.
+///
+/// Why it exists: the recovery controls in the Models list and the chat readiness banner are bare
+/// `.caption`/`.footnote` text buttons. Measured on an iPhone 16 Pro simulator, `Retry` next to a
+/// failed download was **32 × 14 pt** and the banner's `Try again` **58 × 16 pt** — the one control a
+/// person needs after a rate limit, inside 14 points. Those rows had just been tuned (#170, #176), so
+/// the fix must not reflow them; `.frame(minHeight: 44)` would have added 14 pt to the row.
+///
+/// The overflow can overlap neighbouring TEXT, which is not tappable, so nothing is stolen. Do not use
+/// it on two buttons that sit within 44 pt of each other.
+private struct HitTarget44: ViewModifier {
+    let minSide: CGFloat
+    func body(content: Content) -> some View {
+        content
+            .contentShape(.rect)
+            .padding(.vertical, 15).padding(.horizontal, 10)
+            .contentShape(.rect)
+            .frame(minWidth: minSide, minHeight: minSide)
+            .padding(.vertical, -15).padding(.horizontal, -10)
+    }
+}
+
+public extension View {
+    /// 44 × 44 pt of touch for an inline text button, with the text left exactly where it was.
+    /// Put it on the `Button`, after `.font(…)` and `.disabled(…)`.
+    func looplHitTarget(_ minSide: CGFloat = 44) -> some View { modifier(HitTarget44(minSide: minSide)) }
+}

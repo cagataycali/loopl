@@ -64,7 +64,7 @@ public struct HFHubClient: Sendable {
     public var transport: any HFTransport
     public var userAgent = "loopl/0.2 (iOS)"
 
-    public init(token: String? = nil, host: String = "https://huggingface.co", transport: any HFTransport = HFURLSessionTransport()) {
+    public init(token: String? = nil, host: String = HubHost.current, transport: any HFTransport = HFURLSessionTransport()) {
         self.token = token; self.host = host; self.transport = transport
     }
 
@@ -566,7 +566,7 @@ public final class HFAccount: @unchecked Sendable {
     private let store: any HFTokenStore
     private var cachedToken: String?
     private var cachedWhoAmI: HFHubClient.WhoAmI?
-    public var host = "https://huggingface.co"
+    public var host = HubHost.current
 
     public init(store: (any HFTokenStore)? = nil) {
         #if canImport(Security)

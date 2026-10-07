@@ -244,7 +244,7 @@ struct ChatView: View {
         case .failed(let spec, let msg):
             VStack(alignment: .leading, spacing: 8) {
                 Label(msg, systemImage: LooplDesign.iconWarning).font(.footnote).foregroundStyle(.secondary)
-                if let spec { Button("Try again") { Task { await engine.select(spec) } }.font(.footnote.weight(.semibold)) }
+                if let spec { Button("Try again") { Task { await engine.select(spec) } }.font(.footnote.weight(.semibold)).looplHitTarget().accessibilityIdentifier("chat-readiness-retry") }
             }
             .padding(.vertical, 4)
         case .idle, .ready:
