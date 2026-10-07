@@ -14,6 +14,9 @@ struct ModelsView: View {
     @Bindable var store: ModelStore
     @Bindable var settings: AppSettings
     @State private var confirmDelete: ModelSpec?
+    /// A private (gated) model tapped while signed out: ask for the Hugging Face account FIRST, the way onboarding does,
+    /// instead of letting the download fail on its first byte (IMPROVE-4 #11).
+    @State private var gatedPick: ModelSpec?
     @State private var mine = MineModel()
     @State private var trainFixturePushed = DesignFixture.trainScene != nil
     /// Mine row tapped → repo sheet. Presented HERE, from the List — see MineSection.selected.
@@ -53,6 +56,14 @@ struct ModelsView: View {
     /// The curated catalog beyond the loopl models — folded behind one "More models" row under the loopl models.
     private var curated: [ModelSpec] { rest.filter { !$0.isFromHub && $0.runtime != .gguf } }
     private var gguf: [ModelSpec] { rest.filter { !$0.isFromHub && $0.runtime == .gguf } }
+    /// Private/gated catalog row, nothing on disk, nobody signed in → the download would 401 on the first byte.
+    private func needsSignIn(_ spec: ModelSpec, _ state: ModelStore.State) -> Bool {
+        guard spec.gated, spec.isDownloadable, !state.isDownloaded, !engine.hf.isSignedIn else { return false }
+        #if DEBUG
+        if engine.hf.identity != nil { return false }
+        #endif
+        return true
+    }
     /// Header of section 1: the device this is — a model on a drive carries its own "On SanDisk" line.
     private var deviceName: String { UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone" }
     /// For the section-order test and the animation key: the headers, top to bottom, as a first-time user reads them.
@@ -145,6 +156,11 @@ struct ModelsView: View {
                 _ = await (a, b)
             }
             .onAppear { store.refresh() }
+            .sheet(item: $gatedPick) { spec in
+                HFSignInSheet(hf: engine.hf) { LooplDesign.haptic(1); Task { await engine.select(spec) } }
+                    .presentationDetents([.medium])
+                    .presentationDragIndicator(.visible)
+            }
             .sheet(item: $mineSelected) { hit in
                 HubRepoSheet(repoId: hit.id, hint: hit, engine: engine, store: store, settings: settings) {}
                     .navigationTransition(.zoom(sourceID: "mine-\(hit.id)", in: zoom))
@@ -249,6 +265,7 @@ struct ModelsView: View {
         VStack(alignment: .leading, spacing: 6) {
             Button {
                 guard !busy, !isLoaded, !engine.isGenerating, !state.driveBlocked, !state.isMoving else { return }
+                if needsSignIn(spec, state) { LooplDesign.haptic(); gatedPick = spec; return }
                 LooplDesign.haptic(1)
                 Task { await engine.select(spec) }
             } label: {
@@ -275,12 +292,22 @@ struct ModelsView: View {
                 }
             case .failed(let msg):
                 HStack(alignment: .top) {
-                    Text(msg).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier("models-failed-\(spec.id)")
-                    Spacer(minLength: 8)
-                    Button("Retry") { LooplDesign.haptic(1); Task { await engine.select(spec) } }
-                        .font(.caption.weight(.semibold)).disabled(settings.offline || busy)
-                        .accessibilityIdentifier("models-retry-\(spec.id)")
+                    if needsSignIn(spec, state) {
+                        // Retry without an account would fail the same way — say what is missing and offer that.
+                        Text("A private model — sign in to Hugging Face to download it.").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("models-failed-\(spec.id)")
+                        Spacer(minLength: 8)
+                        Button("Sign in") { LooplDesign.haptic(); gatedPick = spec }
+                            .font(.caption.weight(.semibold)).disabled(settings.offline || busy)
+                            .accessibilityIdentifier("models-signin-\(spec.id)")
+                    } else {
+                        Text(msg).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("models-failed-\(spec.id)")
+                        Spacer(minLength: 8)
+                        Button("Retry") { LooplDesign.haptic(1); Task { await engine.select(spec) } }
+                            .font(.caption.weight(.semibold)).disabled(settings.offline || busy)
+                            .accessibilityIdentifier("models-retry-\(spec.id)")
+                    }
                 }
             case .needsDrive(let drive):
                 Label("Needs \(drive) — plug it in to use", systemImage: "externaldrive.badge.xmark").font(.caption).foregroundStyle(.orange)
