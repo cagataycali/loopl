@@ -177,7 +177,9 @@ public actor MLXModel: Model {
                         let budget = params.maxTokens ?? max(1, params.contextLength - prompt.count - 1)
                         let gp = GenerateParameters(maxTokens: budget, maxKVSize: params.contextLength, temperature: params.temperature, topP: params.topP)
                         gen = try await container.perform { context in
-                            let input = LMInput(tokens: MLXArray(prompt))
+                            // A VLM's `prepare` (mlx-swift-lm 3.32.3 Qwen3VL) reads dim(1) of the ids on the short cold path
+                            // (≤ 512 tokens) — a rank-1 prompt is a fatal `SmallVector out of range`. Hand it 2-D like the vision path.
+                            let input = LMInput(tokens: isVLM ? MLXArray(prompt).expandedDimensions(axis: 0) : MLXArray(prompt))
                             return try MLXLMCommon.generate(input: input, parameters: gp, context: context, tools: specDicts.isEmpty ? nil : specDicts)
                         }
                     }

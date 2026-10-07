@@ -48,6 +48,24 @@ final class MLXVisionTests: XCTestCase {
         await model.unload()
     }
 
+    /// P8-B's P0 (2026-10-07 01:5xZ): a TEXT-ONLY turn of ≤ 512 tokens to a Qwen3-VL checkpoint died with
+    /// `MLX Fatal error: SmallVector out of range` — mlx-swift-lm's Qwen3VL `prepare` feeds the ORIGINAL rank-1 ids to the
+    /// short cold path (`getRopeIndex` reads dim(1)). Prompts > 512 tokens (every tool-bearing turn) took the windowed path,
+    /// which is why the audits never saw it. loopl's fix: the text path hands a VLM a 2-D token array.
+    func testShortTextOnlyTurnDoesNotCrash() async throws {
+        let (dir, spec) = try env()
+        let model = MLXModel()
+        try await model.load(spec, from: dir) { _ in }
+        var assembler = StreamAssembler()
+        for try await ev in model.stream([.user("hi")], toolSpecs: [], systemPrompt: nil) { _ = assembler.feed(ev) }
+        let stop = assembler.finish()
+        print("VL short text: prompt \(stop.metrics.promptTokens) tok · \(stop.metrics.generatedTokens) tok · TEXT: \(stop.message.text.prefix(80))")
+        XCTAssertLessThan(stop.metrics.promptTokens, 512, "this must exercise the short cold path")
+        XCTAssertEqual(stop.stopReason, .endTurn)
+        XCTAssertFalse(stop.message.text.isEmpty)
+        await model.unload()
+    }
+
     /// Image + a tool call in the same turn: the model reads the number off the picture and calls `calculator`.
     func testReadsNumberFromImageAndCallsTool() async throws {
         let (dir, spec) = try env()
