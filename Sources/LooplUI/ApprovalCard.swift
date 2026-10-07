@@ -210,9 +210,15 @@ public struct ApprovalCard: View {
         case .deny(let reason): reason.map { "Denied — \($0)" } ?? "Denied"
         }
     }
+    /// VoiceOver: the question in words, then what it does ("Asks you first: send a note to api.notes.app. Sends data to…").
     private var a11y: String {
-        if let d = decision { return "\(request.title), \(verdict(d))" }
-        return "approval needed: \(request.title), risk \(request.risk.rawValue)"
+        let parts = titleParts
+        let what = [parts.head, parts.what].compactMap { $0 }.joined(separator: " ")
+        if let d = decision { return "\(what), \(verdict(d))" }
+        var line = "Asks you first: \(what)."
+        if let detail = request.detail, !detail.isEmpty { line += " \(detail)" }
+        if request.risk == .high { line += " Hard to undo." }
+        return line
     }
 }
 

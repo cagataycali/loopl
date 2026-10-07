@@ -44,7 +44,9 @@ struct StoryPageView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityElement(children: .combine)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("\(page.headline) \(page.line)")   // one sentence pair, not "off., The" (combine adds a comma)
+                .accessibilityAddTraits(.isHeader)
 
                 PhoneCard {
                     switch page.id {
