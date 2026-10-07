@@ -1078,7 +1078,8 @@ public struct ModelPickerRow: View {
         else if let downloading {
             // The row below already draws the bar and the byte count; a third progress affordance (a spinning ring) read
             // as a hang (IMPROVE-3 audit #16). The percentage is the one number the bar cannot say.
-            Text("\(Int((min(max(downloading, 0), 1) * 100).rounded()))%").font(.caption.monospacedDigit().weight(.medium)).foregroundStyle(LooplDesign.accent)
+            // Formatted, not "\(n)%": a Turkish-region iPhone writes %40, others 40 % or 40% (IMPROVE-5 #9).
+            Text(min(max(downloading, 0), 1), format: .percent.precision(.fractionLength(0))).font(.caption.monospacedDigit().weight(.medium)).foregroundStyle(LooplDesign.accent)
                 .contentTransition(.numericText()).accessibilityLabel("downloading").transition(.opacity)
         }
         else { Image(systemName: LooplDesign.iconDownload).foregroundStyle(.tertiary).accessibilityLabel("not downloaded").transition(.opacity) }

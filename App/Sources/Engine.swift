@@ -400,6 +400,13 @@ public final class Engine {
         }
     }
 
+    #if DEBUG
+    /// Tests only: put a loaded model behind the engine without the download/load path (FakeModel + a spec).
+    public func adoptForTesting(_ model: any Model, spec: ModelSpec) {
+        self.model = model; agent = nil; readiness = .ready(spec); lastError = nil
+    }
+    #endif
+
     /// Switch to `spec`: download if needed (progress inline), then load. Remembers the choice.
     public func select(_ spec: ModelSpec) async {
         lastError = nil
@@ -560,6 +567,10 @@ public final class Engine {
         return n
     }
 
+    /// Save the thread on screen as it is now — called when the app leaves the foreground so a kill mid-answer
+    /// (memory pressure in a video turn, a swipe-away) keeps the message and whatever was answered so far (IMPROVE-5 #1).
+    public func saveNow() { archiveCurrent() }
+
     private func archiveCurrent() {
         if let saved = SavedConversation.from(transcript, id: currentId, modelName: loadedModel?.name, editedAt: currentEditedAt,
                                               modelId: loadedModel.map { $0.repo.isEmpty ? $0.id : $0.repo }, tools: activeTools.map(\.toolSpec),
@@ -656,6 +667,7 @@ public final class Engine {
             transcript.note("\(spec.name) can't watch video — it gets the words that were spoken only. Pick a Qwen3-VL model in Models to send the frames.")
         }
         transcript.user(text, images: images, videos: videos)
+        archiveCurrent()   // IMPROVE-5 #1: the message is on disk before the model runs — a crash, a kill or an error can't lose it
         let prompt = text.isEmpty ? (videos.isEmpty ? "What's in this image?" : "What happens in this video?") : text
         start(agent, Loopl.Message.user(prompt, images: sent, videos: videos))
     }
@@ -731,6 +743,10 @@ public final class Engine {
         transcript.isRunning = true
         runTask = Task { [weak self] in
             await agent.setSystemPrompt(system); await agent.setModelGate(gate)      // tools come from `registry` (Phase 6)
+            // The agent reports a failure itself (`.forceStop`) and THEN throws the same error. Remember that it did,
+            // so the catch below does not write the identical line a second time (IMPROVE-5: a model error read
+            // "stopped: the model fell over" *and* "error: the model fell over" — two notes for one failure).
+            var alreadyReported = false
             do {
                 for try await event in agent.stream([message]) {
                     guard let self else { return }
@@ -739,6 +755,7 @@ public final class Engine {
                     case .toolStarted: self.haptics.emit(.toolStart)
                     case .approvalRequested, .child(_, .approvalRequested): self.haptics.emit(.approvalNeeded)
                     case .toolResult(let r): self.haptics.emit(r.isError ? .error : .toolFinish)
+                    case .forceStop: alreadyReported = true
                     default: break
                     }
                 }
@@ -747,10 +764,13 @@ public final class Engine {
             } catch {
                 self?.haptics.emit(.error)
                 self?.lastError = error.localizedDescription
-                self?.transcript.note("error: \(error.localizedDescription)")
+                if !alreadyReported { self?.transcript.note(Transcript.failureNote(error.localizedDescription)) }
                 self?.transcript.isRunning = false
             }
             if let self, self.transcript.isRunning { self.transcript.stopped() }   // iteration ended without .result (cancelled task)
+            // IMPROVE-5 #1: every exit saves. Before, only a loop that ENDED NORMALLY (apply → true) or Stop reached the
+            // archive — a model error, a tool crash or a cancelled task left the turn (and a first-turn thread) off disk.
+            self?.archiveCurrent()
             self?.drainWakes()      // a child that finished while this turn ran
         }
     }
