@@ -1,10 +1,10 @@
 {
- "saved": "2026-10-06T18:14:06Z",
+ "saved": "2026-10-07T04:38:11Z",
  "collection": {
   "slug": "cagataydev/loopl-on-device-agents-swift-6ac51395b13a9c41d4932eaf",
   "title": "loopl — on-device agents, Swift",
-  "description": "loopl: on-device agents in Swift. MLX 4-bit (vision) = what the app downloads, bf16 = post-tuning base. loopl.dev · testflight.apple.com/join/uUNjfzW9",
-  "lastUpdated": "2026-10-06T18:09:59.648Z",
+  "description": "Agents that run on your phone. loopl: Swift SDK + free iPhone app. Qwen3.5 / Qwen3-VL post-tunes run its loop, read images + video, know who they are.",
+  "lastUpdated": "2026-10-07T04:37:28.152Z",
   "gating": false,
   "items": [
    {
@@ -12,8 +12,8 @@
     "downloads": 0,
     "gated": false,
     "id": "cagataydev/loopl-4b-4bit",
-    "lastModified": "2026-10-06T18:10:45.000Z",
-    "likes": 0,
+    "lastModified": "2026-10-06T19:06:34.000Z",
+    "likes": 1,
     "pipeline_tag": "image-text-to-text",
     "private": false,
     "repoType": "model",
@@ -27,17 +27,35 @@
    },
    {
     "author": "cagataydev",
+    "downloads": 0,
+    "gated": false,
+    "id": "cagataydev/loopl-vl-2b-4bit",
+    "lastModified": "2026-10-07T04:37:19.000Z",
+    "likes": 0,
+    "pipeline_tag": "image-text-to-text",
+    "private": false,
+    "repoType": "model",
+    "numParameters": 2127532032,
+    "type": "model",
+    "position": 1,
+    "note": {
+     "html": "loopl-vl 2B v1 — MLX 4-bit, vision + video: what the loopl app downloads (1.78 GB, 315 vision tensors). quiz 68 vs base 60 · tools 8/9·7/9 · identity w/o prompt 2/13.",
+     "text": "loopl-vl 2B v1 — MLX 4-bit, vision + video: what the loopl app downloads (1.78 GB, 315 vision tensors). quiz 68 vs base 60 · tools 8/9·7/9 · identity w/o prompt 2/13."
+    }
+   },
+   {
+    "author": "cagataydev",
     "downloads": 6,
     "gated": false,
     "id": "cagataydev/loopl-2b-4bit",
-    "lastModified": "2026-10-06T18:10:25.000Z",
-    "likes": 0,
+    "lastModified": "2026-10-06T19:07:35.000Z",
+    "likes": 1,
     "pipeline_tag": "image-text-to-text",
     "private": false,
     "repoType": "model",
     "numParameters": 2213241664,
     "type": "model",
-    "position": 1,
+    "position": 2,
     "note": {
      "html": "loopl 2B v1.1 — MLX 4-bit, vision: what the loopl app downloads (1.72 GB, 297 vision tensors). quiz 91 vs base 56 · tools 8/9·9/9 · identity w/o prompt 12/13.",
      "text": "loopl 2B v1.1 — MLX 4-bit, vision: what the loopl app downloads (1.72 GB, 297 vision tensors). quiz 91 vs base 56 · tools 8/9·9/9 · identity w/o prompt 12/13."
@@ -48,14 +66,14 @@
     "downloads": 4,
     "gated": false,
     "id": "cagataydev/loopl-0.8b-4bit",
-    "lastModified": "2026-10-06T18:10:10.000Z",
-    "likes": 0,
+    "lastModified": "2026-10-06T19:07:25.000Z",
+    "likes": 1,
     "pipeline_tag": "image-text-to-text",
     "private": false,
     "repoType": "model",
     "numParameters": 852985920,
     "type": "model",
-    "position": 2,
+    "position": 3,
     "note": {
      "html": "loopl 0.8B v1.1 — MLX 4-bit, vision: what the loopl app downloads (625 MB, 153 vision tensors). quiz 88 vs base 50 · tools 7/9·8/9 · identity w/o prompt 11/13.",
      "text": "loopl 0.8B v1.1 — MLX 4-bit, vision: what the loopl app downloads (625 MB, 153 vision tensors). quiz 88 vs base 50 · tools 7/9·8/9 · identity w/o prompt 11/13."
@@ -66,14 +84,14 @@
     "downloads": 0,
     "gated": false,
     "id": "cagataydev/loopl-4b",
-    "lastModified": "2026-10-06T18:10:44.000Z",
-    "likes": 0,
+    "lastModified": "2026-10-06T19:07:44.000Z",
+    "likes": 1,
     "pipeline_tag": "image-text-to-text",
     "private": false,
     "repoType": "model",
     "numParameters": 4539265536,
     "type": "model",
-    "position": 3,
+    "position": 4,
     "note": {
      "html": "loopl 4B v1.1 — bf16 merged checkpoint: the base for continual post-tuning in loopl (Models › Train your own). quiz 158 vs base 83 · tools 9/9·9/9 · identity w/o prompt 11/13.",
      "text": "loopl 4B v1.1 — bf16 merged checkpoint: the base for continual post-tuning in loopl (Models › Train your own). quiz 158 vs base 83 · tools 9/9·9/9 · identity w/o prompt 11/13."
@@ -81,17 +99,35 @@
    },
    {
     "author": "cagataydev",
+    "downloads": 0,
+    "gated": false,
+    "id": "cagataydev/loopl-vl-2b",
+    "lastModified": "2026-10-07T04:37:17.000Z",
+    "likes": 0,
+    "pipeline_tag": "image-text-to-text",
+    "private": false,
+    "repoType": "model",
+    "numParameters": 2127532032,
+    "type": "model",
+    "position": 5,
+    "note": {
+     "html": "loopl-vl 2B v1 — bf16 merged checkpoint: the base for continual post-tuning in loopl (Models › Train your own). quiz 68 vs base 60 · tools 8/9·7/9 · identity w/o prompt 2/13.",
+     "text": "loopl-vl 2B v1 — bf16 merged checkpoint: the base for continual post-tuning in loopl (Models › Train your own). quiz 68 vs base 60 · tools 8/9·7/9 · identity w/o prompt 2/13."
+    }
+   },
+   {
+    "author": "cagataydev",
     "downloads": 4,
     "gated": false,
     "id": "cagataydev/loopl-2b",
-    "lastModified": "2026-10-06T18:10:23.000Z",
-    "likes": 0,
+    "lastModified": "2026-10-06T19:07:33.000Z",
+    "likes": 1,
     "pipeline_tag": "image-text-to-text",
     "private": false,
     "repoType": "model",
     "numParameters": 2213241664,
     "type": "model",
-    "position": 4,
+    "position": 6,
     "note": {
      "html": "loopl 2B v1.1 — bf16 merged checkpoint: the base for continual post-tuning in loopl (Models › Train your own). quiz 91 vs base 56 · tools 8/9·9/9 · identity w/o prompt 12/13.",
      "text": "loopl 2B v1.1 — bf16 merged checkpoint: the base for continual post-tuning in loopl (Models › Train your own). quiz 91 vs base 56 · tools 8/9·9/9 · identity w/o prompt 12/13."
@@ -102,14 +138,14 @@
     "downloads": 0,
     "gated": false,
     "id": "cagataydev/loopl-0.8b",
-    "lastModified": "2026-10-06T18:10:09.000Z",
-    "likes": 0,
+    "lastModified": "2026-10-06T19:07:22.000Z",
+    "likes": 1,
     "pipeline_tag": "image-text-to-text",
     "private": false,
     "repoType": "model",
     "numParameters": 852985920,
     "type": "model",
-    "position": 5,
+    "position": 7,
     "note": {
      "html": "loopl 0.8B v1.1 — bf16 merged checkpoint: the base for continual post-tuning in loopl (Models › Train your own). quiz 88 vs base 50 · tools 7/9·8/9 · identity w/o prompt 11/13.",
      "text": "loopl 0.8B v1.1 — bf16 merged checkpoint: the base for continual post-tuning in loopl (Models › Train your own). quiz 88 vs base 50 · tools 7/9·8/9 · identity w/o prompt 11/13."
@@ -124,23 +160,23 @@
  },
  "models": [
   {
-   "id": "cagataydev/loopl-4b-4bit",
+   "id": "cagataydev/loopl-vl-2b-4bit",
    "private": false,
    "gated": false,
    "pipeline_tag": "image-text-to-text",
-   "lastModified": "2026-10-06T18:10:45.000Z",
+   "lastModified": "2026-10-07T04:37:19.000Z",
    "likes": 0,
    "downloads": 0,
    "library_name": "mlx",
    "tags": [
     "mlx",
     "safetensors",
-    "qwen3_5",
+    "qwen3_vl",
     "loopl",
     "on-device",
     "agent",
     "tool-calling",
-    "qwen3.5",
+    "qwen3-vl",
     "sft",
     "vision",
     "image-text-to-text",
@@ -149,16 +185,16 @@
     "en",
     "tr",
     "dataset:cagataydev/loopl-train",
-    "base_model:cagataydev/loopl-4b",
-    "base_model:quantized:cagataydev/loopl-4b",
+    "base_model:cagataydev/loopl-vl-2b",
+    "base_model:quantized:cagataydev/loopl-vl-2b",
     "license:apache-2.0",
     "region:us"
    ],
    "config": {
     "architectures": [
-     "Qwen3_5ForConditionalGeneration"
+     "Qwen3VLForConditionalGeneration"
     ],
-    "model_type": "qwen3_5",
+    "model_type": "qwen3_vl",
     "quantization_config": {
      "bits": 4
     },
@@ -168,14 +204,14 @@
      "pad_token": "<|endoftext|>",
      "unk_token": null
     },
-    "chat_template_jinja": "{%- set image_count = namespace(value=0) %}\n{%- set video_count = namespace(value=0) %}\n{%- macro render_content(content, do_vision_count, is_system_content=false) %}\n    {%- if content is string %}\n        {{- content }}\n    {%- elif content is iterable and content is not mapping %}\n        {%- for item in content %}\n            {%- if 'image' in item or 'image_url' in item or item.type == 'image' %}\n                {%- if is_system_content %}\n                    {{- raise_exception('System message cannot contain images.') }}\n                {%- endif %}\n                {%- if do_vision_count %}\n                    {%- set image_count.value = image_count.value + 1 %}\n                {%- endif %}\n                {%- if add_vision_id %}\n                    {{- 'Picture ' ~ image_count.value ~ ': ' }}\n                {%- endif %}\n                {{- '<|vision_start|><|image_pad|><|vision_end|>' }}\n            {%- elif 'video' in item or item.type == 'video' %}\n                {%- if is_system_content %}\n                    {{- raise_exception('System message cannot contain videos.') }}\n                {%- endif %}\n                {%- if do_vision_count %}\n                    {%- set video_count.value = video_count.value + 1 %}\n                {%- endif %}\n                {%- if add_vision_id %}\n                    {{- 'Video ' ~ video_count.value ~ ': ' }}\n                {%- endif %}\n                {{- '<|vision_start|><|video_pad|><|vision_end|>' }}\n            {%- elif 'text' in item %}\n                {{- item.text }}\n            {%- else %}\n                {{- raise_exception('Unexpected item type in content.') }}\n            {%- endif %}\n        {%- endfor %}\n    {%- elif content is none or content is undefined %}\n        {{- '' }}\n    {%- else %}\n        {{- raise_exception('Unexpected content type.') }}\n    {%- endif %}\n{%- endmacro %}\n{%- if not messages %}\n    {{- raise_exception('No messages provided.') }}\n{%- endif %}\n{%- if tools and tools is iterable and tools is not mapping %}\n    {{- '<|im_start|>system\\n' }}\n    {{- \"# Tools\\n\\nYou have access to the following functions:\\n\\n<tools>\" }}\n    {%- for tool in tools %}\n        {{- \"\\n\" }}\n        {{- tool | tojson }}\n    {%- endfor %}\n    {{- \"\\n</tools>\" }}\n    {{- '\\n\\nIf you choose to call a function ONLY reply in the following format with NO suffix:\\n\\n<tool_call>\\n<function=example_function_name>\\n<parameter=example_parameter_1>\\nvalue_1\\n</parameter>\\n<parameter=example_parameter_2>\\nThis is the value for the second parameter\\nthat can span\\nmultiple lines\\n</parameter>\\n</function>\\n</tool_call>\\n\\n<IMPORTANT>\\nReminder:\\n- Function calls MUST follow the specified format: an inner <function=...></function> block must be nested within <tool_call></tool_call> XML tags\\n- Required parameters MUST be specified\\n- You may provide optional reasoning for your function call in natural language BEFORE the function call, but NOT after\\n- If there is no function call available, answer the question like normal with your current knowledge and do not tell the user about function calls\\n</IMPORTANT>' }}\n    {%- if messages[0].role == 'system' %}\n        {%- set content = render_content(messages[0].content, false, true)|trim %}\n        {%- if content %}\n            {{- '\\n\\n' + content }}\n        {%- endif %}\n    {%- endif %}\n    {{- '<|im_end|>\\n' }}\n{%- else %}\n    {%- if messages[0].role == 'system' %}\n        {%- set content = render_content(messages[0].content, false, true)|trim %}\n        {{- '<|im_start|>system\\n' + content + '<|im_end|>\\n' }}\n    {%- endif %}\n{%- endif %}\n{%- set ns = namespace(multi_step_tool=true, last_query_index=messages|length - 1) %}\n{%- for message in messages[::-1] %}\n    {%- set index = (messages|length - 1) - loop.index0 %}\n    {%- if ns.multi_step_tool and message.role == \"user\" %}\n        {%- set content = render_content(message.content, false)|trim %}\n        {%- if not(content.startswith('<tool_response>') and content.endswith('</tool_response>')) %}\n            {%- set ns.multi_step_tool = false %}\n            {%- set ns.last_query_index = index %}\n        {%- endif %}\n    {%- endif %}\n{%- endfor %}\n{%- if ns.multi_step_tool %}\n    {{- raise_exception('No user query found in messages.') }}\n{%- endif %}\n{%- for message in messages %}\n    {%- set content = render_content(message.content, true)|trim %}\n    {%- if message.role == \"system\" %}\n        {%- if not loop.first %}\n            {{- raise_exception('System message must be at the beginning.') }}\n        {%- endif %}\n    {%- elif message.role == \"user\" %}\n        {{- '<|im_start|>' + message.role + '\\n' + content + '<|im_end|>' + '\\n' }}\n    {%- elif message.role == \"assistant\" %}\n        {%- set reasoning_content = '' %}\n        {%- if message.reasoning_content is string %}\n            {%- set reasoning_content = message.reasoning_content %}\n        {%- else %}\n            {%- if '</think>' in content %}\n                {%- set reasoning_content = content.split('</think>')[0].rstrip('\\n').split('<think>')[-1].lstrip('\\n') %}\n                {%- set content = content.split('</think>')[-1].lstrip('\\n') %}\n            {%- endif %}\n        {%- endif %}\n        {%- set reasoning_content = reasoning_content|trim %}\n        {%- if loop.index0 > ns.last_query_index %}\n            {{- '<|im_start|>' + message.role + '\\n<think>\\n' + reasoning_content + '\\n</think>\\n\\n' + content }}\n        {%- else %}\n            {{- '<|im_start|>' + message.role + '\\n' + content }}\n        {%- endif %}\n        {%- if message.tool_calls and message.tool_calls is iterable and message.tool_calls is not mapping %}\n            {%- for tool_call in message.tool_calls %}\n                {%- if tool_call.function is defined %}\n                    {%- set tool_call = tool_call.function %}\n                {%- endif %}\n                {%- if loop.first %}\n                    {%- if content|trim %}\n                        {{- '\\n\\n<tool_call>\\n<function=' + tool_call.name + '>\\n' }}\n                    {%- else %}\n                        {{- '<tool_call>\\n<function=' + tool_call.name + '>\\n' }}\n                    {%- endif %}\n                {%- else %}\n                    {{- '\\n<tool_call>\\n<function=' + tool_call.name + '>\\n' }}\n                {%- endif %}\n                {%- if tool_call.arguments is defined %}\n                    {%- for args_name, args_value in tool_call.arguments|items %}\n                        {{- '<parameter=' + args_name + '>\\n' }}\n                        {%- set args_value = args_value | tojson | safe if args_value is mapping or (args_value is sequence and args_value is not string) else args_value | string %}\n                        {{- args_value }}\n                        {{- '\\n</parameter>\\n' }}\n                    {%- endfor %}\n                {%- endif %}\n                {{- '</function>\\n</tool_call>' }}\n            {%- endfor %}\n        {%- endif %}\n        {{- '<|im_end|>\\n' }}\n    {%- elif message.role == \"tool\" %}\n        {%- if loop.previtem and loop.previtem.role != \"tool\" %}\n            {{- '<|im_start|>user' }}\n        {%- endif %}\n        {{- '\\n<tool_response>\\n' }}\n        {{- content }}\n        {{- '\\n</tool_response>' }}\n        {%- if not loop.last and loop.nextitem.role != \"tool\" %}\n            {{- '<|im_end|>\\n' }}\n        {%- elif loop.last %}\n            {{- '<|im_end|>\\n' }}\n        {%- endif %}\n    {%- else %}\n        {{- raise_exception('Unexpected message role.') }}\n    {%- endif %}\n{%- endfor %}\n{%- if add_generation_prompt %}\n    {{- '<|im_start|>assistant\\n' }}\n    {%- if enable_thinking is defined and enable_thinking is false %}\n        {{- '<think>\\n\\n</think>\\n\\n' }}\n    {%- else %}\n        {{- '<think>\\n' }}\n    {%- endif %}\n{%- endif %}"
+    "chat_template_jinja": "{%- if tools %}\n    {{- '<|im_start|>system\\n' }}\n    {%- if messages[0].role == 'system' %}\n        {%- if messages[0].content is string %}\n            {{- messages[0].content }}\n        {%- else %}\n            {%- for content in messages[0].content %}\n                {%- if 'text' in content %}\n                    {{- content.text }}\n                {%- endif %}\n            {%- endfor %}\n        {%- endif %}\n        {{- '\\n\\n' }}\n    {%- endif %}\n    {{- \"# Tools\\n\\nYou may call one or more functions to assist with the user query.\\n\\nYou are provided with function signatures within <tools></tools> XML tags:\\n<tools>\" }}\n    {%- for tool in tools %}\n        {{- \"\\n\" }}\n        {{- tool | tojson }}\n    {%- endfor %}\n    {{- \"\\n</tools>\\n\\nFor each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\\n<tool_call>\\n{\\\"name\\\": <function-name>, \\\"arguments\\\": <args-json-object>}\\n</tool_call><|im_end|>\\n\" }}\n{%- else %}\n    {%- if messages[0].role == 'system' %}\n        {{- '<|im_start|>system\\n' }}\n        {%- if messages[0].content is string %}\n            {{- messages[0].content }}\n        {%- else %}\n            {%- for content in messages[0].content %}\n                {%- if 'text' in content %}\n                    {{- content.text }}\n                {%- endif %}\n            {%- endfor %}\n        {%- endif %}\n        {{- '<|im_end|>\\n' }}\n    {%- endif %}\n{%- endif %}\n{%- set image_count = namespace(value=0) %}\n{%- set video_count = namespace(value=0) %}\n{%- for message in messages %}\n    {%- if message.role == \"user\" %}\n        {{- '<|im_start|>' + message.role + '\\n' }}\n        {%- if message.content is string %}\n            {{- message.content }}\n        {%- else %}\n            {%- for content in message.content %}\n                {%- if content.type == 'image' or 'image' in content or 'image_url' in content %}\n                    {%- set image_count.value = image_count.value + 1 %}\n                    {%- if add_vision_id %}Picture {{ image_count.value }}: {% endif -%}\n                    <|vision_start|><|image_pad|><|vision_end|>\n                {%- elif content.type == 'video' or 'video' in content %}\n                    {%- set video_count.value = video_count.value + 1 %}\n                    {%- if add_vision_id %}Video {{ video_count.value }}: {% endif -%}\n                    <|vision_start|><|video_pad|><|vision_end|>\n                {%- elif 'text' in content %}\n                    {{- content.text }}\n                {%- endif %}\n            {%- endfor %}\n        {%- endif %}\n        {{- '<|im_end|>\\n' }}\n    {%- elif message.role == \"assistant\" %}\n        {{- '<|im_start|>' + message.role + '\\n' }}\n        {%- if message.content is string %}\n            {{- message.content }}\n        {%- else %}\n            {%- for content_item in message.content %}\n                {%- if 'text' in content_item %}\n                    {{- content_item.text }}\n                {%- endif %}\n            {%- endfor %}\n        {%- endif %}\n        {%- if message.tool_calls %}\n            {%- for tool_call in message.tool_calls %}\n                {%- if (loop.first and message.content) or (not loop.first) %}\n                    {{- '\\n' }}\n                {%- endif %}\n                {%- if tool_call.function %}\n                    {%- set tool_call = tool_call.function %}\n                {%- endif %}\n                {{- '<tool_call>\\n{\"name\": \"' }}\n                {{- tool_call.name }}\n                {{- '\", \"arguments\": ' }}\n                {%- if tool_call.arguments is string %}\n                    {{- tool_call.arguments }}\n                {%- else %}\n                    {{- tool_call.arguments | tojson }}\n                {%- endif %}\n                {{- '}\\n</tool_call>' }}\n            {%- endfor %}\n        {%- endif %}\n        {{- '<|im_end|>\\n' }}\n    {%- elif message.role == \"tool\" %}\n        {%- if loop.first or (messages[loop.index0 - 1].role != \"tool\") %}\n            {{- '<|im_start|>user' }}\n        {%- endif %}\n        {{- '\\n<tool_response>\\n' }}\n        {%- if message.content is string %}\n            {{- message.content }}\n        {%- else %}\n            {%- for content in message.content %}\n                {%- if content.type == 'image' or 'image' in content or 'image_url' in content %}\n                    {%- set image_count.value = image_count.value + 1 %}\n                    {%- if add_vision_id %}Picture {{ image_count.value }}: {% endif -%}\n                    <|vision_start|><|image_pad|><|vision_end|>\n                {%- elif content.type == 'video' or 'video' in content %}\n                    {%- set video_count.value = video_count.value + 1 %}\n                    {%- if add_vision_id %}Video {{ video_count.value }}: {% endif -%}\n                    <|vision_start|><|video_pad|><|vision_end|>\n                {%- elif 'text' in content %}\n                    {{- content.text }}\n                {%- endif %}\n            {%- endfor %}\n        {%- endif %}\n        {{- '\\n</tool_response>' }}\n        {%- if loop.last or (messages[loop.index0 + 1].role != \"tool\") %}\n            {{- '<|im_end|>\\n' }}\n        {%- endif %}\n    {%- endif %}\n{%- endfor %}\n{%- if add_generation_prompt %}\n    {{- '<|im_start|>assistant\\n' }}\n{%- endif %}\n"
    },
    "safetensors": {
     "parameters": {
-     "U32": 4204789760,
-     "BF16": 334475776
+     "U32": 1720451072,
+     "BF16": 407080960
     },
-    "total": 4539265536
+    "total": 2127532032
    },
    "siblings": [
     {
@@ -185,6 +221,18 @@
      "rfilename": "README.md"
     },
     {
+     "rfilename": "assets/banner.png"
+    },
+    {
+     "rfilename": "assets/see-approval.png"
+    },
+    {
+     "rfilename": "assets/see-tool.png"
+    },
+    {
+     "rfilename": "assets/see-vision.png"
+    },
+    {
      "rfilename": "chat_template.jinja"
     },
     {
@@ -192,6 +240,9 @@
     },
     {
      "rfilename": "generation_config.json"
+    },
+    {
+     "rfilename": "merges.txt"
     },
     {
      "rfilename": "model.safetensors"
@@ -204,6 +255,9 @@
     },
     {
      "rfilename": "processor_config.json"
+    },
+    {
+     "rfilename": "scorecard.json"
     },
     {
      "rfilename": "tokenizer.json"
@@ -220,12 +274,119 @@
    ]
   },
   {
+   "id": "cagataydev/loopl-vl-2b",
+   "private": false,
+   "gated": false,
+   "pipeline_tag": "image-text-to-text",
+   "lastModified": "2026-10-07T04:37:17.000Z",
+   "likes": 0,
+   "downloads": 0,
+   "library_name": "transformers",
+   "tags": [
+    "transformers",
+    "safetensors",
+    "qwen3_vl",
+    "image-text-to-text",
+    "loopl",
+    "on-device",
+    "agent",
+    "tool-calling",
+    "qwen3-vl",
+    "sft",
+    "vision",
+    "conversational",
+    "en",
+    "tr",
+    "dataset:cagataydev/loopl-train",
+    "base_model:Qwen/Qwen3-VL-2B-Instruct",
+    "base_model:finetune:Qwen/Qwen3-VL-2B-Instruct",
+    "license:apache-2.0",
+    "endpoints_compatible",
+    "region:us"
+   ],
+   "config": {
+    "architectures": [
+     "Qwen3VLForConditionalGeneration"
+    ],
+    "model_type": "qwen3_vl",
+    "tokenizer_config": {
+     "bos_token": null,
+     "eos_token": "<|im_end|>",
+     "pad_token": "<|endoftext|>",
+     "unk_token": null
+    },
+    "chat_template_jinja": "{%- if tools %}\n    {{- '<|im_start|>system\\n' }}\n    {%- if messages[0].role == 'system' %}\n        {%- if messages[0].content is string %}\n            {{- messages[0].content }}\n        {%- else %}\n            {%- for content in messages[0].content %}\n                {%- if 'text' in content %}\n                    {{- content.text }}\n                {%- endif %}\n            {%- endfor %}\n        {%- endif %}\n        {{- '\\n\\n' }}\n    {%- endif %}\n    {{- \"# Tools\\n\\nYou may call one or more functions to assist with the user query.\\n\\nYou are provided with function signatures within <tools></tools> XML tags:\\n<tools>\" }}\n    {%- for tool in tools %}\n        {{- \"\\n\" }}\n        {{- tool | tojson }}\n    {%- endfor %}\n    {{- \"\\n</tools>\\n\\nFor each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\\n<tool_call>\\n{\\\"name\\\": <function-name>, \\\"arguments\\\": <args-json-object>}\\n</tool_call><|im_end|>\\n\" }}\n{%- else %}\n    {%- if messages[0].role == 'system' %}\n        {{- '<|im_start|>system\\n' }}\n        {%- if messages[0].content is string %}\n            {{- messages[0].content }}\n        {%- else %}\n            {%- for content in messages[0].content %}\n                {%- if 'text' in content %}\n                    {{- content.text }}\n                {%- endif %}\n            {%- endfor %}\n        {%- endif %}\n        {{- '<|im_end|>\\n' }}\n    {%- endif %}\n{%- endif %}\n{%- set image_count = namespace(value=0) %}\n{%- set video_count = namespace(value=0) %}\n{%- for message in messages %}\n    {%- if message.role == \"user\" %}\n        {{- '<|im_start|>' + message.role + '\\n' }}\n        {%- if message.content is string %}\n            {{- message.content }}\n        {%- else %}\n            {%- for content in message.content %}\n                {%- if content.type == 'image' or 'image' in content or 'image_url' in content %}\n                    {%- set image_count.value = image_count.value + 1 %}\n                    {%- if add_vision_id %}Picture {{ image_count.value }}: {% endif -%}\n                    <|vision_start|><|image_pad|><|vision_end|>\n                {%- elif content.type == 'video' or 'video' in content %}\n                    {%- set video_count.value = video_count.value + 1 %}\n                    {%- if add_vision_id %}Video {{ video_count.value }}: {% endif -%}\n                    <|vision_start|><|video_pad|><|vision_end|>\n                {%- elif 'text' in content %}\n                    {{- content.text }}\n                {%- endif %}\n            {%- endfor %}\n        {%- endif %}\n        {{- '<|im_end|>\\n' }}\n    {%- elif message.role == \"assistant\" %}\n        {{- '<|im_start|>' + message.role + '\\n' }}\n        {%- if message.content is string %}\n            {{- message.content }}\n        {%- else %}\n            {%- for content_item in message.content %}\n                {%- if 'text' in content_item %}\n                    {{- content_item.text }}\n                {%- endif %}\n            {%- endfor %}\n        {%- endif %}\n        {%- if message.tool_calls %}\n            {%- for tool_call in message.tool_calls %}\n                {%- if (loop.first and message.content) or (not loop.first) %}\n                    {{- '\\n' }}\n                {%- endif %}\n                {%- if tool_call.function %}\n                    {%- set tool_call = tool_call.function %}\n                {%- endif %}\n                {{- '<tool_call>\\n{\"name\": \"' }}\n                {{- tool_call.name }}\n                {{- '\", \"arguments\": ' }}\n                {%- if tool_call.arguments is string %}\n                    {{- tool_call.arguments }}\n                {%- else %}\n                    {{- tool_call.arguments | tojson }}\n                {%- endif %}\n                {{- '}\\n</tool_call>' }}\n            {%- endfor %}\n        {%- endif %}\n        {{- '<|im_end|>\\n' }}\n    {%- elif message.role == \"tool\" %}\n        {%- if loop.first or (messages[loop.index0 - 1].role != \"tool\") %}\n            {{- '<|im_start|>user' }}\n        {%- endif %}\n        {{- '\\n<tool_response>\\n' }}\n        {%- if message.content is string %}\n            {{- message.content }}\n        {%- else %}\n            {%- for content in message.content %}\n                {%- if content.type == 'image' or 'image' in content or 'image_url' in content %}\n                    {%- set image_count.value = image_count.value + 1 %}\n                    {%- if add_vision_id %}Picture {{ image_count.value }}: {% endif -%}\n                    <|vision_start|><|image_pad|><|vision_end|>\n                {%- elif content.type == 'video' or 'video' in content %}\n                    {%- set video_count.value = video_count.value + 1 %}\n                    {%- if add_vision_id %}Video {{ video_count.value }}: {% endif -%}\n                    <|vision_start|><|video_pad|><|vision_end|>\n                {%- elif 'text' in content %}\n                    {{- content.text }}\n                {%- endif %}\n            {%- endfor %}\n        {%- endif %}\n        {{- '\\n</tool_response>' }}\n        {%- if loop.last or (messages[loop.index0 + 1].role != \"tool\") %}\n            {{- '<|im_end|>\\n' }}\n        {%- endif %}\n    {%- endif %}\n{%- endfor %}\n{%- if add_generation_prompt %}\n    {{- '<|im_start|>assistant\\n' }}\n{%- endif %}\n"
+   },
+   "safetensors": {
+    "parameters": {
+     "BF16": 2127532032
+    },
+    "total": 2127532032
+   },
+   "siblings": [
+    {
+     "rfilename": ".gitattributes"
+    },
+    {
+     "rfilename": "README.md"
+    },
+    {
+     "rfilename": "assets/banner.png"
+    },
+    {
+     "rfilename": "assets/see-approval.png"
+    },
+    {
+     "rfilename": "assets/see-tool.png"
+    },
+    {
+     "rfilename": "assets/see-vision.png"
+    },
+    {
+     "rfilename": "chat_template.jinja"
+    },
+    {
+     "rfilename": "config.json"
+    },
+    {
+     "rfilename": "generation_config.json"
+    },
+    {
+     "rfilename": "merges.txt"
+    },
+    {
+     "rfilename": "model.safetensors"
+    },
+    {
+     "rfilename": "preprocessor_config.json"
+    },
+    {
+     "rfilename": "scorecard.json"
+    },
+    {
+     "rfilename": "tokenizer.json"
+    },
+    {
+     "rfilename": "tokenizer_config.json"
+    },
+    {
+     "rfilename": "train_summary.json"
+    },
+    {
+     "rfilename": "video_preprocessor_config.json"
+    },
+    {
+     "rfilename": "vocab.json"
+    }
+   ]
+  },
+  {
    "id": "cagataydev/loopl-4b",
    "private": false,
    "gated": false,
    "pipeline_tag": "image-text-to-text",
-   "lastModified": "2026-10-06T18:10:44.000Z",
-   "likes": 0,
+   "lastModified": "2026-10-06T19:07:44.000Z",
+   "likes": 1,
    "downloads": 0,
    "library_name": "transformers",
    "tags": [
@@ -277,6 +438,18 @@
      "rfilename": "README.md"
     },
     {
+     "rfilename": "assets/banner.png"
+    },
+    {
+     "rfilename": "assets/see-approval.png"
+    },
+    {
+     "rfilename": "assets/see-tool.png"
+    },
+    {
+     "rfilename": "assets/see-vision.png"
+    },
+    {
      "rfilename": "chat_template.jinja"
     },
     {
@@ -313,8 +486,8 @@
    "private": false,
    "gated": false,
    "pipeline_tag": "image-text-to-text",
-   "lastModified": "2026-10-06T18:10:25.000Z",
-   "likes": 0,
+   "lastModified": "2026-10-06T19:07:35.000Z",
+   "likes": 1,
    "downloads": 6,
    "library_name": "mlx",
    "tags": [
@@ -370,6 +543,18 @@
      "rfilename": "README.md"
     },
     {
+     "rfilename": "assets/banner.png"
+    },
+    {
+     "rfilename": "assets/see-approval.png"
+    },
+    {
+     "rfilename": "assets/see-tool.png"
+    },
+    {
+     "rfilename": "assets/see-vision.png"
+    },
+    {
      "rfilename": "chat_template.jinja"
     },
     {
@@ -409,8 +594,8 @@
    "private": false,
    "gated": false,
    "pipeline_tag": "image-text-to-text",
-   "lastModified": "2026-10-06T18:10:23.000Z",
-   "likes": 0,
+   "lastModified": "2026-10-06T19:07:33.000Z",
+   "likes": 1,
    "downloads": 4,
    "library_name": "transformers",
    "tags": [
@@ -462,6 +647,18 @@
      "rfilename": "README.md"
     },
     {
+     "rfilename": "assets/banner.png"
+    },
+    {
+     "rfilename": "assets/see-approval.png"
+    },
+    {
+     "rfilename": "assets/see-tool.png"
+    },
+    {
+     "rfilename": "assets/see-vision.png"
+    },
+    {
      "rfilename": "chat_template.jinja"
     },
     {
@@ -498,8 +695,8 @@
    "private": false,
    "gated": false,
    "pipeline_tag": "image-text-to-text",
-   "lastModified": "2026-10-06T18:10:10.000Z",
-   "likes": 0,
+   "lastModified": "2026-10-06T19:07:25.000Z",
+   "likes": 1,
    "downloads": 4,
    "library_name": "mlx",
    "tags": [
@@ -555,6 +752,18 @@
      "rfilename": "README.md"
     },
     {
+     "rfilename": "assets/banner.png"
+    },
+    {
+     "rfilename": "assets/see-approval.png"
+    },
+    {
+     "rfilename": "assets/see-tool.png"
+    },
+    {
+     "rfilename": "assets/see-vision.png"
+    },
+    {
      "rfilename": "chat_template.jinja"
     },
     {
@@ -594,8 +803,8 @@
    "private": false,
    "gated": false,
    "pipeline_tag": "image-text-to-text",
-   "lastModified": "2026-10-06T18:10:09.000Z",
-   "likes": 0,
+   "lastModified": "2026-10-06T19:07:22.000Z",
+   "likes": 1,
    "downloads": 0,
    "library_name": "transformers",
    "tags": [
@@ -647,6 +856,18 @@
      "rfilename": "README.md"
     },
     {
+     "rfilename": "assets/banner.png"
+    },
+    {
+     "rfilename": "assets/see-approval.png"
+    },
+    {
+     "rfilename": "assets/see-tool.png"
+    },
+    {
+     "rfilename": "assets/see-vision.png"
+    },
+    {
      "rfilename": "chat_template.jinja"
     },
     {
@@ -675,6 +896,114 @@
     },
     {
      "rfilename": "video_preprocessor_config.json"
+    }
+   ]
+  },
+  {
+   "id": "cagataydev/loopl-4b-4bit",
+   "private": false,
+   "gated": false,
+   "pipeline_tag": "image-text-to-text",
+   "lastModified": "2026-10-06T19:06:34.000Z",
+   "likes": 1,
+   "downloads": 0,
+   "library_name": "mlx",
+   "tags": [
+    "mlx",
+    "safetensors",
+    "qwen3_5",
+    "loopl",
+    "on-device",
+    "agent",
+    "tool-calling",
+    "qwen3.5",
+    "sft",
+    "vision",
+    "image-text-to-text",
+    "4-bit",
+    "conversational",
+    "en",
+    "tr",
+    "dataset:cagataydev/loopl-train",
+    "base_model:cagataydev/loopl-4b",
+    "base_model:quantized:cagataydev/loopl-4b",
+    "license:apache-2.0",
+    "region:us"
+   ],
+   "config": {
+    "architectures": [
+     "Qwen3_5ForConditionalGeneration"
+    ],
+    "model_type": "qwen3_5",
+    "quantization_config": {
+     "bits": 4
+    },
+    "tokenizer_config": {
+     "bos_token": null,
+     "eos_token": "<|im_end|>",
+     "pad_token": "<|endoftext|>",
+     "unk_token": null
+    },
+    "chat_template_jinja": "{%- set image_count = namespace(value=0) %}\n{%- set video_count = namespace(value=0) %}\n{%- macro render_content(content, do_vision_count, is_system_content=false) %}\n    {%- if content is string %}\n        {{- content }}\n    {%- elif content is iterable and content is not mapping %}\n        {%- for item in content %}\n            {%- if 'image' in item or 'image_url' in item or item.type == 'image' %}\n                {%- if is_system_content %}\n                    {{- raise_exception('System message cannot contain images.') }}\n                {%- endif %}\n                {%- if do_vision_count %}\n                    {%- set image_count.value = image_count.value + 1 %}\n                {%- endif %}\n                {%- if add_vision_id %}\n                    {{- 'Picture ' ~ image_count.value ~ ': ' }}\n                {%- endif %}\n                {{- '<|vision_start|><|image_pad|><|vision_end|>' }}\n            {%- elif 'video' in item or item.type == 'video' %}\n                {%- if is_system_content %}\n                    {{- raise_exception('System message cannot contain videos.') }}\n                {%- endif %}\n                {%- if do_vision_count %}\n                    {%- set video_count.value = video_count.value + 1 %}\n                {%- endif %}\n                {%- if add_vision_id %}\n                    {{- 'Video ' ~ video_count.value ~ ': ' }}\n                {%- endif %}\n                {{- '<|vision_start|><|video_pad|><|vision_end|>' }}\n            {%- elif 'text' in item %}\n                {{- item.text }}\n            {%- else %}\n                {{- raise_exception('Unexpected item type in content.') }}\n            {%- endif %}\n        {%- endfor %}\n    {%- elif content is none or content is undefined %}\n        {{- '' }}\n    {%- else %}\n        {{- raise_exception('Unexpected content type.') }}\n    {%- endif %}\n{%- endmacro %}\n{%- if not messages %}\n    {{- raise_exception('No messages provided.') }}\n{%- endif %}\n{%- if tools and tools is iterable and tools is not mapping %}\n    {{- '<|im_start|>system\\n' }}\n    {{- \"# Tools\\n\\nYou have access to the following functions:\\n\\n<tools>\" }}\n    {%- for tool in tools %}\n        {{- \"\\n\" }}\n        {{- tool | tojson }}\n    {%- endfor %}\n    {{- \"\\n</tools>\" }}\n    {{- '\\n\\nIf you choose to call a function ONLY reply in the following format with NO suffix:\\n\\n<tool_call>\\n<function=example_function_name>\\n<parameter=example_parameter_1>\\nvalue_1\\n</parameter>\\n<parameter=example_parameter_2>\\nThis is the value for the second parameter\\nthat can span\\nmultiple lines\\n</parameter>\\n</function>\\n</tool_call>\\n\\n<IMPORTANT>\\nReminder:\\n- Function calls MUST follow the specified format: an inner <function=...></function> block must be nested within <tool_call></tool_call> XML tags\\n- Required parameters MUST be specified\\n- You may provide optional reasoning for your function call in natural language BEFORE the function call, but NOT after\\n- If there is no function call available, answer the question like normal with your current knowledge and do not tell the user about function calls\\n</IMPORTANT>' }}\n    {%- if messages[0].role == 'system' %}\n        {%- set content = render_content(messages[0].content, false, true)|trim %}\n        {%- if content %}\n            {{- '\\n\\n' + content }}\n        {%- endif %}\n    {%- endif %}\n    {{- '<|im_end|>\\n' }}\n{%- else %}\n    {%- if messages[0].role == 'system' %}\n        {%- set content = render_content(messages[0].content, false, true)|trim %}\n        {{- '<|im_start|>system\\n' + content + '<|im_end|>\\n' }}\n    {%- endif %}\n{%- endif %}\n{%- set ns = namespace(multi_step_tool=true, last_query_index=messages|length - 1) %}\n{%- for message in messages[::-1] %}\n    {%- set index = (messages|length - 1) - loop.index0 %}\n    {%- if ns.multi_step_tool and message.role == \"user\" %}\n        {%- set content = render_content(message.content, false)|trim %}\n        {%- if not(content.startswith('<tool_response>') and content.endswith('</tool_response>')) %}\n            {%- set ns.multi_step_tool = false %}\n            {%- set ns.last_query_index = index %}\n        {%- endif %}\n    {%- endif %}\n{%- endfor %}\n{%- if ns.multi_step_tool %}\n    {{- raise_exception('No user query found in messages.') }}\n{%- endif %}\n{%- for message in messages %}\n    {%- set content = render_content(message.content, true)|trim %}\n    {%- if message.role == \"system\" %}\n        {%- if not loop.first %}\n            {{- raise_exception('System message must be at the beginning.') }}\n        {%- endif %}\n    {%- elif message.role == \"user\" %}\n        {{- '<|im_start|>' + message.role + '\\n' + content + '<|im_end|>' + '\\n' }}\n    {%- elif message.role == \"assistant\" %}\n        {%- set reasoning_content = '' %}\n        {%- if message.reasoning_content is string %}\n            {%- set reasoning_content = message.reasoning_content %}\n        {%- else %}\n            {%- if '</think>' in content %}\n                {%- set reasoning_content = content.split('</think>')[0].rstrip('\\n').split('<think>')[-1].lstrip('\\n') %}\n                {%- set content = content.split('</think>')[-1].lstrip('\\n') %}\n            {%- endif %}\n        {%- endif %}\n        {%- set reasoning_content = reasoning_content|trim %}\n        {%- if loop.index0 > ns.last_query_index %}\n            {{- '<|im_start|>' + message.role + '\\n<think>\\n' + reasoning_content + '\\n</think>\\n\\n' + content }}\n        {%- else %}\n            {{- '<|im_start|>' + message.role + '\\n' + content }}\n        {%- endif %}\n        {%- if message.tool_calls and message.tool_calls is iterable and message.tool_calls is not mapping %}\n            {%- for tool_call in message.tool_calls %}\n                {%- if tool_call.function is defined %}\n                    {%- set tool_call = tool_call.function %}\n                {%- endif %}\n                {%- if loop.first %}\n                    {%- if content|trim %}\n                        {{- '\\n\\n<tool_call>\\n<function=' + tool_call.name + '>\\n' }}\n                    {%- else %}\n                        {{- '<tool_call>\\n<function=' + tool_call.name + '>\\n' }}\n                    {%- endif %}\n                {%- else %}\n                    {{- '\\n<tool_call>\\n<function=' + tool_call.name + '>\\n' }}\n                {%- endif %}\n                {%- if tool_call.arguments is defined %}\n                    {%- for args_name, args_value in tool_call.arguments|items %}\n                        {{- '<parameter=' + args_name + '>\\n' }}\n                        {%- set args_value = args_value | tojson | safe if args_value is mapping or (args_value is sequence and args_value is not string) else args_value | string %}\n                        {{- args_value }}\n                        {{- '\\n</parameter>\\n' }}\n                    {%- endfor %}\n                {%- endif %}\n                {{- '</function>\\n</tool_call>' }}\n            {%- endfor %}\n        {%- endif %}\n        {{- '<|im_end|>\\n' }}\n    {%- elif message.role == \"tool\" %}\n        {%- if loop.previtem and loop.previtem.role != \"tool\" %}\n            {{- '<|im_start|>user' }}\n        {%- endif %}\n        {{- '\\n<tool_response>\\n' }}\n        {{- content }}\n        {{- '\\n</tool_response>' }}\n        {%- if not loop.last and loop.nextitem.role != \"tool\" %}\n            {{- '<|im_end|>\\n' }}\n        {%- elif loop.last %}\n            {{- '<|im_end|>\\n' }}\n        {%- endif %}\n    {%- else %}\n        {{- raise_exception('Unexpected message role.') }}\n    {%- endif %}\n{%- endfor %}\n{%- if add_generation_prompt %}\n    {{- '<|im_start|>assistant\\n' }}\n    {%- if enable_thinking is defined and enable_thinking is false %}\n        {{- '<think>\\n\\n</think>\\n\\n' }}\n    {%- else %}\n        {{- '<think>\\n' }}\n    {%- endif %}\n{%- endif %}"
+   },
+   "safetensors": {
+    "parameters": {
+     "U32": 4204789760,
+     "BF16": 334475776
+    },
+    "total": 4539265536
+   },
+   "siblings": [
+    {
+     "rfilename": ".gitattributes"
+    },
+    {
+     "rfilename": "README.md"
+    },
+    {
+     "rfilename": "assets/banner.png"
+    },
+    {
+     "rfilename": "assets/see-approval.png"
+    },
+    {
+     "rfilename": "assets/see-tool.png"
+    },
+    {
+     "rfilename": "assets/see-vision.png"
+    },
+    {
+     "rfilename": "chat_template.jinja"
+    },
+    {
+     "rfilename": "config.json"
+    },
+    {
+     "rfilename": "generation_config.json"
+    },
+    {
+     "rfilename": "model.safetensors"
+    },
+    {
+     "rfilename": "model.safetensors.index.json"
+    },
+    {
+     "rfilename": "preprocessor_config.json"
+    },
+    {
+     "rfilename": "processor_config.json"
+    },
+    {
+     "rfilename": "tokenizer.json"
+    },
+    {
+     "rfilename": "tokenizer_config.json"
+    },
+    {
+     "rfilename": "video_preprocessor_config.json"
+    },
+    {
+     "rfilename": "vocab.json"
     }
    ]
   }

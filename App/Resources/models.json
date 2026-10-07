@@ -475,6 +475,23 @@
       "notes": "loopl v1.1 GGUF (text-only, llama.cpp b11401 --no-mtp; trained on loopl-train v2.1 rev db6fa452 — identity/bio family, file cards, repair trajectories). Private: needs the user's HF token."
     },
     {
+      "id": "loopl-vl-2b-4bit",
+      "featured": false,
+      "name": "loopl-vl 2B",
+      "repo": "cagataydev/loopl-vl-2b-4bit",
+      "runtime": "mlx",
+      "family": "hermes",
+      "params_b": 2.0,
+      "size_bytes": 1798010681,
+      "ctx_nominal": 262144,
+      "ctx_usable_8gb": 12288,
+      "min_ram_gb": 3,
+      "gated": false,
+      "vision": true,
+      "thinking": false,
+      "notes": "loopl-vl v1 — Qwen3-VL-2B-Instruct post-tuned by Cagatay Cali on the same loopl-train data as loopl v1.1 (rev db6fa452: agent loop, tools, identity + who Cagatay Cali is). Sees pictures AND video natively (frames in; the app transcribes the audio track). Vision tower kept (mlx_vlm export). No thinking blocks. Public — no token. bf16 base for Train your own: cagataydev/loopl-vl-2b."
+    },
+    {
       "id": "loopl-4b-4bit",
       "featured": true,
       "name": "loopl 4B",
