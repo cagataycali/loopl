@@ -22,6 +22,7 @@ Fewer tools make a better agent — every tool is one more thing a small model c
 | `http` | any HTTPS request — writes ask first; refused in offline mode |
 | `device_info` | battery, storage, model, OS |
 | `manage_messages` | the model tidies its **own** context in a long chat — `compact` drops old tool calls and results but keeps every message's text, `drop`/`clear` remove old turns, `stats`/`list` show the size. The chat on screen never changes; the transcript gets one quiet line, *"2 turns compacted by the agent · your history is unchanged"*. No approval card — it edits only what the model sees |
+| `system_prompt` | the model reads or changes its **own** system prompt when you ask for a standing rule — *"from now on always answer in Turkish"* → `append`; *"what are your instructions?"* → `get`; `set` replaces, `reset` restores the default. Every change stops at an approval card that shows **old → new**; after you approve, it applies from the model's very next step and to every new conversation. Settings › System prompt then reads *changed by the agent · 8:25 PM* with one-tap **Revert** (the last five prompts are kept) |
 | `generate_image` | a picture from a prompt (Image Playground) |
 | `generate_voice` | speaks with on-device voices, Personal Voice included |
 | `transcribe` | speech to text, offline — tap the mic, record, send; the model sees `[audio attached: …]` and decides to call it |

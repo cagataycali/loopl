@@ -230,6 +230,26 @@ enum DesignFixture {
             t.apply(.startEventLoop(cycle: 2))
             t.apply(.text("It's **06:14** on Sunday morning in Istanbul, and 23 × 47 = **1081**."))
             t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("It's **06:14** on Sunday morning in Istanbul, and 23 × 47 = **1081**."), metrics: EventLoopMetrics())))
+        case "sysprompt":
+            // P6-F system_prompt: the user asks for a standing rule; the model calls system_prompt append and the turn stops
+            // at the approval card with the old → new preview. `--design-sysprompt approved` settles the card: tool row,
+            // ONE quiet marker, and Settings shows "changed by the agent" + Revert (see `applySystemPromptFixture`).
+            t.user("From now on always answer in Turkish, even when I write in English.")
+            t.apply(.startEventLoop(cycle: 1))
+            let sp = ToolUse(toolUseId: "tooluse_sp1", name: "system_prompt", input: ["action": .string("append"), "text": .string("Always answer in Turkish, even when the user writes in English.")])
+            t.apply(.modelMessage(.assistant(text: "", toolUses: [sp])))
+            let store = InMemorySystemPromptStore(prompt: AppSettings.defaultSystemPrompt)
+            t.apply(.approvalRequested(SystemPromptTool(store: store).requiresApproval(for: sp.input)!.with(id: sp.toolUseId)))
+            if value("--design-sysprompt") == "approved" {
+                let change = SystemPromptChange(action: .append, before: AppSettings.defaultSystemPrompt, after: AppSettings.defaultSystemPrompt + "\n\nAlways answer in Turkish, even when the user writes in English.", at: Date().addingTimeInterval(-90))
+                t.apply(.approvalResolved(id: sp.toolUseId, .approve))
+                t.apply(.toolStarted(sp))
+                t.apply(.systemPromptChanged(change))
+                t.apply(.toolResult(ToolResult(toolUseId: sp.toolUseId, name: "system_prompt", content: "System prompt extended (731 → 798 chars). It applies from your next step and to every new conversation; the user can revert it in Settings › System prompt.", durationMs: 0.4)))
+                t.apply(.startEventLoop(cycle: 2)); t.apply(.text("Tamam — bundan sonra İngilizce yazsanız bile her zaman Türkçe cevap vereceğim."))
+                t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("Tamam."), metrics: EventLoopMetrics())))
+                if case .agent = settings.systemPromptOrigin {} else { settings.applyAgentChange(change) }
+            }
         case "compacted":
             // P6-B manage_messages: a long chat where the model tidies its own context mid-turn. The transcript keeps every
             // earlier row (the user's record) and shows ONE quiet marker; the tool row above it carries the tool's own words.

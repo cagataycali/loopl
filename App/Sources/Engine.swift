@@ -12,7 +12,55 @@ import LooplAppleTools
 @MainActor @Observable
 public final class AppSettings {
     public var offline: Bool { didSet { NetworkPolicy.setOffline(offline) } }
-    public var systemPrompt: String { didSet { UserDefaults.standard.set(systemPrompt, forKey: "loopl.system") } }
+    public var systemPrompt: String {
+        didSet {
+            UserDefaults.standard.set(systemPrompt, forKey: "loopl.system")
+            // A keystroke in Settings (or Reset to default) is the user's; the agent's writes come through `applyAgentChange`.
+            if !applyingAgentChange { systemPromptOrigin = systemPrompt == Self.defaultSystemPrompt ? .default : .user }
+        }
+    }
+    /// Where the current prompt came from — Settings shows "changed by the agent · 00:41" with Revert (Phase 6 F).
+    public var systemPromptOrigin: SystemPromptOrigin { didSet { UserDefaults.standard.set(try? JSONEncoder().encode(systemPromptOrigin), forKey: Self.originKey) } }
+    /// The prompts an agent change replaced, newest last — at most `historyLimit`, so Revert is always safe.
+    public private(set) var systemPromptHistory: [SystemPromptRevision] { didSet { UserDefaults.standard.set(try? JSONEncoder().encode(systemPromptHistory), forKey: Self.historyKey) } }
+    private var applyingAgentChange = false
+    nonisolated public static let originKey = "loopl.systemOrigin", historyKey = "loopl.systemHistory", historyLimit = 5
+
+    public enum SystemPromptOrigin: Codable, Hashable, Sendable {
+        case `default`, user, agent(Date)
+        /// For the `get` result and the Settings caption.
+        public var label: String {
+            switch self {
+            case .default: "the app default"
+            case .user: "edited by you"
+            case .agent(let at): "changed by the agent · " + at.formatted(date: Calendar.current.isDateInToday(at) ? .omitted : .abbreviated, time: .shortened)
+            }
+        }
+    }
+    public struct SystemPromptRevision: Codable, Hashable, Sendable {
+        public var text: String
+        public var origin: SystemPromptOrigin
+        public var replacedAt: Date
+    }
+
+    /// `system_prompt` wrote: remember what it replaced (5 deep), install the new text, mark the origin.
+    public func applyAgentChange(_ change: SystemPromptChange) {
+        systemPromptHistory.append(.init(text: systemPrompt, origin: systemPromptOrigin, replacedAt: change.at))
+        if systemPromptHistory.count > Self.historyLimit { systemPromptHistory.removeFirst(systemPromptHistory.count - Self.historyLimit) }
+        applyingAgentChange = true
+        systemPrompt = change.after
+        applyingAgentChange = false
+        systemPromptOrigin = .agent(change.at)
+    }
+    /// Settings › System prompt › Revert: the prompt before the agent's last change, with its own origin.
+    public func revertSystemPrompt() {
+        guard let previous = systemPromptHistory.popLast() else { return }
+        applyingAgentChange = true
+        systemPrompt = previous.text
+        applyingAgentChange = false
+        systemPromptOrigin = previous.origin
+    }
+    public var canRevertSystemPrompt: Bool { !systemPromptHistory.isEmpty }
     public var enabledTools: Set<String> { didSet { UserDefaults.standard.set(Array(enabledTools), forKey: "loopl.tools") } }
     /// Settings › Show performance details — OFF by default; one quiet footer line when on.
     public var showPerformance: Bool { didSet { UserDefaults.standard.set(showPerformance, forKey: "loopl.perf") } }
@@ -39,20 +87,24 @@ public final class AppSettings {
     /// (0/16 greedy) and loopl-0.8b answers "what is my name?" about itself; with it both reach 8/8. Mirrored in
     /// loopl-train data/system/app-default.md (1.1.0 = Phase 6 directives: manage_tools mount before "I can't", manage_messages stats/compact,
     /// use_agent; measured in ManageToolsMeasurement / ManageMessagesMeasurement, 2026-10-06) — bump its version when this text changes.
-    public static let defaultSystemPrompt = "You are loopl, a helpful assistant running fully on this device. Use tools when they help; answer concisely. Your only memory between conversations is the remember and recall tools: when the user asks you to remember something, call remember; before answering anything about the user, call recall. If a task needs a tool that is not in your tool list, call manage_tools with action mount and its name before saying you can't — it works on your very next step. When this conversation gets long or you are asked how big it is, call manage_messages (stats to measure, compact to shrink your own context; the user's chat is unchanged). For a side task or a long one, call use_agent with a short system prompt, the task and only the tools it needs; a background agent wakes you when it finishes."
+    nonisolated public static let defaultSystemPrompt = "You are loopl, a helpful assistant running fully on this device. Use tools when they help; answer concisely. Your only memory between conversations is the remember and recall tools: when the user asks you to remember something, call remember; before answering anything about the user, call recall. If a task needs a tool that is not in your tool list, call manage_tools with action mount and its name before saying you can't — it works on your very next step. When this conversation gets long or you are asked how big it is, call manage_messages (stats to measure, compact to shrink your own context; the user's chat is unchanged). For a side task or a long one, call use_agent with a short system prompt, the task and only the tools it needs; a background agent wakes you when it finishes."
     /// Earlier defaults (build ≤ 9; builds 10–14 = 1.0.1) — an unedited stored prompt equal to one of them is upgraded to the current default on launch.
     public static let legacyDefaultSystemPrompts: Set<String> = ["You are loopl, a helpful assistant running fully on this device. Use tools when they help; answer concisely.",
         "You are loopl, a helpful assistant running fully on this device. Use tools when they help; answer concisely. Your only memory between conversations is the remember and recall tools: when the user asks you to remember something, call remember; before answering anything about the user, call recall."]
-    public static let allToolNames = ["current_time", "calculator", "device_info", "remember", "recall", "http", "manage_messages", "use_agent"]
+    public static let allToolNames = ["current_time", "calculator", "device_info", "remember", "recall", "http", "manage_messages", "use_agent", "system_prompt"]
     /// Portable tools added after build 12 — switched ON for installs whose saved set predates them (once; a user
     /// who turns one off afterwards stays off because the name is then recorded in `loopl.toolsSeen`).
-    public static let laterCoreTools = ["manage_messages", "use_agent"]
+    public static let laterCoreTools = ["manage_messages", "use_agent", "system_prompt"]
 
     public init() {
         let d = UserDefaults.standard
         offline = d.bool(forKey: NetworkPolicy.offlineKey)
         let stored = d.string(forKey: "loopl.system")
-        systemPrompt = stored.map { Self.legacyDefaultSystemPrompts.contains($0) ? Self.defaultSystemPrompt : $0 } ?? Self.defaultSystemPrompt
+        let prompt = stored.map { Self.legacyDefaultSystemPrompts.contains($0) ? Self.defaultSystemPrompt : $0 } ?? Self.defaultSystemPrompt
+        systemPromptHistory = d.data(forKey: Self.historyKey).flatMap { try? JSONDecoder().decode([SystemPromptRevision].self, from: $0) } ?? []
+        systemPromptOrigin = d.data(forKey: Self.originKey).flatMap { try? JSONDecoder().decode(SystemPromptOrigin.self, from: $0) }
+            ?? (prompt == Self.defaultSystemPrompt ? .default : .user)
+        systemPrompt = prompt
         var saved = Set((d.array(forKey: "loopl.tools") as? [String]) ?? Self.allToolNames)
         if saved.remove("http_get") != nil { saved.insert("http") }     // 0.1 → http (http_get is a deprecated SDK alias)
         var seen = Set((d.array(forKey: "loopl.toolsSeen") as? [String]) ?? [])
@@ -68,6 +120,28 @@ public final class AppSettings {
         LooplDesign.hapticsEnabled = haptics
         // Retired keys from 0.1 (demo runtime, HF token, iteration cap) are simply ignored.
         for k in ["loopl.demo", "loopl.maxIter", "loopl.runtime", "loopl.maxTokens", "loopl.ctx", "loopl.temp"] { d.removeObject(forKey: k) }
+    }
+}
+
+/// `system_prompt`'s store (Phase 6 F): the tool reads the prompt the way the agent gets it (UserDefaults, the same
+/// key `AppSettings` writes — thread-safe, so the approval preview can be built off the main actor) and writes through
+/// `AppSettings.applyAgentChange`, which keeps the 5-entry history behind Settings › Revert. The prompt is GLOBAL:
+/// "its own system prompt" is the Settings field every model gets, so the change outlives this conversation.
+final class AppSystemPromptStore: SystemPromptStore, @unchecked Sendable {
+    private weak var settings: AppSettings?
+    nonisolated init(_ settings: AppSettings) { self.settings = settings }
+    nonisolated var defaultPrompt: String { AppSettings.defaultSystemPrompt }
+    nonisolated func read() -> String { UserDefaults.standard.string(forKey: "loopl.system") ?? AppSettings.defaultSystemPrompt }
+    nonisolated func origin() -> String {
+        let origin = UserDefaults.standard.data(forKey: AppSettings.originKey).flatMap { try? JSONDecoder().decode(AppSettings.SystemPromptOrigin.self, from: $0) }
+        switch origin ?? (read() == defaultPrompt ? .default : .user) {
+        case .default: return "the app default"
+        case .user: return "edited by the user"
+        case .agent(let at): return "changed by you at " + at.formatted(date: .omitted, time: .shortened)
+        }
+    }
+    func write(_ change: SystemPromptChange) async {
+        await MainActor.run { [weak settings] in settings?.applyAgentChange(change) }
     }
 }
 
@@ -147,7 +221,7 @@ public final class Engine {
         self.hub = SubAgentHub(directory: base.appendingPathComponent("agents", isDirectory: true))
         // The portable catalog = `allTools` (incl. manage_messages and use_agent); `hub` is set above because useAgentTool reads it.
         let core: [any Tool] = [CurrentTimeTool(), CalculatorTool(), DeviceInfoTool(), RememberTool(), RecallTool(), HttpTool(), ManageMessagesTool(),
-                                UseAgentTool(hub: hub, context: Engine.subAgentContext(for: WeakEngine.pending))]
+                                UseAgentTool(hub: hub, context: Engine.subAgentContext(for: WeakEngine.pending)), SystemPromptTool(store: AppSystemPromptStore(settings))]
         registry = ToolRegistry(catalog: core, mounted: Array(settings.enabledTools), selfManaging: true)
         mountedNow = core.map(\.name).filter { settings.enabledTools.contains($0) } + [ManageToolsTool.toolName]
         // A background child's events after the parent's turn ended: fold them into the card on screen.
@@ -232,7 +306,7 @@ public final class Engine {
     }
     public var loadProgress: Double? { if case .loading(_, let p) = readiness { return p }; return nil }
     public var isGenerating: Bool { transcript.isRunning }
-    public var allTools: [any Tool] { [CurrentTimeTool(), CalculatorTool(), DeviceInfoTool(), RememberTool(), RecallTool(), HttpTool(), ManageMessagesTool(), useAgentTool] }
+    public var allTools: [any Tool] { [CurrentTimeTool(), CalculatorTool(), DeviceInfoTool(), RememberTool(), RecallTool(), HttpTool(), ManageMessagesTool(), useAgentTool, SystemPromptTool(store: AppSystemPromptStore(settings))] }
     /// `use_agent`: children are built from the parent's model, gate, tools (minus use_agent — depth 1) and approval hook,
     /// read at spawn time so a model switch is honoured.
     private var useAgentTool: UseAgentTool { UseAgentTool(hub: hub, context: Engine.subAgentContext(for: WeakEngine(self))) }
