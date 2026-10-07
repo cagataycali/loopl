@@ -1,0 +1,77 @@
+name: ui
+# The geometry and layout guards (`looplUITests`) — a SEPARATE job from `ci`, run only on pushes
+# to main, so PR CI stays at ~12 minutes while a guard that goes red is still seen within the hour
+# instead of "for days". That is not hypothetical: `InsetsUITests.testSettingsDeleteHistoryButton…`
+# was red on main from IMPROVE-3 #120 (the delete buttons moved behind Settings › Storage) until
+# #170 repaired it, because nothing ran this target.
+#
+# The live suites in this target skip themselves without a Hugging Face token
+# (TrainLive / TrainE2EMine / TrainContinualLive / CollectionLive / HubShare push), so no run here
+# ever launches a billed job. Nothing is passed in on purpose.
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['docs/**', 'mkdocs.yml', 'requirements-docs.txt', '.github/workflows/docs.yml']
+  workflow_dispatch:
+concurrency:
+  group: ui-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  uitests:
+    name: looplUITests (iOS Simulator, post-merge)
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode 26
+        run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)"
+          xcodebuild -version
+      - name: Cache SwiftPM checkouts (mlx-swift is big)
+        uses: actions/cache@v4
+        with:
+          path: |
+            DerivedData/SourcePackages
+            ~/Library/Caches/org.swift.swiftpm
+          key: spm-${{ runner.os }}-${{ hashFiles('App/project.yml', 'Package.swift', 'Package.resolved', '**/Package.resolved') }}
+          restore-keys: spm-${{ runner.os }}-
+      - name: xcodegen
+        run: |
+          brew install xcodegen >/dev/null 2>&1 || brew upgrade xcodegen >/dev/null 2>&1 || true
+          xcodegen generate -s App/project.yml
+      - name: Pick a simulator
+        id: sim
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys;d=json.load(sys.stdin)["devices"];c=[x for k,v in d.items() if "iOS" in k for x in v if "iPhone" in x["name"]];c.sort(key=lambda x:x["name"]);print(c[-1]["udid"])')
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"; xcrun simctl list devices available | grep "$UDID"
+      - name: Boot the simulator (UI tests need a warm device)
+        run: |
+          xcrun simctl boot "${{ steps.sim.outputs.udid }}" || true
+          xcrun simctl bootstatus "${{ steps.sim.outputs.udid }}" -b || true
+      - name: Build for testing
+        run: |
+          set -o pipefail
+          xcodebuild -project App/LooplApp.xcodeproj -scheme looplUITests -configuration Debug \
+            -destination "id=${{ steps.sim.outputs.udid }}" -derivedDataPath DerivedData \
+            CODE_SIGNING_ALLOWED=NO -skipPackagePluginValidation -skipMacroValidation \
+            build-for-testing 2>&1 | tail -n 80
+      - name: UI tests
+        run: |
+          set -o pipefail
+          xcodebuild -project App/LooplApp.xcodeproj -scheme looplUITests -configuration Debug \
+            -destination "id=${{ steps.sim.outputs.udid }}" -derivedDataPath DerivedData \
+            CODE_SIGNING_ALLOWED=NO -skipPackagePluginValidation -skipMacroValidation \
+            -resultBundlePath DerivedData/ui.xcresult \
+            test-without-building 2>&1 | tee ui.log | tail -n 120
+      - name: Which tests failed (names, not a tail)
+        if: failure()
+        run: |
+          grep -E "error:|failed \(|Test Case .* failed" ui.log | head -n 60 || true
+      - name: Keep the result bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-xcresult
+          path: DerivedData/ui.xcresult
+          retention-days: 7
+          if-no-files-found: ignore

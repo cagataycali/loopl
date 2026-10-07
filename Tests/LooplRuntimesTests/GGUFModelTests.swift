@@ -65,6 +65,11 @@ final class GGUFModelTests: XCTestCase {
         await model.unload()
     }
 
+    // `renderPrompt` goes through `llama_chat_apply_template`, so these two run only where the
+    // vendored xcframework is linked (scripts/fetch-llama-xcframework.sh). Guarding them is what
+    // lets the file COMPILE without it — it used to reference llama-only symbols unconditionally,
+    // so `swift test` could not build at all on a plain checkout.
+#if canImport(llama)
     func testTemplateRenderingUsesModelTemplate() {
         let tmpl = "{% for message in messages %}{{'<|im_start|>' + message['role'] + '\\n' + message['content'] + '<|im_end|>' + '\\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\\n' }}{% endif %}"
         let out = GGUFModel.renderPrompt(template: tmpl, systemPrompt: "sys", messages: [.user("hi")], toolSpecs: [], family: .hermes)
@@ -82,6 +87,16 @@ final class GGUFModelTests: XCTestCase {
         let none = GGUFModel.renderPrompt(template: tmpl, systemPrompt: nil, messages: [.user("hi")], toolSpecs: [], family: .hermes)
         XCTAssertEqual(none, on)
         XCTAssertEqual(GGUFModel.applyKwargs("x<think>\n\n</think>\n\n", kwargs: ["enable_thinking": .bool(false)]), "x<think>\n\n</think>\n\n", "never doubled")
+    }
+
+#endif
+
+    /// Pure Swift, no llama needed — the kwargs rule Qwen3 relies on, checked on every checkout.
+    func testApplyKwargsOpensAnEmptyThinkBlockExactlyOnce() {
+        XCTAssertEqual(GGUFModel.applyKwargs("x", kwargs: ["enable_thinking": .bool(false)]), "x<think>\n\n</think>\n\n")
+        XCTAssertEqual(GGUFModel.applyKwargs("x<think>\n\n</think>\n\n", kwargs: ["enable_thinking": .bool(false)]), "x<think>\n\n</think>\n\n", "never doubled")
+        XCTAssertEqual(GGUFModel.applyKwargs("x", kwargs: ["enable_thinking": .bool(true)]), "x", "thinking on = the model opens its own block")
+        XCTAssertEqual(GGUFModel.applyKwargs("x", kwargs: nil), "x", "no kwargs = unchanged")
     }
 
     func testUTF8AccumulatorSplitsScalars() {
