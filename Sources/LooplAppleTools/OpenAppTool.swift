@@ -21,7 +21,7 @@ public struct OpenAppTool: AppleTool {
         "params": ["type": "object", "description": "Optional context for the other app: merged into the query string as key=value (strings as-is, numbers/booleans as text, nested objects as compact JSON), percent-encoded"],
         "fallback_url": ToolSchema.string("Opened instead when the first URL cannot be opened (e.g. the app is not installed) — typically an https:// link"),
     ], required: ["url"])
-    public static let onDeviceCopy = "Hands off to another app with a deeplink. Asks you first unless you allow the scheme."
+    public static let onDeviceCopy = "Opens another app — Maps, Mail, a website. Asks you first, unless you have allowed that kind of link."
 
     /// Schemes the app declares in `LSApplicationQueriesSchemes`, so `canOpenURL` can answer truthfully for them.
     public static let knownSchemes = ["shortcuts", "maps", "tel", "sms", "mailto", "music", "tinyapp", "x-callback-url", "https", "http", "facetime", "comgooglemaps", "spotify"]

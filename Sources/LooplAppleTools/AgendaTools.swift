@@ -217,7 +217,7 @@ public struct CalendarEventsTool: AppleTool {
         "days": ToolSchema.number("How many days from today to include (default 2, max 31)"),
         "from": ToolSchema.string("First day yyyy-MM-dd. Leave it out for today."),
     ])
-    public static let onDeviceCopy = "Reads your calendar on this device when the model asks. Asks for Calendar access the first time."
+    public static let onDeviceCopy = "Reads your calendar when the model asks. Asks for Calendar access the first time."
     public static var defaultOn: Bool { false }
     public static func availability() -> ToolAvailability { AgendaStore.availability() }
     public static let maxDays = 31
@@ -313,7 +313,7 @@ public struct RemindersDueTool: AppleTool {
         "days": ToolSchema.number("Due within this many days from today (default 1 = today, max 31)"),
         "include_completed": ToolSchema.boolean("Also list completed reminders (default false)"),
     ])
-    public static let onDeviceCopy = "Reads your reminders on this device when the model asks. Asks for Reminders access the first time."
+    public static let onDeviceCopy = "Reads your reminders when the model asks. Asks for Reminders access the first time."
     public static var defaultOn: Bool { false }
     public static func availability() -> ToolAvailability { AgendaStore.availability() }
 

@@ -173,7 +173,7 @@ public struct MusicTool: AppleTool {
     public static let actions = ["play", "pause", "next", "previous", "volume", "now_playing"]
     /// How much `up` / `down` move the volume.
     public static let step = 15
-    public static let onDeviceCopy = "Play, pause, skip and set the volume of the system music player; says what is playing. Nothing leaves this device."
+    public static let onDeviceCopy = "Play, pause, skip and set the volume of whatever is playing on this iPhone, and say what it is. Nothing leaves the device."
     public static var defaultOn: Bool { true }
 
     public struct Request: Sendable, Hashable {
