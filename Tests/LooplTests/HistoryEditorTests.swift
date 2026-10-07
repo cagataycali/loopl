@@ -62,7 +62,7 @@ final class HistoryEditorTests: XCTestCase {
         XCTAssertEqual(out.messages[1].text, "It is 21:00 in Istanbul.")
         XCTAssertTrue(out.messages.suffix(2).elementsEqual(m.suffix(2)), "the active turn is byte-identical")
         XCTAssertTrue(HistoryEditor.validateStructure(Array(out.messages.dropLast(2))).ok, "everything before the active turn pairs up")
-        XCTAssertEqual(out.edit?.summary, "1 turn compacted by the agent · your history is unchanged")
+        XCTAssertEqual(out.edit?.summary, "The model tidied 1 turn of notes · your conversation is unchanged")
         XCTAssertTrue(out.text.hasPrefix("Compacted 1 turn(s), removed 2 tool blocks"), out.text)
     }
 
@@ -120,7 +120,7 @@ final class HistoryEditorTests: XCTestCase {
         XCTAssertFalse(calls.contains { $0.toolUseId == "t1a" }); XCTAssertTrue(calls.contains { $0.toolUseId == "t1b" })
         XCTAssertTrue(HistoryEditor.validateStructure(Array(out.messages.dropLast(2))).ok)
         XCTAssertFalse(out.messages.contains { $0.reasoning == "two calculations" }, "an edited message loses its reasoning too")
-        XCTAssertEqual(out.edit?.summary, "1 tool call dropped from the agent's context · your history is unchanged")
+        XCTAssertEqual(out.edit?.summary, "The model set aside 1 tool result · your conversation is unchanged")
         // By name
         var byName = HistoryEditor.Request(action: .dropTools); byName.toolName = "calculator"
         let out2 = try HistoryEditor.apply(byName, to: m, selfId: Self.selfId)
@@ -169,7 +169,7 @@ final class HistoryEditorTests: XCTestCase {
         let out = try HistoryEditor.apply(.init(action: .clear), to: m, selfId: Self.selfId)
         XCTAssertEqual(out.messages, Array(m.suffix(2)))
         XCTAssertEqual(out.edit?.turnsAffected, 4)
-        XCTAssertEqual(out.edit?.summary, "agent's context cleared (4 turns) · your history is unchanged")
+        XCTAssertEqual(out.edit?.summary, "The model started its notes over (4 turns) · your conversation is unchanged")
         let again = try HistoryEditor.apply(.init(action: .clear), to: out.messages, selfId: Self.selfId)
         XCTAssertNil(again.edit)
     }
@@ -259,7 +259,7 @@ final class HistoryEditorTests: XCTestCase {
         var transcript = Transcript()
         transcript.user("the context is long")
         for e in events { transcript.apply(e) }
-        XCTAssertTrue(transcript.items.contains { $0.kind == .note("2 turns compacted by the agent · your history is unchanged") }, "\(transcript.items.map(\.kind))")
+        XCTAssertTrue(transcript.items.contains { $0.kind == .note("The model tidied 2 turns of notes · your conversation is unchanged") }, "\(transcript.items.map(\.kind))")
         XCTAssertEqual(transcript.items.filter { if case .note = $0.kind { return true }; return false }.count, 1)
 
         // The live history ends the turn with the compacted shape + the final answer.

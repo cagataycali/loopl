@@ -37,7 +37,7 @@ final class SystemPromptToolTests: XCTestCase {
         let resultIdx = events.firstIndex { if case .toolResult = $0 { return true }; return false }!
         XCTAssertLessThan(markIdx, resultIdx)
         var transcript = Transcript(); transcript.user("x"); for e in events { transcript.apply(e) }
-        XCTAssertTrue(transcript.items.contains { $0.kind == .note("system prompt extended by the agent · revert in Settings › System prompt") }, "\(transcript.items.map(\.kind))")
+        XCTAssertTrue(transcript.items.contains { $0.kind == .note("The model added a rule to its instructions · undo in Settings › System prompt") }, "\(transcript.items.map(\.kind))")
 
         // The approval card led with the right words and a diff-style preview.
         let req = events.compactMap { if case .approvalRequested(let r) = $0 { return r }; return nil }.first!

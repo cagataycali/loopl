@@ -34,14 +34,15 @@ public struct HistoryEdit: Sendable, Hashable, Codable {
     }
     /// The transcript marker — one quiet line, plain words.
     public var summary: String {
+        // Plain words (IMPROVE-3 audit): "compacted", "agent" and "context" read as developer voice in the chat.
         func turns(_ n: Int) -> String { n == 1 ? "1 turn" : "\(n) turns" }
         switch action {
-        case .compact: return "\(turns(turnsAffected)) compacted by the agent · your history is unchanged"
-        case .drop: return "\(turns(turnsAffected)) dropped from the agent's context · your history is unchanged"
-        case .clear: return "agent's context cleared (\(turns(turnsAffected))) · your history is unchanged"
+        case .compact: return "The model tidied \(turns(turnsAffected)) of notes · your conversation is unchanged"
+        case .drop: return "The model set aside \(turns(turnsAffected)) · your conversation is unchanged"
+        case .clear: return "The model started its notes over (\(turns(turnsAffected))) · your conversation is unchanged"
         case .dropTools:
             let n = turnsAffected
-            return "\(n == 1 ? "1 tool call" : "\(n) tool calls") dropped from the agent's context · your history is unchanged"
+            return "The model set aside \(n == 1 ? "1 tool result" : "\(n) tool results") · your conversation is unchanged"
         }
     }
 }

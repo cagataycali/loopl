@@ -574,8 +574,21 @@ public enum SubAgentWake {
     }
     /// The one-line transcript note shown for a wake (the model gets `prompt(for:)`; the person sees this).
     public static func line(for e: SubAgentEnvelope) -> String {
-        "[use_agent \(e.id) finished] \(e.info.name) · \(e.status.rawValue) · \(Int(e.elapsed)) s"
+        // Plain words for the chat (IMPROVE-3 audit: "[use_agent agent_i finished] issues · done · 73 s" leaked the
+        // envelope). The bracketed form stays in `prompt(for:)` — that one is for the model.
+        let outcome: String
+        switch e.status {
+        case .done: outcome = "finished"
+        case .failed: outcome = "failed"
+        case .stopped: outcome = "was stopped"
+        default: outcome = e.status.rawValue
+        }
+        return "\(prefix)\(e.info.name) \(outcome) · \(spokenElapsed(e.elapsed))"
     }
-    /// Recognise a wake turn in a transcript (`.note` with this prefix).
-    public static let prefix = "[use_agent "
+    static func spokenElapsed(_ s: TimeInterval) -> String {
+        let t = Int(s.rounded())
+        return t < 60 ? "\(t) s" : t % 60 == 0 ? "\(t / 60) min" : "\(t / 60) min \(t % 60) s"
+    }
+    /// Recognise a wake line in a transcript (`.note` with this prefix).
+    public static let prefix = "Helper "
 }
