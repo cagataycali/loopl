@@ -78,6 +78,21 @@ for size in ("0.8b", "2b", "4b"):
                f"| [loopl-{size}](https://huggingface.co/cagataydev/loopl-{size}) | loopl-{size}-GGUF (token) |")
 out.append("\nIn the app: Models › **loopl models** → download (no account). "
            "On a Mac: `pip install mlx-vlm` then `python -m mlx_vlm.generate --model cagataydev/loopl-2b-4bit --image photo.jpg --prompt \"What is this?\"`.\n")
+# loopl-vl (Phase 8): the Qwen3-VL post-tunes — only the sizes that passed their gates are in the catalog, so the table follows the rows.
+vl_sizes = [m["id"].split("-")[2] for m in models if m["id"].startswith("loopl-vl-") and m["id"].endswith("-4bit")]
+if vl_sizes:
+    out.append("## The loopl-vl models\n")
+    out.append("The same training data on **Qwen3-VL** Instruct bases (" + " and ".join(s.upper() for s in vl_sizes) + "): these read pictures "
+               "**and video** natively — the app sends sampled frames (see [Video input](sdk/video.md)) and transcribes the audio track on the "
+               "device, because Qwen3-VL has no audio input. Tool calls use the Qwen3-VL (hermes JSON) dialect; no thinking blocks. No GGUF — "
+               f"llama.cpp cannot see. They sit next to the loopl models in **[the collection]({COLLECTION})**, 4-bit + bf16, public.\n")
+    out.append("| | MLX 4-bit · vision + video · public | bf16 · post-tuning base · public |\n|---|---|---|")
+    for size in vl_sizes:
+        out.append(f"| loopl-vl {size.upper()} | [loopl-vl-{size}-4bit](https://huggingface.co/cagataydev/loopl-vl-{size}-4bit) "
+                   f"| [loopl-vl-{size}](https://huggingface.co/cagataydev/loopl-vl-{size}) |")
+    out.append("\nIn the app: Models › **loopl models** → the loopl-vl rows (the + button then offers *Photo or Video*). "
+               f"On a Mac: `python -m mlx_vlm.generate --model cagataydev/loopl-vl-{vl_sizes[0]}-4bit --video clip.mp4 --fps 2 --video-max-frames 8 "
+               "--prompt \"What happens in this video?\"`.\n")
 out.append("## The catalog\n")
 out.append("<div class=\"loopl-models-table\" markdown>\n")
 out.append("| Model | Runtime | Params | 4-bit size | ctx max | usable on 8 GB | min RAM | gated | tool calls |")

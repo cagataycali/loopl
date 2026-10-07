@@ -168,7 +168,7 @@ final class VisionTruthTests: XCTestCase {
         if url == nil { url = Bundle.allBundles.compactMap { $0.url(forResource: "models", withExtension: "json") }.first }
         let catalog = try JSONDecoder().decode(Catalog.self, from: Data(contentsOf: XCTUnwrap(url)))
         let loopl = catalog.models.filter { $0.repo.hasPrefix("cagataydev/loopl-") }
-        XCTAssertEqual(loopl.count, 6)
+        XCTAssertEqual(loopl.count, 7, "loopl 0.8B / 2B / 4B (MLX + GGUF) + loopl-vl 2B MLX (Phase 8, 2026-10-07)")
         for row in loopl {
             // PUBLISH-V11 (18:1xZ): the six MLX/bf16 repos are PUBLIC (owner decision) — only the GGUF builds stay private → gated.
             XCTAssertEqual(row.gated, row.runtime == .gguf, row.id)
