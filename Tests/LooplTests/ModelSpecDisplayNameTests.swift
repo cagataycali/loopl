@@ -13,5 +13,9 @@ final class ModelSpecDisplayNameTests: XCTestCase {
         XCTAssertEqual(spec("loopl 2B").displayName, "loopl 2B")
         XCTAssertEqual(spec("Apple Intelligence (on-device)").displayName, "Apple Intelligence (on-device)")
         XCTAssertEqual(spec("(4-bit)").displayName, "(4-bit)", "never empty")
+        // IMPROVE-4 #22: GGUF catalog names carry the build and the engine after a middle dot.
+        XCTAssertEqual(spec("Qwen3 0.6B · Q4_K_M (llama.cpp)").displayName, "Qwen3 0.6B")
+        XCTAssertEqual(spec("loopl 2B · Q4_K_M (llama.cpp)").displayName, "loopl 2B")
+        XCTAssertEqual(spec("Llama 3.2 3B Instruct · Q4_K_M").displayName, "Llama 3.2 3B Instruct")
     }
 }
