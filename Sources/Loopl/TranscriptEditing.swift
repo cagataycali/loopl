@@ -83,6 +83,12 @@ public extension Transcript {
             case .toolUse(let use, let result):
                 guard let result else { continue }   // never completed → cannot be paired, drop it
                 pendingUses.append(use); pendingResults.append(result)
+            case .ask(let toolUseId, let request, let answer):
+                // An answered question is the tool pair it was (the card holds the MASKED answer — a rebuilt history
+                // never carries a password; a card never answered is dropped like an unfinished tool).
+                guard let answer else { continue }
+                pendingUses.append(ToolUse(toolUseId: toolUseId, name: AskUserTool.toolName, input: request.toolArgs))
+                pendingResults.append(ToolResult(toolUseId: toolUseId, name: AskUserTool.toolName, status: .success, content: answer.toolResult.compact))
             case .reasoning, .note, .approval, .agent:
                 continue        // a child's rows belong to the child; the parent's history keeps the use_agent tool pair
             }

@@ -24,7 +24,7 @@ public enum AgentCardState: String, Sendable, Hashable {
     case queued, running, waiting, background, done, failed, stopped
 
     public init(_ run: SubAgentRun) {
-        if !run.status.isFinished, !run.transcript.pendingApprovals.isEmpty { self = .waiting; return }
+        if !run.status.isFinished, !run.transcript.pendingApprovals.isEmpty || !run.transcript.pendingAsks.isEmpty { self = .waiting; return }
         switch run.status {
         case .queued: self = .queued
         case .running: self = .running
@@ -58,14 +58,17 @@ public struct AgentCard: View {
     public var run: SubAgentRun
     public var expandTools: Bool
     public var onApproval: ((ApprovalRequest, ApprovalDecision) -> Void)?
+    /// Phase 7: an `ask_user` card inside the child's transcript, answered on the child (toolUseId, answer).
+    public var onAsk: ((String, AskUserAnswer) -> Void)?
     /// `nil` = follow the default for the state; set by a tap, reset when the state changes.
     @State private var userExpanded: Bool?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var typeSize
     @ScaledMetric(relativeTo: .footnote) private var badge: CGFloat = 16
 
-    public init(run: SubAgentRun, expandTools: Bool = false, onApproval: ((ApprovalRequest, ApprovalDecision) -> Void)? = nil) {
-        self.run = run; self.expandTools = expandTools; self.onApproval = onApproval
+    public init(run: SubAgentRun, expandTools: Bool = false, onApproval: ((ApprovalRequest, ApprovalDecision) -> Void)? = nil,
+                onAsk: ((String, AskUserAnswer) -> Void)? = nil) {
+        self.run = run; self.expandTools = expandTools; self.onApproval = onApproval; self.onAsk = onAsk
     }
 
     private var state: AgentCardState { AgentCardState(run) }
@@ -80,12 +83,12 @@ public struct AgentCard: View {
             } label: { header.contentShape(Rectangle()) }
             .buttonStyle(.plain)
             .accessibilityLabel("agent \(info.name)")
-            .accessibilityValue(state == .waiting ? "needs your approval" : state.label)
+            .accessibilityValue(state == .waiting ? "needs your answer" : state.label)
             .accessibilityHint(expanded ? "collapses the agent" : "shows what the agent is doing")
             .accessibilityIdentifier("agent-card-\(info.id)")
 
             if expanded {
-                AgentTranscriptRows(run: run, expandTools: expandTools, onApproval: onApproval)
+                AgentTranscriptRows(run: run, expandTools: expandTools, onApproval: onApproval, onAsk: onAsk)
                     .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
             } else if state.isFinished, let text = run.resultText?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
                 // Folded + over (done or failed): the first line of what came of it, so the card still tells the story.
@@ -228,6 +231,7 @@ struct AgentTranscriptRows: View {
     var run: SubAgentRun
     var expandTools: Bool
     var onApproval: ((ApprovalRequest, ApprovalDecision) -> Void)?
+    var onAsk: ((String, AskUserAnswer) -> Void)?
     @ScaledMetric(relativeTo: .footnote) private var indent: CGFloat = 24
     private var isRunning: Bool { !run.status.isFinished }
 
@@ -250,6 +254,7 @@ struct AgentTranscriptRows: View {
         switch last.kind {
         case .user, .note: return true
         case .approval(_, let d): return d != nil
+        case .ask(_, _, let a): return a != nil
         case .assistant, .toolUse, .reasoning, .agent: return false
         }
     }
@@ -268,6 +273,8 @@ struct AgentTranscriptRows: View {
             }
         case .approval(let req, let d):
             ApprovalCard(request: req, decision: d) { onApproval?(req, $0) }
+        case .ask(let id, let req, let a):
+            AskUserCard(toolUseId: id, request: req, answer: a) { onAsk?(id, $0) }   // Phase 7 ask_user, answered on the child
         case .reasoning(let r):
             ReasoningRow(text: r, streaming: isRunning && item.id == run.transcript.items.last?.id)
         case .note(let s):

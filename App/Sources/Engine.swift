@@ -91,10 +91,10 @@ public final class AppSettings {
     /// Earlier defaults (build ≤ 9; builds 10–14 = 1.0.1) — an unedited stored prompt equal to one of them is upgraded to the current default on launch.
     public static let legacyDefaultSystemPrompts: Set<String> = ["You are loopl, a helpful assistant running fully on this device. Use tools when they help; answer concisely.",
         "You are loopl, a helpful assistant running fully on this device. Use tools when they help; answer concisely. Your only memory between conversations is the remember and recall tools: when the user asks you to remember something, call remember; before answering anything about the user, call recall."]
-    public static let allToolNames = ["current_time", "calculator", "device_info", "remember", "recall", "http", "manage_messages", "use_agent", "system_prompt", "render_ui"]
+    public static let allToolNames = ["current_time", "calculator", "device_info", "remember", "recall", "http", "manage_messages", "use_agent", "system_prompt", "render_ui", AskUserTool.toolName]
     /// Portable tools added after build 12 — switched ON for installs whose saved set predates them (once; a user
     /// who turns one off afterwards stays off because the name is then recorded in `loopl.toolsSeen`).
-    public static let laterCoreTools = ["manage_messages", "use_agent", "system_prompt", "render_ui"]
+    public static let laterCoreTools = ["manage_messages", "use_agent", "system_prompt", "render_ui", AskUserTool.toolName]
 
     public init() {
         let d = UserDefaults.standard
@@ -221,7 +221,7 @@ public final class Engine {
         self.hub = SubAgentHub(directory: base.appendingPathComponent("agents", isDirectory: true))
         // The portable catalog = `allTools` (incl. manage_messages and use_agent); `hub` is set above because useAgentTool reads it.
         let core: [any Tool] = [CurrentTimeTool(), CalculatorTool(), DeviceInfoTool(), RememberTool(), RecallTool(), HttpTool(), ManageMessagesTool(),
-                                UseAgentTool(hub: hub, context: Engine.subAgentContext(for: WeakEngine.pending)), SystemPromptTool(store: AppSystemPromptStore(settings)), RenderUITool()]
+                                UseAgentTool(hub: hub, context: Engine.subAgentContext(for: WeakEngine.pending)), SystemPromptTool(store: AppSystemPromptStore(settings)), RenderUITool(), AskUserTool()]
         registry = ToolRegistry(catalog: core, mounted: Array(settings.enabledTools), selfManaging: true)
         mountedNow = core.map(\.name).filter { settings.enabledTools.contains($0) } + [ManageToolsTool.toolName]
         // A background child's events after the parent's turn ended: fold them into the card on screen.
@@ -306,7 +306,7 @@ public final class Engine {
     }
     public var loadProgress: Double? { if case .loading(_, let p) = readiness { return p }; return nil }
     public var isGenerating: Bool { transcript.isRunning }
-    public var allTools: [any Tool] { [CurrentTimeTool(), CalculatorTool(), DeviceInfoTool(), RememberTool(), RecallTool(), HttpTool(), ManageMessagesTool(), useAgentTool, SystemPromptTool(store: AppSystemPromptStore(settings)), RenderUITool()] }
+    public var allTools: [any Tool] { [CurrentTimeTool(), CalculatorTool(), DeviceInfoTool(), RememberTool(), RecallTool(), HttpTool(), ManageMessagesTool(), useAgentTool, SystemPromptTool(store: AppSystemPromptStore(settings)), RenderUITool(), AskUserTool()] }
     /// `use_agent`: children are built from the parent's model, gate, tools (minus use_agent — depth 1) and approval hook,
     /// read at spawn time so a model switch is honoured.
     private var useAgentTool: UseAgentTool { UseAgentTool(hub: hub, context: Engine.subAgentContext(for: WeakEngine(self))) }
@@ -334,6 +334,20 @@ public final class Engine {
         Task {
             if await agent.resolve(approval: request.id, decision) { return }
             for id in children where await hub.resolve(child: id, approval: request.id, decision) { return }
+        }
+    }
+    /// Answer an `AskUserCard` (Phase 7). The transcript shows the card until the agent emits `.interruptResolved`;
+    /// a card inside a sub-agent's card is answered on that child. Timeouts need no call — the agent answers itself.
+    public func answer(ask toolUseId: String, _ answer: AskUserAnswer) {
+        let interruptId = AskUserTool.interruptId(toolUseId: toolUseId)
+        guard let agent else {
+            if DesignFixture.requested { Task { await DesignFixture.answer(self, toolUseId, answer) } }   // DEBUG fixture, no model
+            return
+        }
+        let children = transcript.agents.filter { !$0.status.isFinished }.map(\.info.id)
+        Task {
+            if await agent.resolve(interrupt: interruptId, response: answer.interruptResponse) { return }
+            for id in children where await hub.resolve(child: id, interrupt: interruptId, response: answer.interruptResponse) { return }
         }
     }
     /// The tools offered in THIS conversation right now (the registry's mounted set, as last reported) — what Share to

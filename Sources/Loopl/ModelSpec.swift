@@ -31,15 +31,22 @@ public struct ModelSpec: Sendable, Codable, Hashable, Identifiable {
     /// `true` for the handful of rows the app leads with (the loopl models + Apple Intelligence): the Models tab shows the rest
     /// under "More models", onboarding picks from these. nil/false = catalog depth, not a recommendation.
     public var featured: Bool? = nil
+    /// `true` for checkpoints whose chat template ALWAYS opens the assistant turn with `<think>` (Qwen3-VL-*-Thinking:
+    /// no `enable_thinking` switch exists in that template). The runtime detects the open block from the rendered
+    /// prompt itself (`PromptEncoder.endsInsideThink`); this flag is for the catalog UI ("thinks before answering").
+    public var thinking: Bool? = nil
     public init(id: String, name: String, repo: String, runtime: RuntimeKind, family: ToolFamily, paramsB: Double, sizeBytes: Int64,
                 ctxNominal: Int, ctxUsable8GB: Int, minRAMGB: Double, gated: Bool = false, notes: String? = nil, revision: String? = nil,
                 file: String? = nil, temperature: Float? = nil, chatTemplateKwargs: [String: JSONValue]? = nil, toolsUnverified: Bool? = nil,
-                vision: Bool? = nil, featured: Bool? = nil) {
+                vision: Bool? = nil, featured: Bool? = nil, thinking: Bool? = nil) {
         self.id = id; self.name = name; self.repo = repo; self.runtime = runtime; self.family = family; self.paramsB = paramsB
         self.sizeBytes = sizeBytes; self.ctxNominal = ctxNominal; self.ctxUsable8GB = ctxUsable8GB; self.minRAMGB = minRAMGB
         self.gated = gated; self.notes = notes; self.revision = revision; self.file = file; self.temperature = temperature
         self.chatTemplateKwargs = chatTemplateKwargs; self.toolsUnverified = toolsUnverified; self.vision = vision; self.featured = featured
+        self.thinking = thinking
     }
+    /// Thinks before answering (`thinking: true` in models.json) — reasoning streams into the reasoning row first.
+    public var isThinking: Bool { thinking == true }
     /// Leads the Models tab and onboarding (`featured: true` in models.json).
     public var isFeatured: Bool { featured == true }
 
@@ -50,7 +57,7 @@ public struct ModelSpec: Sendable, Codable, Hashable, Identifiable {
     public var isFromHub: Bool { id.hasPrefix("hub:") }
 
     enum CodingKeys: String, CodingKey {
-        case id, name, repo, runtime, family, gated, notes, revision, file, temperature, vision, featured
+        case id, name, repo, runtime, family, gated, notes, revision, file, temperature, vision, featured, thinking
         case chatTemplateKwargs = "chat_template_kwargs", toolsUnverified = "tools_unverified"
         case paramsB = "params_b", sizeBytes = "size_bytes", ctxNominal = "ctx_nominal"
         case ctxUsable8GB = "ctx_usable_8gb", minRAMGB = "min_ram_gb"

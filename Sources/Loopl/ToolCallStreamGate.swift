@@ -39,9 +39,14 @@ public struct ToolCallStreamGate: Sendable {
     /// Every parsed call is kept: the gate has no veto. Deciding what to do
     /// with a call — including one the model has made before — is the model's
     /// job, informed by the tool results it reads (no heuristics).
-    public init(family: ToolFamily) {
+    /// `startsInThink`: the rendered prompt already ended with `<think>` (Qwen3-VL-*-Thinking templates open the
+    /// assistant turn that way; there is no `enable_thinking` switch), so the decode begins INSIDE the reasoning block
+    /// and the model never emits the opener. The gate behaves as if it had seen `<think>`: everything up to `</think>`
+    /// streams as reasoning, a `<tool_call>` drafted while thinking is never executed, and `finish` strips the block.
+    public init(family: ToolFamily, startsInThink: Bool = false) {
         self.family = family
         parser = ToolCallParser(family: family)
+        if startsInThink { inThink = true; full = "<think>"; emitted = "<think>" }
     }
 
     /// Openers we must not stream through. Order matters only for the prefix check.

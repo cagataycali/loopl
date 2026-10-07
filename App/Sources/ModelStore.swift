@@ -443,5 +443,15 @@ public enum MemoryBudget {
     public static var budget: Int64 { available > 0 ? available : Int64(Double(physical) * 0.7) }
     /// Weights + KV cache + activations: ~1.3× weight size is the rule of thumb we show, flagged as such.
     public static func fits(_ spec: ModelSpec) -> Bool { Double(available) > Double(spec.sizeBytes) * 1.3 }
+    /// Vision turn: weights + KV for the prompt and `images` pictures (+ `frames` video frames) + tower activations
+    /// (`VisionBudget`, Qwen3-VL geometry). Text models ignore the pictures (they never see them).
+    public static func fitsVision(_ spec: ModelSpec, promptTokens: Int = 2048, images: Int = 1, frames: Int = 0) -> Bool {
+        guard spec.supportsVision else { return fits(spec) }
+        return VisionBudget.bytesNeeded(spec, promptTokens: promptTokens, images: images, frames: frames) <= budget
+    }
+    /// How many video frames this device can hand the model (P8-B's pipeline caps at this; 0 = say it cannot).
+    public static func maxVideoFrames(_ spec: ModelSpec) -> Int {
+        VisionBudget.maxFrames(spec, contextWindow: spec.ctxUsable8GB, memoryBudget: budget)
+    }
     public static func label(_ b: Int64) -> String { ByteCountFormatter.string(fromByteCount: b, countStyle: .memory) }
 }

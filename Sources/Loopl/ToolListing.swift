@@ -91,5 +91,6 @@ public struct ToolListing: Sendable, Hashable {
         "manage_messages": "Lets the model tidy its own context in a long chat — old tool results go, your messages stay. The chat on screen never changes.",
         "system_prompt": "Lets the model read or change its own system prompt when you ask for a standing rule — the Settings field, for every conversation. Revert any time in Settings › System prompt.",
         "render_ui": "Lets the model show a native card instead of prose — charts, maps, diagrams, tables, lists, progress. Drawn by the app from data; nothing runs.",
+        "ask_user": "Lets the model ask you mid-conversation with a native card — Yes/No, a list, checkboxes, a text field or a small form. Cancel is always there; passwords never appear in the chat.",
     ]
 }

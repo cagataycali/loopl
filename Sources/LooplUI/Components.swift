@@ -666,6 +666,8 @@ public struct AgentTranscriptView<Empty: View, Banner: View>: View {
     private let banner: () -> Banner
     /// Human-in-the-loop: called when an `ApprovalCard` is answered (see `onApproval(_:)`).
     public var onApproval: ((ApprovalRequest, ApprovalDecision) -> Void)? = nil
+    /// Phase 7: called when an `AskUserCard` is answered (toolUseId, answer) — see `onAsk(_:)`.
+    public var onAsk: ((String, AskUserAnswer) -> Void)? = nil
     /// Hold-to-edit (see MessageEditing.swift): nil = rows keep their Copy-only menus.
     public var actions: TranscriptActions? = nil
     @State private var pinned = true
@@ -781,6 +783,7 @@ public struct AgentTranscriptView<Empty: View, Banner: View>: View {
         switch last.kind {
         case .user, .note: return true
         case .approval(_, let d): return d != nil
+        case .ask(_, _, let a): return a != nil
         case .assistant, .toolUse, .reasoning, .agent: return false
         }
     }
@@ -820,13 +823,14 @@ public struct AgentTranscriptView<Empty: View, Banner: View>: View {
                 }
             }
         case .approval(let req, let d): ApprovalCard(request: req, decision: d) { onApproval?(req, $0) }
+        case .ask(let id, let req, let a): AskUserCard(toolUseId: id, request: req, answer: a) { onAsk?(id, $0) }   // Phase 7 ask_user
         case .reasoning(let r):
             // Folded to one quiet line ("Thinking…" while it streams, "Thought for a moment" after); tap to read.
             ReasoningRow(text: r, streaming: transcript.isRunning && item.id == transcript.items.last?.id)
         case .note(let s): Text(s).font(.caption).foregroundStyle(.tertiary).accessibilityIdentifier("transcript-note")
         case .agent(let run):
             // A sub-agent's card (Phase 6): its own rows, approvals answered through the same handler (the Engine bubbles them).
-            AgentCard(run: run, expandTools: expandTools) { req, d in onApproval?(req, d) }
+            AgentCard(run: run, expandTools: expandTools, onApproval: { req, d in onApproval?(req, d) }, onAsk: { id, a in onAsk?(id, a) })
         }
     }
 }
@@ -864,6 +868,10 @@ public extension AgentTranscriptView {
     /// Route approval answers (`ApprovalCard`) to the agent — `agent.resolve(approval: req.id, decision)`.
     func onApproval(_ handler: @escaping (ApprovalRequest, ApprovalDecision) -> Void) -> Self {
         var copy = self; copy.onApproval = handler; return copy
+    }
+    /// Route `ask_user` answers (`AskUserCard`) to the agent — `agent.resolve(interrupt: AskUserTool.interruptId(toolUseId:), …)`.
+    func onAsk(_ handler: @escaping (String, AskUserAnswer) -> Void) -> Self {
+        var copy = self; copy.onAsk = handler; return copy
     }
 }
 
@@ -956,6 +964,9 @@ public struct ModelPickerRow: View {
         if spec.supportsVision {
             t = t + meta(" · ") + (Text(Image(systemName: "eye")) + Text(" vision")).font(.caption2.weight(.semibold)).foregroundColor(LooplDesign.accent)
         }
+        if spec.isThinking {
+            t = t + meta(" · ") + (Text(Image(systemName: "brain")) + Text(" thinks")).font(.caption2.weight(.semibold)).foregroundColor(.secondary)
+        }
         if spec.toolsUnverified == true {
             t = t + meta(" · ") + Text("tools unverified").font(.caption2.weight(.semibold)).foregroundColor(LooplDesign.amber)
         }
@@ -964,6 +975,7 @@ public struct ModelPickerRow: View {
     private var metaAccessibility: String {
         var parts = [spec.isDownloadable ? spec.sizeLabel : "built in", "\(spec.paramsB.formatted(.number.precision(.fractionLength(0...1))))B", "context \(spec.ctxUsable8GB.formatted())", spec.runtime.label]
         if spec.supportsVision { parts.append("sees pictures") }
+        if spec.isThinking { parts.append("thinks before answering") }
         if spec.toolsUnverified == true { parts.append("tool calls unverified for this model") }
         return parts.joined(separator: ", ")
     }
