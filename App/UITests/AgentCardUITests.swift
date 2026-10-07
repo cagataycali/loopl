@@ -21,7 +21,7 @@ final class AgentCardUITests: XCTestCase {
         let notes = card(app, "agent_n")
         XCTAssertTrue(notes.waitForExistence(timeout: 10), "notes child card")
         XCTAssertTrue(notes.label.contains("agent notes"), notes.label)
-        XCTAssertEqual(notes.value as? String, "needs your approval", "status chip is spoken as the card's value")
+        XCTAssertEqual(notes.value as? String, "needs your answer", "status chip is spoken as the card's value (P7-B wording)")
         // The child's approval card is rendered with the parent's component — the same Approve / Deny buttons.
         let approve = app.buttons["Approve"].firstMatch, deny = app.buttons["Deny"].firstMatch
         XCTAssertTrue(approve.waitForExistence(timeout: 5) && deny.exists, "nested ApprovalCard inside the child card")
