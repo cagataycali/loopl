@@ -25,6 +25,7 @@ public struct VibrateTool: AppleTool {
     public struct Request: Sendable, Hashable {
         public var pattern: String
         public var intensity: Float
+        public init(pattern: String, intensity: Float) { self.pattern = pattern; self.intensity = intensity }
     }
 
     public static func parse(_ args: [String: JSONValue]) throws -> Request {
@@ -55,17 +56,25 @@ public struct VibrateTool: AppleTool {
         }
     }
 
-    public func call(_ args: [String: JSONValue]) async throws -> String {
+    /// Phase 7: "Vibrate again" re-runs the same pattern at the same intensity.
+    public static func control(_ r: Request) -> ToolControl {
+        .button(label: "Vibrate again", action: ControlAction(tool: "vibrate", args: ["pattern": .string(r.pattern), "intensity": .number(Double(r.intensity))]))
+    }
+
+    public func call(_ args: [String: JSONValue]) async throws -> String { try await callOutput(args).text }
+
+    public func callOutput(_ args: [String: JSONValue]) async throws -> ToolOutput {
         let r = try Self.parse(args)
         let a = Self.availability()
         guard a.available else { throw ToolError("vibrate is not available here: \(a.reason)") }
         #if canImport(CoreHaptics) && canImport(UIKit)
         try await Self.play(r)
-        return "vibrated: \(r.pattern) (intensity \(String(format: "%.2f", r.intensity)))"
+        return ToolOutput(text: "vibrated: \(r.pattern) (intensity \(String(format: "%.2f", r.intensity)))", control: Self.control(r))
         #else
         throw ToolError(Unavailable.noUIKit)
         #endif
     }
+    public func call(_ args: [String: JSONValue], images: [ImageBlock]) async throws -> ToolOutput { try await callOutput(args) }
 
     #if canImport(CoreHaptics) && canImport(UIKit)
     @MainActor

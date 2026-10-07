@@ -36,6 +36,7 @@ public struct FlashlightTool: AppleTool {
     }
 
     public static func availability() -> ToolAvailability {
+        if TorchStore.isFixture { return .ok }
         if Unavailable.isSimulator { return .no(Unavailable.simulator) }
         #if canImport(AVFoundation) && os(iOS)
         guard let d = AVCaptureDevice.default(for: .video), d.hasTorch else { return .no(Unavailable.noTorch) }
@@ -45,23 +46,89 @@ public struct FlashlightTool: AppleTool {
         #endif
     }
 
-    public func call(_ args: [String: JSONValue]) async throws -> String {
+    /// The control under the result (Phase 7): on → "Turn off" (runs `{state: off}`), off → "Turn on" (runs `{state: on}`,
+    /// full brightness — the LED reports level 0 once off, so there is no "same level" to keep). The TOOL attaches it —
+    /// the model never emits controls.
+    public static func control(on: Bool, level: Float) -> ToolControl {
+        .toggle(label: on ? "Turn off" : "Turn on", on: on, action: ControlAction(tool: "flashlight", args: ["state": .string(on ? "off" : "on")]))
+    }
+
+    /// The text the model reads.
+    public static func render(on: Bool, level: Float) -> String {
+        on ? "flashlight: on (level \(String(format: "%.2f", level)))" : "flashlight: off"
+    }
+
+    public func call(_ args: [String: JSONValue]) async throws -> String { try await callOutput(args).text }
+
+    public func callOutput(_ args: [String: JSONValue]) async throws -> ToolOutput {
         let r = try Self.parse(args)
         let a = Self.availability()
         guard a.available else { throw ToolError("flashlight is not available here: \(a.reason)") }
+        let torch = TorchStore.current
+        let wantOn: Bool = switch r.state { case "on": true; case "off": false; default: try !torch.isOn() }
+        let state = try torch.set(on: wantOn, level: r.level)
+        return ToolOutput(text: Self.render(on: state.on, level: state.level), control: Self.control(on: state.on, level: state.level))
+    }
+    public func call(_ args: [String: JSONValue], images: [ImageBlock]) async throws -> ToolOutput { try await callOutput(args) }
+}
+
+/// The torch behind `flashlight`: `SystemTorch` (AVCaptureDevice) on an iPhone, `FixtureTorch` in tests and design
+/// fixtures — the seam that lets a Simulator prove "tap Turn off → flashlight: off" (Phase 7).
+public protocol TorchSource: Sendable {
+    func isOn() throws -> Bool
+    /// Sets the LED and returns the state it actually ended in.
+    func set(on: Bool, level: Float) throws -> (on: Bool, level: Float)
+}
+
+public final class FixtureTorch: TorchSource, @unchecked Sendable {
+    private let lock = NSLock()
+    private var on = false
+    private var level: Float = 1
+    public private(set) var calls: [(on: Bool, level: Float)] = []
+    public init(on: Bool = false) { self.on = on }
+    public func isOn() throws -> Bool { lock.lock(); defer { lock.unlock() }; return on }
+    public func set(on: Bool, level: Float) throws -> (on: Bool, level: Float) {
+        lock.lock(); defer { lock.unlock() }
+        self.on = on; if on { self.level = level }
+        calls.append((on, level))
+        return (on, on ? self.level : 0)
+    }
+}
+
+public enum TorchStore {
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var override: (any TorchSource)?
+    /// Tests / fixtures install a `FixtureTorch`; `nil` restores the hardware.
+    public static func use(_ source: (any TorchSource)?) { lock.lock(); override = source; lock.unlock() }
+    public static var isFixture: Bool { lock.lock(); defer { lock.unlock() }; return override != nil }
+    static var current: any TorchSource {
+        lock.lock(); defer { lock.unlock() }
+        if let o = override { return o }
+        return SystemTorch()
+    }
+}
+
+struct SystemTorch: TorchSource {
+    func isOn() throws -> Bool {
+        #if canImport(AVFoundation) && os(iOS)
+        guard let d = AVCaptureDevice.default(for: .video), d.hasTorch else { throw ToolError(Unavailable.noTorch) }
+        return d.torchMode == .on
+        #else
+        throw ToolError(Unavailable.noTorch)
+        #endif
+    }
+    func set(on: Bool, level: Float) throws -> (on: Bool, level: Float) {
         #if canImport(AVFoundation) && os(iOS)
         guard let d = AVCaptureDevice.default(for: .video), d.hasTorch else { throw ToolError(Unavailable.noTorch) }
         guard d.isTorchAvailable else { throw ToolError("flashlight is unavailable right now (overheated or in use by the camera)") }
-        let wantOn: Bool = switch r.state { case "on": true; case "off": false; default: d.torchMode != .on }
         try d.lockForConfiguration()
         defer { d.unlockForConfiguration() }
-        if wantOn {
-            try d.setTorchModeOn(level: min(r.level, AVCaptureDevice.maxAvailableTorchLevel))
+        if on {
+            try d.setTorchModeOn(level: min(level, AVCaptureDevice.maxAvailableTorchLevel))
         } else {
             d.torchMode = .off
         }
-        let on = d.torchMode == .on
-        return on ? "flashlight: on (level \(String(format: "%.2f", d.torchLevel)))" : "flashlight: off"
+        return (d.torchMode == .on, d.torchLevel)
         #else
         throw ToolError(Unavailable.noTorch)
         #endif

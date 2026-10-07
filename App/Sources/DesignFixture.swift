@@ -311,6 +311,45 @@ enum DesignFixture {
             t.apply(.startEventLoop(cycle: 2))
             t.apply(.text("Skipped to **So What** (Miles Davis) and set the volume to **30 %**."))
             t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("Skipped to **So What** (Miles Davis) and set the volume to **30 %**."), metrics: EventLoopMetrics())))
+        case "controls":
+            // Phase 7 (CONTROLS): tool results that carry a live control — flashlight "Turn off", "Vibrate again", the music
+            // mini player, the location pin, "Open in Calendar". `--design-controls flashlight|vibrate|music|location|agenda`
+            // shows one row; default all five. Flashlight + music run their REAL tool code on tap through the seams.
+            let torch = FixtureTorch(on: true); TorchStore.use(torch)
+            MusicStore.use(FixtureMusicSource())
+            LocationStore.use(FixtureLocationSource())
+            let only = value("--design-controls")
+            func wants(_ n: String) -> Bool { only == nil || only == n }
+            t.user("Flashlight on, buzz me, skip this song, where am I, and remind me to call Deniz at 6.")
+            t.apply(.startEventLoop(cycle: 1))
+            var uses: [ToolUse] = []
+            if wants("flashlight") { uses.append(ToolUse(toolUseId: "tooluse_ct1", name: "flashlight", input: ["state": .string("on")])) }
+            if wants("vibrate") { uses.append(ToolUse(toolUseId: "tooluse_ct2", name: "vibrate", input: ["pattern": .string("double")])) }
+            if wants("music") { uses.append(ToolUse(toolUseId: "tooluse_ct3", name: "music", input: ["action": .string("next")])) }
+            if wants("location") { uses.append(ToolUse(toolUseId: "tooluse_ct4", name: "location", input: [:])) }
+            if wants("agenda") { uses.append(ToolUse(toolUseId: "tooluse_ct5", name: "reminders_create", input: ["title": .string("Call Deniz"), "due": .string("2026-10-07 18:00")])) }
+            t.apply(.modelMessage(.assistant(text: "", toolUses: uses)))
+            for u in uses {
+                t.apply(.toolStarted(u))
+                let r: ToolResult = switch u.name {
+                case "flashlight": ToolResult(toolUseId: u.toolUseId, name: u.name, content: FlashlightTool.render(on: true, level: 1), durationMs: 18, control: FlashlightTool.control(on: true, level: 1))
+                case "vibrate": ToolResult(toolUseId: u.toolUseId, name: u.name, content: "vibrated: double (intensity 1.00)", durationMs: 262, control: VibrateTool.control(.init(pattern: "double", intensity: 1)))
+                case "music":
+                    ToolResult(toolUseId: u.toolUseId, name: u.name, content: "music: skipped to the next song\nnow playing: So What — Miles Davis (Kind of Blue)\nvolume: 40%", durationMs: 96,
+                               control: MusicTool.control(NowPlaying(state: .playing, title: "So What", artist: "Miles Davis", album: "Kind of Blue", volume: 40)))
+                case "location":
+                    ToolResult(toolUseId: u.toolUseId, name: u.name, content: "location: Hoboken, New Jersey, United States\ncoordinates: 40.74, -74.03 (about 1 km)\ntime zone: America/New_York", durationMs: 412,
+                               control: LocationTool.control(FixtureLocationSource().place, precise: false))
+                default:
+                    ToolResult(toolUseId: u.toolUseId, name: u.name, content: "reminders: added\n2026-10-07 18:00 · Call Deniz (Reminders)", durationMs: 210,
+                               control: RemindersCreateTool.control(AgendaItem(title: "Call Deniz", start: Date(timeIntervalSince1970: 1_791_914_400))))
+                }
+                t.apply(.toolResult(r))
+            }
+            t.apply(.startEventLoop(cycle: 2))
+            let line = only == nil ? "Flashlight's on, buzzed, skipped to **So What**, you're in **Hoboken**, and the reminder is set for **6 pm**." : "Done."
+            t.apply(.text(line))
+            t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant(line), metrics: EventLoopMetrics())))
         case "location":
             // TOOLS-EXPAND: the location row (coarse) chained into http for the weather — the reason the tool exists.
             LocationStore.use(FixtureLocationSource())
@@ -857,6 +896,39 @@ enum DesignFixture {
             for p in stride(from: 0.0, through: 1.0, by: 0.25) { engine.readiness = .loading(spec, progress: p); try? await Task.sleep(for: .milliseconds(120)) }
             engine.readiness = .ready(spec)
         }
+    }
+
+    /// Phase 7: a control tap in a fixture (no model). Flashlight and music run their REAL tool code through the seams
+    /// installed by the `controls` scene (`FixtureTorch`, `FixtureMusicSource`) — the Simulator's proof that "tap Turn off"
+    /// reaches `FlashlightTool` and comes back as "flashlight: off" with a "Turn on" switch. Vibrate is scripted (no Taptic
+    /// Engine on a Simulator). The row updates exactly as the Engine does it: `Transcript.applyControlResult`.
+    @MainActor static func tapControl(_ engine: Engine, _ toolUseId: String, _ action: ControlAction) async {
+        engine.controlBusy.insert(toolUseId)
+        engine.haptics.emit(.toolStart)
+        try? await Task.sleep(for: .seconds(0.45))
+        let use = ToolUse(toolUseId: Engine.tapId(), name: action.tool, input: action.args)
+        let tool: (any Tool)? = switch action.tool {
+        case "flashlight": FlashlightTool()
+        case "music": MusicTool()
+        default: nil
+        }
+        var result: ToolResult
+        if let tool {
+            do {
+                let out = try await tool.callOutput(action.args)
+                result = ToolResult(toolUseId: use.toolUseId, name: use.name, content: out.text, durationMs: 21, images: out.images, control: out.control)
+            } catch {
+                result = .error(use, "Error: \((error as? LocalizedError)?.errorDescription ?? "\(error)")")
+            }
+        } else if action.tool == "vibrate", let r = try? VibrateTool.parse(action.args) {
+            result = ToolResult(toolUseId: use.toolUseId, name: use.name, content: "vibrated: \(r.pattern) (intensity \(String(format: "%.2f", r.intensity)))", durationMs: 262, control: VibrateTool.control(r))
+        } else {
+            result = .error(use, "Error: \(action.tool) is not part of this fixture")
+        }
+        engine.transcript.applyControlResult(for: toolUseId, result)
+        if result.isError { engine.lastError = result.content }
+        engine.haptics.emit(result.isError ? .error : .toolFinish)
+        engine.controlBusy.remove(toolUseId)
     }
 
     @MainActor static func resolve(_ engine: Engine, _ req: ApprovalRequest, _ decision: ApprovalDecision) async {
