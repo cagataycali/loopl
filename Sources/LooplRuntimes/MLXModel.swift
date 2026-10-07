@@ -348,10 +348,14 @@ enum PromptEncoder {
         return t.hasSuffix("<think>")
     }
 
+    static let forceManualDialect = ProcessInfo.processInfo.environment["LOOPL_PROMPT_MANUAL"] == "1"
+
     static func encode(systemPrompt: String?, messages: [Loopl.Message], toolSpecs: [Loopl.ToolSpec], family: ToolFamily, kwargs: [String: any Sendable]?, tokenizer: any MLXLMCommon.Tokenizer) throws -> [Int] {
         // 1. Native template with tools (Qwen3/3.5, Llama 3.x, Phi-4, SmolLM3…). The specs travel through
         //    `additionalContext` as ordered Jinja values — the `tools:` parameter would re-sort their keys.
-        if !toolSpecs.isEmpty, let ids = try? tokenizer.applyChatTemplate(messages: Loopl.Message.templateDictionaries(systemPrompt: systemPrompt, messages: messages), tools: nil, additionalContext: toolsContext(toolSpecs, kwargs: kwargs)) { return ids }
+        //    Measurement switch (harnesses only): LOOPL_PROMPT_MANUAL=1 skips the native path so the manual loopl dialect
+        //    (PromptBuilder) can be scored against it on the same checkpoint.
+        if !toolSpecs.isEmpty, !forceManualDialect, let ids = try? tokenizer.applyChatTemplate(messages: Loopl.Message.templateDictionaries(systemPrompt: systemPrompt, messages: messages), tools: nil, additionalContext: toolsContext(toolSpecs, kwargs: kwargs)) { return ids }
         // 2. Template without tools: inject the manual spec into the system prompt, fold tool turns.
         let folded = PromptBuilder.foldToolMessages(messages)
         let sys = PromptBuilder.toolSystemPrompt(toolSpecs: toolSpecs, family: family, base: systemPrompt)
