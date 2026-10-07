@@ -67,7 +67,7 @@ struct SettingsView: View {
                     }
                     .accessibilityIdentifier("settings-storage")
                 } footer: {
-                    Text("Keep models on the iPhone or on a USB-C drive — plug one in and pick a folder.")
+                    Text("Keep models on the \(LooplDesign.deviceName) or on a USB-C drive — plug one in and pick a folder.")
                 }
 
                 Section {
@@ -94,7 +94,7 @@ struct SettingsView: View {
     }
 
     private var storageSummary: String {
-        var parts = ["\(ByteSize.label(store.diskUsed)) on this iPhone"]
+        var parts = ["\(ByteSize.label(store.diskUsed, zero: "None")) on this \(LooplDesign.deviceName)"]
         for v in store.storage.volumes { parts.append(v.connected ? "\(ByteSize.label(v.used)) on \(v.name)" : "\(v.name) not connected") }
         return parts.joined(separator: " · ")
     }
