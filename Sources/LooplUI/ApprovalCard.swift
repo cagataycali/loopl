@@ -73,7 +73,13 @@ public struct ApprovalCard: View {
                 if stacked { Spacer(minLength: 0); if decision == nil { Pill(request.risk.rawValue, tint: riskTint).fixedSize() } }
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text(request.host ?? request.title).font(.callout.weight(.semibold)).lineLimit(stacked ? 2 : 1)
+                Text(request.host ?? titleParts.head).font(.callout.weight(.semibold)).lineLimit(stacked ? 2 : 1)
+                if let what = titleParts.what {
+                    // "Add reminder · Call the dentist back": the thing being approved gets its own line and may wrap —
+                    // it is the one part of the card the user must be able to read before tapping Approve.
+                    Text(what).font(.callout).lineLimit(3)
+                        .accessibilityIdentifier("approval-what")
+                }
                 if let path = pathLine {
                     Text(path).font(.caption.monospaced()).foregroundStyle(.secondary)
                         .lineLimit(stacked ? 3 : 1).truncationMode(stacked ? .tail : .middle)
@@ -181,6 +187,14 @@ public struct ApprovalCard: View {
     private var borderTint: Color {
         guard decision == nil else { return LooplDesign.accent.opacity(0.12) }
         return riskTint.opacity(0.35)
+    }
+    /// Non-http titles come as "Label · payload" ("Copy to clipboard · See you at six"). The label is the heading, the
+    /// payload is its own wrapping line; http cards (host set) and plain titles are unchanged.
+    private var titleParts: (head: String, what: String?) { Self.titleParts(of: request) }
+    public static func titleParts(of request: ApprovalRequest) -> (head: String, what: String?) {
+        guard request.host == nil, let r = request.title.range(of: " · ") else { return (request.title, nil) }
+        let what = String(request.title[r.upperBound...]).trimmingCharacters(in: .whitespaces)
+        return what.isEmpty ? (request.title, nil) : (String(request.title[..<r.lowerBound]), what)
     }
     private var pathLine: String? {
         guard let s = request.url, let u = URL(string: s), request.host != nil else { return nil }
