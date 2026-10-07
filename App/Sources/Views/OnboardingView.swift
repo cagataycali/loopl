@@ -728,10 +728,10 @@ private struct ModelCard: View {
                         // The size shares the title row so the blurb below can use the card's full width.
                         if !ax { Text(spec.sizeLabel).font(.subheadline.monospacedDigit()).foregroundStyle(.secondary) }
                     }
-                    // The pills wrap when they must: 2B carries "Recommended · fast + smart" + "vision" (+ a fit badge).
+                    // The pills wrap when they must: 2B carries "Recommended · fast + smart" + "sees pictures" (+ a fit badge).
                     WrapPills {
                         if recommended { Pill(Onboarding.recommendedBadge) }
-                        if spec.supportsVision { Pill("vision", tint: .secondary) }
+                        if spec.supportsVision { Pill("sees pictures", tint: .secondary) }   // glossary word, same as the Models rows (IMPROVE-5 #7)
                         if downloaded { Pill("on device", tint: .green) }
                         else if fit != .green { FitBadge(fit: fit) }
                         if ax { Text(spec.sizeLabel).font(.subheadline.monospacedDigit()).foregroundStyle(.secondary) }
