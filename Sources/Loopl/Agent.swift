@@ -24,6 +24,7 @@ public indirect enum AgentEvent: Sendable {
     case toolResult(ToolResult)                                  // ToolResultEvent
     case toolResultMessage(Message)                              // ToolResultMessageEvent (appended)
     case historyEdited(HistoryEdit)                              // loopl: the agent edited its own working context (manage_messages) — a UI shows a quiet marker
+    case systemPromptChanged(SystemPromptChange)                 // loopl Phase 6: the agent changed its own system prompt (system_prompt tool) — effective for the next model call; a UI shows a quiet marker
     case metrics(Metrics)                                        // loopl: runtime numbers (debug sheet)
     case forceStop(String)                                       // ForceStopEvent
     case toolsChanged(mounted: [String])                         // loopl Phase 6: the tool list the model is offered changed (manage_tools / registry) — effective for the next model call
@@ -212,6 +213,15 @@ public actor Agent {
     }
     public func setModelGate(_ gate: ModelGate?) { modelGate = gate }
     public func setSystemPrompt(_ prompt: String?) { systemPrompt = prompt }
+    /// `system_prompt` (Phase 6 F): the agent changes its OWN prompt. In force for the NEXT model call of the same
+    /// turn — `handleModelExecution` reads `systemPrompt` when it builds each request — and announced
+    /// (`.systemPromptChanged`) when the tool returns, like `editHistory`. The host's store persists it for later turns.
+    public func changeSystemPrompt(_ change: SystemPromptChange) {
+        systemPrompt = change.after
+        usageBaseline = nil            // the measured prompt size is stale: the next projection re-estimates from shape
+        pendingPromptChanges.append(change)
+    }
+    private var pendingPromptChanges: [SystemPromptChange] = []
     /// Replace the history (a host restoring a session). No hooks fire.
     public func setMessages(_ messages: [Message]) { self.messages = messages }
     /// Put accumulated metrics back (restoring an `AgentCheckpoint` — see Checkpoint.swift).
@@ -834,10 +844,16 @@ public actor Agent {
 
     /// Announce the edits a tool applied during its call (`AgentEvent.historyEdited`), in order.
     private func flushHistoryEdits(_ yield: @Sendable @escaping (AgentEvent) -> Void) {
-        guard !pendingHistoryEdits.isEmpty else { return }
-        let edits = pendingHistoryEdits
-        pendingHistoryEdits.removeAll()
-        edits.forEach { yield(.historyEdited($0)) }
+        if !pendingHistoryEdits.isEmpty {
+            let edits = pendingHistoryEdits
+            pendingHistoryEdits.removeAll()
+            edits.forEach { yield(.historyEdited($0)) }
+        }
+        if !pendingPromptChanges.isEmpty {     // system_prompt (F): same flush point, same ordering guarantee (before the tool's result)
+            let changes = pendingPromptChanges
+            pendingPromptChanges.removeAll()
+            changes.forEach { yield(.systemPromptChanged($0)) }
+        }
     }
 
     // MARK: `_append_messages` (+ MessageAddedEvent)
