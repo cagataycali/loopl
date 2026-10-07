@@ -71,6 +71,9 @@ public struct ModelSpec: Sendable, Codable, Hashable, Identifiable {
     public var displayName: String {
         var n = name
         while let r = n.range(of: #"\s*\((\d+-bit|bf16|fp16|q\d\w*)\)\s*$"#, options: [.regularExpression, .caseInsensitive]) { n.removeSubrange(r) }
+        // GGUF rows are named "Qwen3 0.6B · Q4_K_M (llama.cpp)" in the catalog; the chat title bar showed "Qwen3 0.6B · Q4_K_M (llam…"
+        // (IMPROVE-4 #22). The build and the engine stay in the Models list's GGUF section header and the detail sheet.
+        while let r = n.range(of: #"\s*·\s*(q\d\w*|f16|bf16|fp16)(\s*\([^)]*\))?\s*$"#, options: [.regularExpression, .caseInsensitive]) { n.removeSubrange(r) }
         return n.isEmpty ? name : n
     }
 
