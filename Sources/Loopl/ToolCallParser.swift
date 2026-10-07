@@ -26,7 +26,9 @@ public struct ToolCallParser: Sendable {
     }
 
     public func parse(_ raw: String) -> Result {
-        var text = raw
+        // 0. Closed thinking blocks are chatter: a `<tool_call>` the model DRAFTED while reasoning (Qwen3-VL-Thinking does
+        //    this) must never run — only what comes after `</think>` is the answer. Stripped before any extraction.
+        var text = raw.replacingOccurrences(of: #"<think>[\s\S]*?</think>"#, with: "", options: .regularExpression)
         var calls: [ToolUse] = []
 
         // 1. Explicit markup — accepted for every family (models drift between dialects).
@@ -53,8 +55,6 @@ public struct ToolCallParser: Sendable {
             calls.append(call)
             text.removeSubrange(obj.range)
         }
-        // Thinking blocks are chatter, never a call target — strip closed ones from the visible text.
-        text = text.replacingOccurrences(of: #"<think>[\s\S]*?</think>"#, with: "", options: .regularExpression)
         return Result(text: text.trimmingCharacters(in: .whitespacesAndNewlines), calls: calls)
     }
 
