@@ -15,7 +15,7 @@ public struct FlashlightTool: AppleTool {
         "state": ["type": "string", "enum": ["on", "off", "toggle"], "description": "on, off or toggle"],
         "level": ToolSchema.number("Brightness 0–1 when turning on (default 1 = full)"),
     ], required: ["state"])
-    public static let onDeviceCopy = "Switches the camera LED on and off. No camera access, nothing recorded."
+    public static let onDeviceCopy = "Turns the flashlight on and off. No camera access, nothing recorded."
     public static let states = ["on", "off", "toggle"]
 
     /// Parsed input, shared by `call` and the tests.

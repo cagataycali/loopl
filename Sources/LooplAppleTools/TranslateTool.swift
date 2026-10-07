@@ -21,7 +21,7 @@ public struct TranslateTool: AppleTool {
         "to": ToolSchema.string("Target language code, e.g. 'tr', 'de', 'en-US'"),
         "from": ToolSchema.string("Source language code (default: detected)"),
     ], required: ["text", "to"])
-    public static let onDeviceCopy = "Translates with the language packs downloaded in Apple Translate. Offline; not available on Simulator."
+    public static let onDeviceCopy = "Translates with the language packs you have downloaded in Apple Translate. Works offline."
     public static func availability() -> ToolAvailability {
         #if canImport(Translation)
         if #available(iOS 26, macOS 26, *) {
