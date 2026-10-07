@@ -51,6 +51,8 @@ struct SavedConversation: Codable, Identifiable, Hashable {
             case .toolUse(let c, let r): .tool(name: c.name, args: c.input, result: r?.content, isError: r?.isError ?? false, ms: r?.durationMs ?? 0, images: HistoryImage.thumbnails($0.images), control: r?.control)
             case .note(let s): .note(s)
             case .agent(let run): .note("agent \(run.info.name) (\(run.status.rawValue))" + (run.resultText.map { ": \($0)" } ?? ""))   // summary only; the child's rows are not replayed
+            // Phase 7 ask_user: saved as the tool pair it was, with the MASKED answer (passwords never reach disk); an open card is saved cancelled.
+            case .ask(_, let request, let answer): .tool(name: AskUserTool.toolName, args: request.toolArgs, result: (answer ?? .cancelled).masked(for: request).toolResult.compact, isError: false, ms: 0, images: nil)
             case .approval(let req, let d):
                 switch d {
                 case nil: nil                                   // still waiting — the agent will not be there on reopen
@@ -112,6 +114,9 @@ struct SavedConversation: Codable, Identifiable, Hashable {
             case .assistant(let s): return TranscriptItem(kind: .assistant(s))
             case .tool(let name, let args, let result, let isError, let ms, let images, let control):
                 let use = ToolUse(name: name, input: args)
+                if name == AskUserTool.toolName, let request = try? AskUserRequest(args: args), let result, let answer = AskUserAnswer(toolResult: result) {
+                    return TranscriptItem(kind: .ask(toolUseId: use.toolUseId, request, answer: answer))   // reopened as the settled card
+                }
                 return TranscriptItem(kind: .toolUse(use, result: result.map { ToolResult(toolUseId: use.toolUseId, name: name, status: isError ? .error : .success, content: $0, durationMs: ms, control: control) }), images: images ?? [])
             case .note(let s): return TranscriptItem(kind: .note(s))
             }

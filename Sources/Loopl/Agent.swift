@@ -800,7 +800,8 @@ public actor Agent {
                         interrupted.insert(toolUse.toolUseId)
                         return .error(toolUse, "interrupted: \(raised.interrupt.name)")
                     }
-                    let answer = await awaitAnswer(raised.interrupt, timeout: approvalTimeout, onTimeout: .null, yield)
+                    // Phase 7: a tool may name its own wait (`ask_user timeout_s`); otherwise the approval timeout applies.
+                    let answer = await awaitAnswer(raised.interrupt, timeout: raised.interrupt.timeout ?? approvalTimeout, onTimeout: .null, yield)
                     interruptState.interrupts[raised.interrupt.id]?.response = answer
                 } catch {
                     flushHistoryEdits(yield)

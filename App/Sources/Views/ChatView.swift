@@ -30,6 +30,7 @@ struct ChatView: View {
                     EmptyState(hint: emptyHint)
                 }
                 .onApproval { req, decision in engine.resolve(req, decision) }
+                .onAsk { id, answer in engine.answer(ask: id, answer) }
                 .transcriptActions(TranscriptActions(
                     canEdit: !engine.isGenerating && engine.loadedModel != nil,
                     editing: $editing,
