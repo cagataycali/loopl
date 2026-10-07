@@ -109,6 +109,7 @@ final class ResumeOnceTests: XCTestCase {
         let t = Task { try await withCheckedThrowingContinuation { (c: CheckedContinuation<String, any Error>) in w.park(c) } }
         try await Task.sleep(nanoseconds: 10_000_000)
         w.resume(.success("fix")); w.resume(.failure(CancellationError()))
-        XCTAssertEqual(try await t.value, "fix")
+        let v = try await t.value
+        XCTAssertEqual(v, "fix")
     }
 }
