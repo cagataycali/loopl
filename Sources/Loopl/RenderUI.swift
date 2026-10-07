@@ -407,7 +407,9 @@ public struct RenderSpec: Sendable, Hashable {
     public var resultText: String {
         let kinds = components.map(\.kindName)
         var s = "rendered \(components.count) component\(components.count == 1 ? "" : "s") (\(kinds.joined(separator: ", "))). The user sees the card — do not repeat the same data in prose."
-        if !issues.isEmpty { s += "\nissues: " + issues.joined(separator: "; ") }
+        // MEASURED (loopl-0.8b): a line labelled `issues:` read as "it failed" → the model re-sent the same card 4×. The
+        // card IS drawn; the notes are for next time, and the result says so in those words.
+        if !issues.isEmpty { s += "\nnotes (the card above is already drawn — do not send it again; for your next call): " + issues.joined(separator: "; ") }
         return s
     }
 }

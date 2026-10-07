@@ -73,6 +73,7 @@ final class RenderUITests: XCTestCase {
         XCTAssertEqual(t, "gauge")
         XCTAssertTrue(s.resultText.contains("unknown(gauge)"))
         XCTAssertTrue(s.issues[0].contains("known: markdown, keyvalue"))
+        XCTAssertTrue(s.resultText.contains("already drawn — do not send it again"))
     }
 
     func testMissingComponentsThrowsWithTheTypeList() {
