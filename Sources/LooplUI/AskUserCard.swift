@@ -92,7 +92,7 @@ public struct AskUserCard: View {
     /// Cancel is always possible and honest: the model is told `{ok:false, cancelled:true}`.
     private var footer: some View {
         HStack(spacing: 8) {
-            Text("The agent waits for your answer").font(.caption2).foregroundStyle(.tertiary).lineLimit(2)
+            Text("Waiting for your answer").font(.caption2).foregroundStyle(.tertiary).lineLimit(2)
             Spacer(minLength: 8)
             Button(role: .cancel) { finish(.cancelled, haptic: LooplDesign.failure) } label: {
                 Text("Cancel").font(.caption.weight(.semibold))
@@ -403,7 +403,8 @@ public struct AskUserCard: View {
     private var borderTint: Color { pending ? LooplDesign.accent.opacity(0.35) : LooplDesign.accent.opacity(0.12) }
     private var a11y: String {
         if let answer { return "\(request.title ?? defaultTitle): \(answer.summary(for: request))" }
-        return "question from the agent: \(request.title ?? defaultTitle), waiting for you"
+        // VoiceOver: the question itself first, then the state (glossary: never "the agent" in user-facing words).
+        return "The model asks: \(request.text). Waiting for your answer."
     }
 }
 

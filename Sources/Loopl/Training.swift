@@ -464,6 +464,37 @@ public struct TrainingPlanInfo: Hashable, Sendable {
 }
 
 /// Incremental parser over job log lines. Feed every line (duplicates are fine — stages are keyed by name).
+/// A failed job's error, in words a person can act on (IMPROVE-4 #28: the card showed
+/// "torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 1.2 GiB." and nothing else). The raw line stays in the Job log.
+public enum TrainingFailure {
+    public static func plain(_ raw: String) -> String {
+        let r = raw.lowercased()
+        if r.contains("out of memory") || r.contains("outofmemoryerror") || r.contains("cuda oom") {
+            return "The training machine ran out of memory. Try the smaller base model, or train on fewer conversations."
+        }
+        if r.contains("timed out") || r.contains("timeout") || r.contains("time limit") || r.contains("deadline") {
+            return "The job hit its time limit before it finished. Try fewer passes or fewer conversations."
+        }
+        if r.contains("401") || r.contains("403") || r.contains("unauthorized") || r.contains("forbidden") || r.contains("invalid token") || r.contains("write access") {
+            return "Hugging Face refused the token. Check in Settings that it is a write token for this account."
+        }
+        if r.contains("no space left") || r.contains("disk quota") {
+            return "The training machine ran out of disk space. Try again — the job gets a fresh machine."
+        }
+        if r.contains("cancel") {
+            return "The job was cancelled."
+        }
+        if r.contains("rate limit") || r.contains("429") || r.contains("too many requests") {
+            return "Hugging Face is rate-limiting this account right now. Wait a few minutes and try again."
+        }
+        if r.contains("connection") || r.contains("network") || r.contains("could not resolve") || r.contains("ssl") {
+            return "The job lost its network connection. Try again."
+        }
+        let first = raw.split(whereSeparator: \.isNewline).first.map(String.init) ?? raw
+        return "Training stopped: \(first.prefix(140))"
+    }
+}
+
 public struct TrainingProgress: Hashable, Sendable {
     public private(set) var stages: [TrainingStage] = []
     public private(set) var output: TrainingOutput?

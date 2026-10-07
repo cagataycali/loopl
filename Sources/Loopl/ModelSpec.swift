@@ -68,7 +68,11 @@ public struct ModelSpec: Sendable, Codable, Hashable, Identifiable {
     public var sizeLabel: String { ByteSize.label(sizeBytes, zero: "size unknown") }
     /// The name where a person reads it (chat title, Models rows): the catalog name without its build suffix —
     /// "Qwen3-0.6B (4-bit)" → "Qwen3-0.6B". `name` stays as is for History, sharing and the dataset.
-    public var displayName: String {
+    public var displayName: String { Self.plainName(name) }
+
+    /// The same cleanup for a model name saved elsewhere (History keeps `SavedConversation.modelName` as the catalog name
+    /// of the day — rows showed "Qwen3-0.6B (4-bit)" long after the Models tab stopped saying it; IMPROVE-5 #6).
+    public static func plainName(_ name: String) -> String {
         var n = name
         while let r = n.range(of: #"\s*\((\d+-bit|bf16|fp16|q\d\w*)\)\s*$"#, options: [.regularExpression, .caseInsensitive]) { n.removeSubrange(r) }
         // GGUF rows are named "Qwen3 0.6B · Q4_K_M (llama.cpp)" in the catalog; the chat title bar showed "Qwen3 0.6B · Q4_K_M (llam…"

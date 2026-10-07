@@ -207,7 +207,7 @@ struct ChatView: View {
     ///   scroll-to-bottom target and the transcript came up blank.
     /// So it is a static strip between the title bar and the scroll view: full reading width, outside the scroll math.
     @ViewBuilder private var provenanceRow: some View {
-        if let by = engine.answeredBy {
+        if let by = engine.answeredBy.map(ModelSpec.plainName) {   // saved as the catalog name; shown without "(4-bit)" (IMPROVE-5 #6)
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Image(systemName: "clock.arrow.circlepath").font(.caption2)
                 Text(engine.continuedHere ? "Earlier answers by \(by)" : "Answered by \(by)")
