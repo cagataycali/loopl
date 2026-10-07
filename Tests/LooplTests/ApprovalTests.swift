@@ -163,8 +163,16 @@ final class ApprovalTests: XCTestCase {
         task.cancel()
         _ = try? await task.value
         XCTAssertTrue(tool.ran.isEmpty, "a cancelled wait never runs the tool")
-        let left = await agent.pendingApprovals
-        XCTAssertTrue(left.isEmpty)
+        // POLL, do not assert once: awaiting the consumer's task says the STREAM is over, not that the agent has
+        // finished tidying up — clearing the pending approval happens in the agent's own context. On a loaded
+        // CI box this lost the race and reported "pendingApprovals is not empty" as if the product leaked one.
+        // (Caught on #184's run: the macOS job can fail at all only since #177 added `set -o pipefail`.)
+        var left = await agent.pendingApprovals
+        for _ in 0..<100 where !left.isEmpty {
+            try await Task.sleep(nanoseconds: 10_000_000)
+            left = await agent.pendingApprovals
+        }
+        XCTAssertTrue(left.isEmpty, "a cancelled wait leaves no approval behind: \(left)")
     }
 
     // MARK: policy hook
