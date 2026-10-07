@@ -149,8 +149,8 @@ final class ToolCallParserTests: XCTestCase {
 }
 
 final class ToolCallStreamGateTests: XCTestCase {
-    func run(_ pieces: [String], family: ToolFamily = .hermes, stop: StopReason = .endTurn) -> (text: String, stop: StreamAssembler.Stop) {
-        var gate = ToolCallStreamGate(family: family)
+    func run(_ pieces: [String], family: ToolFamily = .hermes, stop: StopReason = .endTurn, startsInThink: Bool = false) -> (text: String, stop: StreamAssembler.Stop) {
+        var gate = ToolCallStreamGate(family: family, startsInThink: startsInThink)
         var a = StreamAssembler()
         var text = ""
         for p in pieces { for ev in gate.feed(p) { for e in a.feed(ev) { if case .text(let t) = e { text += t } } } }
@@ -177,6 +177,32 @@ final class ToolCallStreamGateTests: XCTestCase {
         XCTAssertEqual(r.text, "pong")
         XCTAssertEqual(r.stop.message.reasoning, "hmm")
         XCTAssertEqual(r.stop.message.text, "pong")
+    }
+
+    /// Qwen3-VL-*-Thinking: the template ends the prompt with `<think>\n`, so the decode starts INSIDE the block and the
+    /// opener never appears in the output. The runtime tells the gate; reasoning still lands in the reasoning row.
+    func testPromptOpenedThinkStreamsAsReasoningUntilCloser() {
+        let r = run(["The user wants", " a greeting.", "\n</think>", "\n\n", "pong"], startsInThink: true)
+        XCTAssertEqual(r.text, "pong")
+        XCTAssertEqual(r.stop.message.reasoning, "The user wants a greeting.\n")
+        XCTAssertEqual(r.stop.message.text, "pong")
+        XCTAssertEqual(r.stop.stopReason, .endTurn)
+    }
+
+    /// A tool call DRAFTED while thinking is chatter; the one after `</think>` is the call.
+    func testPromptOpenedThinkNeverExecutesACallDraftedWhileThinking() {
+        let r = run(["I could call <tool_call>{\"name\": \"nope\", \"arguments\": {}}</tool_call> but first…", "</think>\n\n",
+                     "<tool_call>{\"name\": \"calc\", \"arguments\": {\"x\": 1}}</tool_call>"], startsInThink: true)
+        XCTAssertEqual(r.stop.stopReason, .toolUse)
+        XCTAssertEqual(r.stop.message.toolUses.map(\.name), ["calc"])
+        XCTAssertTrue(r.stop.message.reasoning.contains("nope"))
+        XCTAssertFalse(r.stop.message.text.contains("tool_call"))
+    }
+
+    /// Without the runtime's hint the stream is plain text (the Qwen3 `enable_thinking: false` case: prompt ends with a CLOSED block).
+    func testWithoutTheHintTextIsText() {
+        let r = run(["pong"], startsInThink: false)
+        XCTAssertEqual(r.stop.message.text, "pong"); XCTAssertEqual(r.stop.message.reasoning, "")
     }
 
     func testAngleBracketThatIsNotAnOpenerIsReleased() {

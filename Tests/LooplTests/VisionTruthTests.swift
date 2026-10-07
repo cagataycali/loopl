@@ -138,6 +138,27 @@ final class VisionTruthTests: XCTestCase {
         XCTAssertFalse(String(decoding: try JSONEncoder().encode(old), as: UTF8.self).contains("persona"), "nothing re-encodes the dropped key")
     }
 
+    /// P8-A: the four Qwen3-VL rows. Thinking rows are flagged (their template ALWAYS opens `<think>`; `enable_thinking`
+    /// does not exist there, so the kwarg is deliberately absent), every one sees pictures, sizes match the Hub blobs.
+    func testQwen3VLRowsInstructAndThinking() throws {
+        var url: URL?
+        #if SWIFT_PACKAGE
+        url = Bundle.module.url(forResource: "models", withExtension: "json", subdirectory: "Fixtures")
+        #endif
+        if url == nil { url = Bundle.allBundles.compactMap { $0.url(forResource: "models", withExtension: "json") }.first }
+        let catalog = try JSONDecoder().decode(Catalog.self, from: Data(contentsOf: XCTUnwrap(url)))
+        let vl = catalog.models.filter { $0.repo.hasPrefix("mlx-community/Qwen3-VL-") }
+        XCTAssertEqual(vl.map(\.id), ["qwen3-vl-2b-instruct-4bit", "qwen3-vl-4b-instruct-4bit", "qwen3-vl-2b-thinking-4bit", "qwen3-vl-4b-thinking-4bit"])
+        for row in vl {
+            XCTAssertTrue(row.supportsVision, row.id)
+            XCTAssertFalse(row.gated, row.id)
+            let thinking = row.repo.contains("Thinking")
+            XCTAssertEqual(row.isThinking, thinking, row.id)
+            XCTAssertEqual(row.chatTemplateKwargs?["enable_thinking"] == nil, thinking, "\(row.id): Thinking template has no enable_thinking switch")
+            XCTAssertGreaterThan(row.sizeBytes, row.paramsB > 3 ? 3_000_000_000 : 1_700_000_000, row.id)
+        }
+    }
+
     func testBundledLooplRowsArePublicForMLXGatedForGGUFWithVisionPerRuntime() throws {
         // SwiftPM: Fixtures/models.json via Bundle.module; Xcode-hosted: the app bundle's models.json.
         var url: URL?
