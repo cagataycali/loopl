@@ -144,3 +144,29 @@ extension RenderUITests {
         XCTAssertEqual(s.issues.count, 1)
     }
 }
+
+extension RenderUITests {
+    /// loopl-2b v3 raw calls: an extra `}` at the end, a key missing its closing quote, and `edges` beside three edge-less diagrams.
+    func testExtraCloserAndDroppedQuoteAreRepaired() throws {
+        let a = try RenderSpec(args: ["components": .string(#"[{"type": "diagram", "nodes": [{"id": "a"}, {"id": "b"}], "edges": [{"from": "a", "to": "b"}]}]}"#)])
+        guard case .diagram(_, let n, let e) = a.components[0] else { return XCTFail("\(a.components)") }
+        XCTAssertEqual(n.count, 2); XCTAssertEqual(e.count, 1)
+        let b = try RenderSpec(args: ["components": .string(#"[{"type": "chart", "kind": "line", "series": [{"name": "steps", "points: [{"label": "Mon", "value": 4000}]}]}]"#)])
+        guard case .chart(_, .line, let s) = b.components[0] else { return XCTFail("\(b.components)") }
+        XCTAssertEqual(s[0].points.count, 1)
+        XCTAssertEqual(RenderSpec.balanced(#"[{"a": [1, 2"#), #"[{"a": [1, 2]}]"#)
+        XCTAssertEqual(RenderSpec.balanced(#"[{"a": 1, "b":"#), #"[{"a": 1}]"#)
+    }
+
+    func testStrayEdgesMergeSplitDiagrams() throws {
+        let args: [String: JSONValue] = [
+            "components": .array([.object(["type": "diagram", "nodes": .array([.object(["id": "open"]), .object(["id": "form"])])]),
+                                  .object(["type": "diagram", "nodes": .array([.object(["id": "wrong"])])])]),
+            "edges": .string(#"[{"from": "open", "to": "form"}, {"from": "form", "to": "wrong"}]"#)]
+        let s = try RenderSpec(args: args)
+        XCTAssertEqual(s.components.count, 1)
+        guard case .diagram(_, let n, let e) = s.components[0] else { return XCTFail("\(s.components)") }
+        XCTAssertEqual(n.map(\.id), ["open", "form", "wrong"]); XCTAssertEqual(e.count, 2)
+        XCTAssertEqual(s.issues.count, 2)
+    }
+}

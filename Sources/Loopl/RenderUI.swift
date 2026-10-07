@@ -104,6 +104,33 @@ public struct RenderSpec: Sendable, Hashable {
             if let decoded = Self.decodeComponents(s) { issues.append("`components` was sent as a JSON string — send a plain array next time"); return decoded }
             issues.append("a component was a string that is not valid JSON — send {type, …} objects"); return []
         }
+        // Stray top-level keys (`edges`, `pins`, `series`, …) — the model split one component across the call (loopl-2b
+        // put three edge-less `diagram`s in `components` and `edges` beside them). Attach each to the first component
+        // that takes it; edge-less diagrams are merged into one so the edges have their nodes.
+        let strayKeys: [String: [String]] = ["edges": ["diagram"], "nodes": ["diagram"], "pins": ["map"], "route": ["map"], "series": ["chart"], "points": ["chart"],
+                                             "rows": ["table"], "headers": ["table"], "data": ["keyvalue", "chart"], "items": ["list"]]
+        let strays = args.filter { strayKeys[$0.key] != nil }
+        if !strays.isEmpty {
+            var objs = raw.map { $0.objectValue ?? [:] }
+            if strays["edges"] != nil {
+                let diagrams = objs.indices.filter { (objs[$0]["type"]?.stringValue ?? "") == "diagram" && objs[$0]["edges"] == nil }
+                if diagrams.count > 1 {
+                    var merged = objs[diagrams[0]]
+                    merged["nodes"] = .array(diagrams.flatMap { objs[$0]["nodes"]?.arrayValue ?? [] })
+                    for i in diagrams.dropFirst().reversed() { objs.remove(at: i) }
+                    objs[diagrams[0]] = merged
+                    issues.append("\(diagrams.count) diagram components had no edges and `edges` was outside — merged into one diagram")
+                }
+            }
+            for (key, value) in strays {
+                let v: JSONValue = value.stringValue.flatMap { Self.decodeComponents($0).map(JSONValue.array) } ?? value
+                if let i = objs.indices.first(where: { strayKeys[key]!.contains(objs[$0]["type"]?.stringValue ?? "") && objs[$0][key] == nil }) {
+                    objs[i][key] = v
+                    issues.append("`\(key)` was outside its component — put it inside the \(objs[i]["type"]?.stringValue ?? "") object")
+                }
+            }
+            raw = objs.map(JSONValue.object)
+        }
         guard !raw.isEmpty else { throw ToolError("render_ui: `components` must be a non-empty array of {type, …} objects" + (issues.isEmpty ? "" : " — " + issues.joined(separator: "; ")) + ". Types: \(RenderComponent.knownTypes.joined(separator: ", ")).") }
         if raw.count > Self.maxComponents { issues.append("only the first \(Self.maxComponents) of \(raw.count) components were drawn"); raw = Array(raw.prefix(Self.maxComponents)) }
         var out: [RenderComponent] = []
@@ -133,7 +160,11 @@ public struct RenderSpec: Sendable, Hashable {
         if let a = parse(t) { return a }
         // Trailing commas before a closing bracket/brace are the most common model slip.
         t = t.replacingOccurrences(of: #",\s*([\]}])"#, with: "$1", options: .regularExpression)
+        // `"points: [` — a key whose closing quote was dropped (loopl-2b, chart run).
+        t = t.replacingOccurrences(of: #""([a-z_]+): "#, with: "\"$1\": ", options: .regularExpression)
         if let a = parse(t) { return a }
+        // Unbalanced closers: `…]}]}` (one `}` too many) or a truncated tail — rebalance with a bracket stack.
+        if let a = parse(balanced(t)) { return a }
         // `[ "kind", "field": …, … ]` → `[{"type": "kind", "field": …, …}]`
         if let r = t.range(of: #"^\[\s*"([a-z_]+)"\s*,"#, options: .regularExpression) {
             let kind = String(t[r]).replacingOccurrences(of: #"[\[\s",]"#, with: "", options: .regularExpression)
@@ -143,6 +174,34 @@ public struct RenderSpec: Sendable, Hashable {
             if let a = parse(fixed) { return a }
         }
         return nil
+    }
+
+    /// Rebalance `[]`/`{}` outside string literals: drop closers that have no opener, append the closers a truncated
+    /// tail is missing. A dangling `"key":` or `,` before the appended closers is removed.
+    static func balanced(_ text: String) -> String {
+        var out = "", stack: [Character] = [], inString = false, escaped = false
+        for ch in text {
+            if inString {
+                out.append(ch)
+                if escaped { escaped = false } else if ch == "\\" { escaped = true } else if ch == "\"" { inString = false }
+                continue
+            }
+            switch ch {
+            case "\"": inString = true; out.append(ch)
+            case "[", "{": stack.append(ch); out.append(ch)
+            case "]": if stack.last == "[" { stack.removeLast(); out.append(ch) }     // else: an extra closer — dropped
+            case "}": if stack.last == "{" { stack.removeLast(); out.append(ch) }
+            default: out.append(ch)
+            }
+        }
+        if inString { out.append("\"") }
+        while true {
+            let trimmed = out.replacingOccurrences(of: #"(,|"[^"]*"\s*:)\s*$"#, with: "", options: .regularExpression)
+            if trimmed == out { break }
+            out = trimmed
+        }
+        for open in stack.reversed() { out.append(open == "[" ? "]" : "}") }
+        return out
     }
 
     // MARK: per-kind parsing
