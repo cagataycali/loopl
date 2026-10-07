@@ -208,36 +208,42 @@ final class SubAgentTests: XCTestCase {
 
     // MARK: cap + queue + stop
 
+    /// Polls instead of fixed sleeps (CI simulators are slow; the fixed-sleep version failed there).
+    private func waitUntil(_ what: String, timeout: TimeInterval = 5, _ cond: @escaping () async -> Bool) async throws {
+        let t0 = Date()
+        while !(await cond()) {
+            if Date().timeIntervalSince(t0) > timeout { return XCTFail("timed out waiting for \(what)") }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+    }
+
     func testFourthChildQueuesAndStopEndsIt() async throws {
         let hub = SubAgentHub()
-        let model = FakeModel(turns: [.hang(after: 1), .hang(after: 1), .hang(after: 1), .text("fourth")])
+        // Three children race for the ONE gate — which of them holds it is not deterministic, so the model answers by
+        // system prompt: s0/s1/s2 hang after a token, s3 says "fourth".
+        let model = FakeModel(turns: [])
+        await model.setChooser { system, _ in system == "s3" ? .text("fourth") : .hang(after: 1) }
         let gate = ModelGate()
         let ctx = SubAgentContext(model: model, gate: gate, availableTools: [])
         var ids: [String] = []
         for i in 0..<4 { ids.append(await hub.spawn(systemPrompt: "s\(i)", input: "go", tools: [], background: true, context: ctx, sink: nil)) }
-        try await Task.sleep(nanoseconds: 100_000_000)
-        let statuses = await hub.list().map(\.status)
-        XCTAssertEqual(statuses.filter { $0 == .background }.count, 3, "\(statuses)")
-        XCTAssertEqual(statuses.last, .queued)
-        // Stop one running child → the queued one takes the slot (but the ONE model gate is still held by a hung
-        // sibling, so it waits its turn — children queue on the weights, they never interleave).
+        try await waitUntil("3 background + 1 queued") { await hub.list().map(\.status) == [.background, .background, .background, .queued] }
+        try await waitUntil("one child generating, two queued on the weights") { await model.seenPrompts.count == 1 && gate.waiting == 2 }
+        // Stop one running child → the queued fourth takes the hub slot, but the ONE model gate is held by a hung
+        // sibling, so it waits its turn — children queue on the weights, they never interleave.
         let stopped = await hub.stop(ids[0])
         XCTAssertTrue(stopped)
-        try await Task.sleep(nanoseconds: 200_000_000)
-        var after = await hub.list()
-        XCTAssertEqual(after[0].status, .stopped)
-        XCTAssertEqual(after[3].status, .background, "\(after.map(\.status))")
-        XCTAssertNil(after[3].result)
-        // Stop the two hung ones → the gate frees → the fourth generates and finishes. One at a time: a child stopped
-        // while still QUEUED on the gate no longer takes the weights at all (ModelGate.acquire throws), so the scripted
-        // FakeModel turns stay 1:1 with the children that actually generate.
-        _ = await hub.stop(ids[1])
-        try await Task.sleep(nanoseconds: 200_000_000)
-        _ = await hub.stop(ids[2])
-        try await Task.sleep(nanoseconds: 400_000_000)
-        after = await hub.list()
+        try await waitUntil("child 0 stopped, child 3 in a slot") { let l = await hub.list(); return l[0].status == .stopped && l[3].status == .background }
+        let mid = await hub.list(); XCTAssertNil(mid[3].result)
+        XCTAssertTrue(gate.isBusy, "a hung sibling still holds the weights")
+        // Stop the other two → the gate frees → the fourth generates and finishes. A child stopped while still QUEUED
+        // on the gate never takes the weights (ModelGate.acquire throws); a stopped holder releases them.
+        _ = await hub.stop(ids[1]); _ = await hub.stop(ids[2])
+        try await waitUntil("fourth done") { await hub.list()[3].status == .done }
+        let after = await hub.list()
         XCTAssertEqual(after.map(\.status), [.stopped, .stopped, .stopped, .done])
         XCTAssertEqual(after[3].result, "fourth")
+        XCTAssertFalse(gate.isBusy)
         await hub.stopAll()
         try await Task.sleep(nanoseconds: 100_000_000)
         let running = await hub.running
