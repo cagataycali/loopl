@@ -255,7 +255,7 @@ struct CollectionRowLabel: View {
         // left the curator's note ~150 pt wide on an SE and ~175 pt on a 16 Pro ("Smallest — quick answers and tools,
         // sees pictures" in four words per line) because a monospaced "1.75 GB" at 3x the type is wider than the note.
         // Same shape as #194 (Settings › Tools), #195 (the approval card) and #198 (the Models version line);
-        // `TypeSqueezeUITests` now measures it on every push.
+        // `ScreenAuditUITests` now measures it on every push.
         let layout = typeSize.isAccessibilitySize
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6))
             : AnyLayout(HStackLayout(alignment: .top, spacing: 12))
