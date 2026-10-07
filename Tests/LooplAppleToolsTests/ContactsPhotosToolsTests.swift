@@ -58,6 +58,6 @@ final class ContactsPhotosToolsTests: XCTestCase {
             XCTAssertTrue(AppleTools.availability(of: n).available)
         }
         XCTAssertEqual(AppleTools.names.count, 18)
-        XCTAssertEqual(AppleTools.defaultOnNames.count, 11, "the everyday set: today's 8 + the two clipboard tools + music")
+        XCTAssertEqual(AppleTools.defaultOnNames.count, 12, "the everyday set: 8 + the two clipboard tools + music + location (on since 2026-10-07)")
     }
 }

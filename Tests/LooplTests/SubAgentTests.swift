@@ -228,8 +228,12 @@ final class SubAgentTests: XCTestCase {
         XCTAssertEqual(after[0].status, .stopped)
         XCTAssertEqual(after[3].status, .background, "\(after.map(\.status))")
         XCTAssertNil(after[3].result)
-        // Stop the two hung ones → the gate frees → the fourth generates and finishes.
-        _ = await hub.stop(ids[1]); _ = await hub.stop(ids[2])
+        // Stop the two hung ones → the gate frees → the fourth generates and finishes. One at a time: a child stopped
+        // while still QUEUED on the gate no longer takes the weights at all (ModelGate.acquire throws), so the scripted
+        // FakeModel turns stay 1:1 with the children that actually generate.
+        _ = await hub.stop(ids[1])
+        try await Task.sleep(nanoseconds: 200_000_000)
+        _ = await hub.stop(ids[2])
         try await Task.sleep(nanoseconds: 400_000_000)
         after = await hub.list()
         XCTAssertEqual(after.map(\.status), [.stopped, .stopped, .stopped, .done])
