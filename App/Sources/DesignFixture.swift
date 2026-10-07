@@ -487,6 +487,32 @@ enum DesignFixture {
             // Phase 7 `render_ui`: `--design-render chart|map|diagram|table|keyvalue|list|progress|misc|unknown` = one card per kind;
             // default = the mixed card (title + markdown + chart + keyvalue) the owner asked for ("maps, graphs, diagrams").
             renderScene(&t, kind: value("--design-render") ?? "mixed")
+        case "long":
+            // IMPROVE-5 lens 1: a long thread — `--design-long-turns N` (default 60) user/answer pairs, a tool row every 6th,
+            // a picture every 10th, a note every 15th — for scroll/reopen/memory audits of the transcript at scale.
+            let turns = Int(value("--design-long-turns") ?? "") ?? 60
+            let png = Bundle.main.url(forResource: "vision-test", withExtension: "png").flatMap { try? Data(contentsOf: $0) } ?? Data()
+            let img = ImageBlock(data: png, mime: "image/png", width: 640, height: 400, alt: "test card")
+            let prompts = ["What time is it in Istanbul?", "Summarise what we said so far in one line.", "What is \(turns) × 17?",
+                           "Write two sentences about the sea.", "Translate 'good morning' to Turkish.", "What's in this picture?"]
+            for i in 1...turns {
+                let q = prompts[i % prompts.count]
+                t.user(i % 10 == 0 ? "What's in this picture?" : "\(i). \(q)", images: i % 10 == 0 ? [img] : [])
+                t.apply(.startEventLoop(cycle: i))
+                if i % 6 == 0 {
+                    let use = ToolUse(toolUseId: "tooluse_long_\(i)", name: i % 12 == 0 ? "calculator" : "current_time",
+                                      input: i % 12 == 0 ? ["expression": .string("\(turns)*17")] : ["timezone": .string("Europe/Istanbul")])
+                    t.apply(.modelMessage(.assistant(text: "", toolUses: [use])))
+                    t.apply(.toolResult(ToolResult(toolUseId: use.toolUseId, name: use.name, status: .success,
+                                                   content: i % 12 == 0 ? "\(turns)*17 = \(turns * 17)" : "2026-10-07T09:\(String(format: "%02d", i % 60)):00+03:00 (Europe/Istanbul, Tuesday)", durationMs: 2)))
+                }
+                t.apply(.text(i % 10 == 0 ? "A red circle and a blue square with **LOOPL 42** underneath."
+                              : "Answer \(i): " + String(repeating: "the sea is wide and the wind is steady. ", count: 1 + i % 4)))
+                if i % 15 == 0 { t.apply(.historyEdited(HistoryEdit(action: .compact, turnsAffected: 8, toolBlocksRemoved: 2, messagesBefore: 2 * i, messagesAfter: 2 * i - 8))) }
+                t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("…"), metrics: EventLoopMetrics())))
+            }
+            var m = Metrics(); m.contextUsed = 6_900; m.contextMax = 8_192; m.tokensPerSecond = 38
+            t.apply(.metrics(m))
         case "markdown":
             // Everything the block renderer knows: heading, table, quote, rule, lists, code — the shapes small models emit.
             t.user("Compare the three runtimes in a table, then quote the one-line rule.")
