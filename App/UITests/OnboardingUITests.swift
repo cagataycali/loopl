@@ -110,6 +110,35 @@ final class OnboardingUITests: XCTestCase {
         XCTAssertTrue(el(app, "onboarding-progress").waitForNonExistence(timeout: 15), "Apple Intelligence is ready at once; the flow closes")
     }
 
+    /// The Apple Intelligence card is on screen WITHOUT scrolling on a 16 Pro-class phone and never hides under the
+    /// Download bar: its frame ends above the bar's top (IMPROVE-4 audit #1 — the card used to sit half behind the bar).
+    func testAppleCardAboveTheDownloadBar() {
+        let app = launch(["--design-onboarding-step", "pick", "--design-apple-fm"])
+        let card = el(app, "onboarding-apple-fm"), bar = el(app, "onboarding-continue")
+        XCTAssertTrue(card.waitForExistence(timeout: 10) && bar.exists)
+        let screen = app.windows.firstMatch.frame
+        if screen.height >= 800 {
+            XCTAssertLessThanOrEqual(card.frame.maxY, bar.frame.minY + 1, "card \(card.frame) must end above the Download bar \(bar.frame)")
+        } else {
+            XCTAssertLessThan(card.frame.minY, bar.frame.minY, "on a small phone the card at least peeks above the bar: \(card.frame) vs \(bar.frame)")
+        }
+    }
+
+    /// A model that cannot start: plain sentence, the reason, Try again as the primary action, Choose another model
+    /// as the way out — and no Hugging Face pitch in the middle (IMPROVE-4 audit #3).
+    func testFailedLoadOffersRetryAndAnotherModel() {
+        let app = launch(["--design-onboarding-step", "pick", "--design-onboarding-fail"])
+        XCTAssertTrue(el(app, "onboarding-continue").waitForExistence(timeout: 10))
+        el(app, "onboarding-continue").tap()
+        XCTAssertTrue(el(app, "onboarding-failed").waitForExistence(timeout: 8))
+        XCTAssertTrue(el(app, "onboarding-failed").label.contains("couldn't start"), el(app, "onboarding-failed").label)
+        XCTAssertTrue(el(app, "onboarding-retry").exists, "Try again")
+        XCTAssertTrue(el(app, "onboarding-choose-again").exists, "Choose another model")
+        XCTAssertFalse(el(app, "onboarding-hf").exists, "no sign-in pitch while failed")
+        el(app, "onboarding-choose-again").tap()
+        XCTAssertTrue(el(app, "onboarding-card-loopl-2b-4bit").waitForExistence(timeout: 5), "back at the picks")
+    }
+
     /// On a 6 GB phone the 4B card says so (fit badge + one line) and 2B stays the pick.
     func testFitBadgeOnSmallPhone() {
         let app = launch(["--design-onboarding-step", "pick", "--design-ram-gb", "6"])
