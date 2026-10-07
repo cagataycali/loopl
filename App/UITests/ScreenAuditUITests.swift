@@ -89,7 +89,14 @@ final class ScreenAuditUITests: XCTestCase {
             // A monospaced value (a header value, a path, a sha) is not prose and may sit in a column, and an
             // availability CHIP's accessibility label is long by design while its capsule is deliberately small
             // ("unavailable: Not on Simulator — runs on a real iPhone", measured at 135 pt on an iPad).
-            guard !label.contains("application/"), !label.hasPrefix("/"), !label.hasPrefix("unavailable:") else { continue }
+            //
+            // "The model asks:" is an element's SPOKEN SUMMARY of a whole card, not a drawn sentence — its frame is
+            // the summary element's, not the text's. Found by running this on an iPad, where it reported the
+            // ask_user form squeezed to 206 pt of 834; the screen is photographed in improve-9/shots and the
+            // sentence is drawn across the full card. The lesson is the same one #201 learned: an accessibility
+            // label is not always a measurement of anything.
+            guard !label.contains("application/"), !label.hasPrefix("/"), !label.hasPrefix("unavailable:"),
+                  !label.hasPrefix("The model asks:") else { continue }
             guard f.width < min(w * 0.45, 220) else { continue }
             found[label] = "“\(label.prefix(44))” in \(Int(f.width)) pt of \(Int(w))"
         }
