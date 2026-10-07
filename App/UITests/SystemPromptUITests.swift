@@ -13,7 +13,7 @@ final class SystemPromptUITests: XCTestCase {
         let preview = app.staticTexts["approval-change-preview"].firstMatch
         XCTAssertTrue(preview.waitForExistence(timeout: 5), "the old → new preview is OPEN without a tap — it is the decision")
         XCTAssertTrue(preview.label.contains("+ Always answer in Turkish"), preview.label)
-        XCTAssertTrue(preview.label.contains("chars kept"), "append shows what stays: \(preview.label)")
+        XCTAssertTrue(preview.label.contains("instructions stay"), "append shows what stays: \(preview.label)")
         XCTAssertTrue(app.buttons["Approve"].firstMatch.exists); XCTAssertTrue(app.buttons["Deny"].firstMatch.exists)
         XCTAssertEqual(app.staticTexts.matching(identifier: "transcript-note").count, 0, "nothing changed yet — no marker")
     }
