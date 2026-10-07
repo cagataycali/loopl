@@ -277,6 +277,12 @@ struct ModelsView: View {
                 }
             }
             .buttonStyle(.plain)
+            // The catalog id, as a test identifier — never shown to anyone. The row's TEXT is deliberately
+            // unstable: #142 dropped "(4-bit)" from the name and put "sees pictures" in the meta line, #158
+            // dropped "· Q4_K_M (llama.cpp)", and the lane's standing order is to keep simplifying it. Two UI
+            // tests were finding rows by that text and went red the moment it improved; "loopl 0.8B" is now
+            // ambiguous between the MLX and GGUF rows anyway. (Same reasoning as `tool-row-<id>` in #180.)
+            .accessibilityIdentifier("models-row-\(spec.id)")
             .opacity(state.driveBlocked ? 0.55 : 1)
             .accessibilityHint(state.needsDrive.map { "on \($0), not connected" } ?? state.unreadableDrive.map { "on \($0), which can't be read" } ?? (isLoaded ? "in use" : "switches to this model"))
             if state.isDownloaded, store.storage.location(of: spec.id).isExternal {

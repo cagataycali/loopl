@@ -14,8 +14,12 @@ final class CollectionUITests: XCTestCase {
         let four = app.descendants(matching: .any).matching(identifier: "collection-row-cagataydev/loopl-4b-4bit").firstMatch
         if !four.waitForExistence(timeout: 10) { app.swipeUp() }   // below Browse + Train on a small screen
         XCTAssertTrue(four.waitForExistence(timeout: 5), "loopl 4B row from the bundled collection snapshot")
-        XCTAssertTrue(four.label.contains("vision"), "vision badge from the files: \(four.label)")
-        XCTAssertTrue(four.label.contains("quiz 158"), "the curator's note (v1.1) is the subtitle: \(four.label)")
+        // The badge reads "sees pictures" and the subtitle is the plain blurb since IMPROVE-4 #142/#152 —
+        // the owner's standing order is plainer words, so the test follows the words, not the old ones
+        // ("vision" / the curator's "quiz 158" note).
+        XCTAssertTrue(four.label.contains("sees pictures"), "vision badge from the files: \(four.label)")
+        XCTAssertTrue(four.label.contains("Most capable"), "the plain blurb is the subtitle: \(four.label)")
+        XCTAssertTrue(four.label.contains("GB"), "the size is on the row: \(four.label)")
         // Owner's order (MODELS-ORDER): On this iPhone → Browse → Train → loopl models → Mine — the section sits BELOW Browse now.
         let browse = app.descendants(matching: .any).matching(identifier: "models-browse-hub").firstMatch
         XCTAssertTrue(browse.waitForExistence(timeout: 5))
@@ -110,7 +114,10 @@ final class CollectionUITests: XCTestCase {
         let more = app.descendants(matching: .any).matching(identifier: "models-more").firstMatch
         XCTAssertTrue(more.waitForExistence(timeout: 10), "More models row")
         more.tap()
-        let row = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'loopl 0.8B · Q4_K_M'")).firstMatch
+        // By identifier, not by label: IMPROVE-4 #158 dropped "· Q4_K_M (llama.cpp)" from the displayed name,
+        // so matching on the old text found nothing — and matching on "loopl 0.8B" would now be ambiguous with
+        // the MLX row of the same name.
+        let row = app.descendants(matching: .any).matching(identifier: "models-row-loopl-0.8b-q4_k_m").firstMatch
         for _ in 0..<8 where !(row.exists && row.isHittable) { app.swipeUp() }
         XCTAssertTrue(row.waitForExistence(timeout: 5), "the private loopl GGUF row (gated in models.json)")
         row.tap()
