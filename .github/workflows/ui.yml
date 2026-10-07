@@ -65,7 +65,8 @@ jobs:
             test-without-building 2>&1 | tee ui.log | tail -n 120
       - name: Which tests failed (names, not a tail)
         if: failure()
-        run: grep -E "error:|failed \(|Test Case .* failed" ui.log | head -n 60 || true
+        run: |
+          grep -E "error:|failed \(|Test Case .* failed" ui.log | head -n 60 || true
       - name: Keep the result bundle
         if: always()
         uses: actions/upload-artifact@v4

@@ -58,13 +58,18 @@ jobs:
       # `tail -n 120` hides WHICH test failed when the suite is long — print the names too.
       - name: Which tests failed (names, not a tail)
         if: failure()
-        run: grep -E "error: -\[|Test Case .* failed|with [1-9][0-9]* failure" ios-test.log | head -n 60 || true
+        run: |
+          grep -E "error: -\[|Test Case .* failed|with [1-9][0-9]* failure" ios-test.log | head -n 60 || true
   package:
     name: swift build · swift test (pure Loopl package, macOS)
     runs-on: macos-26
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+      # A malformed workflow file produces a run with NO jobs, named after the file path, with no log —
+      # it reads like "CI broke on my code". Parse them all first (ruby ships with the runner).
+      - name: Workflows parse
+        run: ./scripts/check-workflows.sh
       - name: Skip if no Package.swift yet
         id: pkg
         run: '[ -f Package.swift ] && echo present=true >> "$GITHUB_OUTPUT" || echo present=false >> "$GITHUB_OUTPUT"'
@@ -86,4 +91,5 @@ jobs:
           swift test 2>&1 | tee swift-test.log | tail -n 120
       - name: Which tests failed (names, not a tail)
         if: failure() && steps.pkg.outputs.present == 'true'
-        run: grep -E "error: -\[|with [1-9][0-9]* failure|error:" swift-test.log | head -n 60 || true
+        run: |
+          grep -E "error: -\[|with [1-9][0-9]* failure|error:" swift-test.log | head -n 60 || true
