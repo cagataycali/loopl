@@ -81,9 +81,14 @@ final class HistoryUITests: XCTestCase {
     func testCancelKeepsEverythingAndSingleRowCounts() {
         let app = launch()
         openHistory(app).tap()
-        // Tick one row, not all.
-        let row = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Explain what an agent loop is'")).firstMatch
-        XCTAssertTrue(row.waitForExistence(timeout: 5)); row.tap()
+        // Tick one row, not all. The NEWEST thread, because it is the first row under the first date section
+        // (#162 grouped the list by day): an element lower down can exist and still not be on screen, and
+        // XCUITest taps a button's centre regardless — so tapping "Explain what an agent loop is", which now
+        // sits under "Yesterday", landed on the bottom bar and selected nothing.
+        let row = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'What time is it in Istanbul'")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        XCTAssertTrue(row.isHittable, "the row the test ticks must be on screen: \(row.frame)")
+        row.tap()
         XCTAssertTrue(app.buttons["Delete 1"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.navigationBars.staticTexts["1 selected"].exists)
         app.buttons["history.delete"].tap()
@@ -100,7 +105,7 @@ final class HistoryUITests: XCTestCase {
         app.buttons["history.delete"].tap()
         XCTAssertTrue(confirm.waitForExistence(timeout: 5)); confirm.tap()
         XCTAssertTrue(row.waitForNonExistence(timeout: 5), "the row sprang out")
-        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'What time is it in Istanbul'")).firstMatch.exists)
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Explain what an agent loop is'")).firstMatch.exists)
         XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Fetch https://loopl.dev'")).firstMatch.exists)
         XCTAssertFalse(app.buttons["history.delete"].exists, "selection mode ended")
         XCTAssertTrue(app.buttons["history.select"].exists, "two threads left to select")
