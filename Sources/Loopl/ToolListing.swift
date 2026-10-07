@@ -80,6 +80,9 @@ public struct ToolListing: Sendable, Hashable {
     ]
 
     /// One-line copy for the portable tools (their `description` is written for the model, not for Settings).
+    /// EVERY portable tool needs an entry: `ToolsSection` falls back to `tool.description`, so a missing one prints the
+    /// model's prompt — paragraph, braces and all — into Settings (`use_agent` did, 324 pt on a 16 Pro / 356 pt on an SE).
+    /// `ToolListingTests.testEveryPortableToolHasHumanCopy` keys off the real tool names and caps the length.
     public static let coreCopy: [String: String] = [
         "current_time": "The date and time right now, in your time zone.",
         "calculator": "Arithmetic the model should not do in its head.",
@@ -92,5 +95,6 @@ public struct ToolListing: Sendable, Hashable {
         "system_prompt": "Lets the model read or change its own system prompt when you ask for a standing rule — the Settings field, for every conversation. Revert any time in Settings › System prompt.",
         "render_ui": "Lets the model show a native card instead of prose — charts, maps, diagrams, tables, lists, progress. Drawn by the app from data; nothing runs.",
         "ask_user": "Lets the model ask you mid-conversation with a native card — Yes/No, a list, checkboxes, a text field or a small form. Cancel is always there; passwords never appear in the chat.",
+        "use_agent": "Lets the model give a side task to a helper that works on its own with only the tools the model picks for it, and reports back when it is done. Up to 3 at a time.",
     ]
 }
