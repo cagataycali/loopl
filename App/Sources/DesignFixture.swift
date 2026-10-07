@@ -117,6 +117,18 @@ enum DesignFixture {
         }
     }
 
+    /// `--design-answering` (DEBUG): marks the fixture's transcript as still running, so a scene can be
+    /// "a model is loaded AND it is mid-answer" — the state the delete-while-answering flow needs and that no
+    /// fixture could reach, because a scene either scripts a finished conversation or replays a live one. Same
+    /// shape of seam as `designVision` (#184): a hole in what could be tested at all, not a test-only behaviour.
+    static var answering: Bool {
+        #if DEBUG
+        return requested && CommandLine.arguments.contains("--design-answering")
+        #else
+        return false
+        #endif
+    }
+
     /// `--design-tab chat|models|settings` picks the pane the fixture opens on.
     static var initialPane: RootView.Pane {
         #if DEBUG
@@ -579,6 +591,7 @@ enum DesignFixture {
             var m = Metrics(); m.ttftMs = 212; m.tokensPerSecond = 41.7; m.promptTokens = 318; m.generatedTokens = 156; m.contextUsed = 474; m.contextMax = 8192
             t.apply(.metrics(m))
         }
+        if answering { t.isRunning = true }      // --design-answering: the turn is still in flight
         engine.transcript = t
     }
 

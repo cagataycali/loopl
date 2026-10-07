@@ -534,9 +534,39 @@ public final class Engine {
     }
 
     /// The model is gone from disk — drop it if it is the loaded one.
-    public func didDelete(_ spec: ModelSpec) {
-        if loadedModel?.id == spec.id { Task { await unload() } }
+    ///
+    /// `async` on purpose, and callers MUST await it before they unlink anything. This used to return immediately
+    /// after firing `Task { await unload() }`, while `ModelsView.delete` went straight on to
+    /// `FileManager.removeItem` — so the weights were unlinked while the model still held them, and nothing in the
+    /// path looked at `isGenerating`. Deleting the model that was mid-answer left the app describing a state it was
+    /// not in: `unload()` sets `model = nil`, `agent = nil` and `readiness = .idle` while the agent keeps streaming
+    /// from its own reference, so the screen said *no model is running* with a model visibly still talking, the next
+    /// turn had nothing to answer with, and `stop()` — which reads `agent` — could no longer cancel the run cleanly
+    /// and had to fall back to its grace timer.
+    ///
+    /// Order now: stop the answer · wait for the turn to settle · release the weights · only then does the caller
+    /// delete the files.
+    public func didDelete(_ spec: ModelSpec) async {
         if settings.lastModelId == spec.id { settings.lastModelId = nil }
+        guard loadedModel?.id == spec.id else { return }
+        if isGenerating || runTask != nil {
+            stop()
+            await waitForTurnToSettle()
+        }
+        await unload()
+    }
+
+    /// Bounded wait for the turn in flight to end after `stop()`. Polling on the main actor rather than
+    /// `await runTask?.value`: a `Task<Void, Never>` cannot be interrupted by cancelling the waiter, so awaiting its
+    /// value directly would hand a hung turn the power to hang a delete. `stop()` settles the transcript itself
+    /// after `stopGrace`, so twice that is a ceiling we should never reach — and if we do, the delete proceeds
+    /// anyway, because the person asked for the files to go.
+    private func waitForTurnToSettle() async {
+        let deadline = Date().addingTimeInterval(Self.stopGrace * 2)
+        while transcript.isRunning || runTask != nil {
+            if Date() >= deadline { break }
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
     }
 
     public func clear() { transcript.clear(); agent = nil; openedUnder = nil; continuedHere = false; resetMounted(nil); stopChildren() }
