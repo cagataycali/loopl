@@ -49,10 +49,10 @@ final class LocationToolTests: XCTestCase {
         XCTAssertEqual(LocationStore.round(40.744012, decimals: 5), 40.74401)
     }
 
-    func testReadOnlyNoCardOffByDefaultRegistered() {
+    func testReadOnlyNoCardOnByDefaultRegistered() {
         XCTAssertNil(LocationTool().requiresApproval(for: [:]))
         XCTAssertTrue(AppleTools.names.contains("location"))
-        XCTAssertFalse(AppleTools.isDefaultOn("location"))
+        XCTAssertTrue(AppleTools.isDefaultOn("location"), "ON by default since STOP-LOCATION 2026-10-07")
         XCTAssertTrue(LocationTool.availability().available, "fixture counts as available")
     }
 }
