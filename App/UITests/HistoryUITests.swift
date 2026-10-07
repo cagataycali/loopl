@@ -78,6 +78,16 @@ final class HistoryUITests: XCTestCase {
         XCTAssertTrue(again.staticTexts["Your conversations appear here."].waitForExistence(timeout: 5), "still empty after relaunch")
     }
 
+    /// A row in a lazy List that is below the fold is not merely unreachable — it does not EXIST to XCUITest. On an
+    /// iPhone SE the third thread sits off screen where an iPhone 16 Pro shows all three, so `exists` was a claim
+    /// about screen height. Scroll until it is realised (bounded), then assert. Found by running this suite on an
+    /// SE: the CI runner picks the tallest iPhone it has, so a test can quietly require a tall phone forever.
+    private func reachRow(_ app: XCUIApplication, startingWith prefix: String) -> XCUIElement {
+        let el = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", prefix)).firstMatch
+        for _ in 0..<3 where !el.exists { app.swipeUp() }
+        return el
+    }
+
     func testCancelKeepsEverythingAndSingleRowCounts() {
         let app = launch()
         openHistory(app).tap()
@@ -105,8 +115,8 @@ final class HistoryUITests: XCTestCase {
         app.buttons["history.delete"].tap()
         XCTAssertTrue(confirm.waitForExistence(timeout: 5)); confirm.tap()
         XCTAssertTrue(row.waitForNonExistence(timeout: 5), "the row sprang out")
-        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Explain what an agent loop is'")).firstMatch.exists)
-        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Fetch https://loopl.dev'")).firstMatch.exists)
+        XCTAssertTrue(reachRow(app, startingWith: "Explain what an agent loop is").exists)
+        XCTAssertTrue(reachRow(app, startingWith: "Fetch https://loopl.dev").exists)
         XCTAssertFalse(app.buttons["history.delete"].exists, "selection mode ended")
         XCTAssertTrue(app.buttons["history.select"].exists, "two threads left to select")
         shot("06-two-left")
