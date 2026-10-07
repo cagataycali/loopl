@@ -85,3 +85,11 @@ SnapshotSessionManager
 Weather
 Qwen3_5Tokenizer
 Engine
+# Apple framework types named in the video docs
+AVAssetImageGenerator
+# environment switches and test targets the SDK docs name (not public types)
+LOOPL_VIDEO
+LOOPL_VIDEO_FRAMES
+MEASURE
+MLXVideoTests
+SystemPromptToolTests
