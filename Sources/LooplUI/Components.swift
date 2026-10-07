@@ -945,15 +945,27 @@ public struct PendingRow: View {
 
 /// The mark and one line — the whole empty state. The mark draws itself the first time it is seen.
 public struct EmptyState: View {
+    /// One thing to do from the empty screen, when the hint alone would be a dead end.
+    public struct Action {
+        public var title: String
+        public var id: String
+        public var run: () -> Void
+        public init(title: String, id: String, run: @escaping () -> Void) { self.title = title; self.id = id; self.run = run }
+    }
     public var hint: String
-    public init(hint: String) { self.hint = hint }
+    public var action: Action?
+    public init(hint: String, action: Action? = nil) { self.hint = hint; self.action = action }
     public var body: some View {
         VStack(spacing: 18) {
             LooplMarkIntro().frame(width: 72, height: 72).accessibilityHidden(true)
             Text(MarkdownBody.inline(hint)).font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
                 .frame(maxWidth: 300)
+            if let action {
+                Button(action.title, action: action.run).buttonStyle(.bordered).controlSize(.regular)
+                    .accessibilityIdentifier(action.id)
+            }
         }
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
     }
 }
 
@@ -971,10 +983,13 @@ public struct ModelPickerRow: View {
     /// 0…1 while the weights are arriving: the trailing glyph becomes a ring instead of the download arrow,
     /// so a row shows ONE state at a time (in use ⚡ · on this device ✓ · downloading ○ · tap to download ↓).
     public var downloading: Double?
+    /// In a section that already means "on this device" the ✓ is noise (and reads as "selected"): draw nothing there
+    /// for a downloaded row that is not in use.
+    public var quietWhenDownloaded: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var typeSize
-    public init(spec: ModelSpec, loaded: Bool = false, downloaded: Bool = false, loadedMark: Namespace.ID? = nil, downloading: Double? = nil) {
-        self.spec = spec; self.loaded = loaded; self.downloaded = downloaded; self.loadedMark = loadedMark; self.downloading = downloading
+    public init(spec: ModelSpec, loaded: Bool = false, downloaded: Bool = false, loadedMark: Namespace.ID? = nil, downloading: Double? = nil, quietWhenDownloaded: Bool = false) {
+        self.spec = spec; self.loaded = loaded; self.downloaded = downloaded; self.loadedMark = loadedMark; self.downloading = downloading; self.quietWhenDownloaded = quietWhenDownloaded
     }
     public var body: some View {
         HStack(spacing: 12) {
@@ -1020,8 +1035,11 @@ public struct ModelPickerRow: View {
         }
         return t
     }
-    private var metaAccessibility: String {
-        var parts = [spec.isDownloadable ? spec.sizeLabel : "built in", "\(spec.paramsB.formatted(.number.precision(.fractionLength(0...1))))B", "context \(spec.ctxUsable8GB.formatted())", spec.runtime.label]
+    /// What VoiceOver reads under the name — the same facts the eye gets (IMPROVE-4 #6: "context 12,288, MLX" was
+    /// moved off the screen in build 17 but still spoken). The technical line lives in the detail sheet.
+    public var metaAccessibility: String { Self.metaAccessibility(spec) }
+    public static func metaAccessibility(_ spec: ModelSpec) -> String {
+        var parts = [spec.isDownloadable ? spec.sizeLabel : "built in"]
         parts.append(spec.supportsVision ? "sees pictures" : "text only")
         if spec.isThinking { parts.append("thinks before answering") }
         if spec.toolsUnverified == true { parts.append("tool calls unverified for this model") }
@@ -1033,7 +1051,10 @@ public struct ModelPickerRow: View {
             let bolt = Image(systemName: LooplDesign.iconLoaded).foregroundStyle(LooplDesign.accent).accessibilityLabel("loaded")
             if let loadedMark, !reduceMotion { bolt.matchedGeometryEffect(id: "loaded.bolt", in: loadedMark) } else { bolt.transition(.opacity) }
         }
-        else if downloaded || !spec.isDownloadable { Image(systemName: "checkmark").foregroundStyle(.secondary).font(.footnote.weight(.semibold)).accessibilityLabel("on this device").transition(.opacity) }
+        else if downloaded || !spec.isDownloadable {
+            if quietWhenDownloaded { Color.clear.frame(width: 1, height: 1).accessibilityHidden(true) }
+            else { Image(systemName: "checkmark").foregroundStyle(.secondary).font(.footnote.weight(.semibold)).accessibilityLabel("on this device").transition(.opacity) }
+        }
         else if let downloading {
             // The row below already draws the bar and the byte count; a third progress affordance (a spinning ring) read
             // as a hang (IMPROVE-3 audit #16). The percentage is the one number the bar cannot say.

@@ -63,7 +63,7 @@ struct ModelsView: View {
             List {
                 // 1 — what is on the phone. Empty = a calm shelf, not an error; the hint points down at where models come from.
                 Section {
-                    ForEach(here) { spec in row(spec) }
+                    ForEach(here) { spec in row(spec, onDevice: true) }
                     if !here.contains(where: \.isDownloadable) {
                         // Nothing downloaded (Apple Intelligence may still be here): one calm line pointing at where models come from.
                         Label {
@@ -111,7 +111,7 @@ struct ModelsView: View {
                         Label {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Train your own").font(.body.weight(.medium))
-                                Text("Post-tune a model on your conversations — on Hugging Face, in your account").font(.caption).foregroundStyle(.secondary)
+                                Text("Teach a model from your conversations — on Hugging Face, in your account").font(.caption).foregroundStyle(.secondary)
                             }
                         } icon: { Image(systemName: "sparkles").foregroundStyle(LooplDesign.accent) }
                     }
@@ -242,7 +242,9 @@ struct ModelsView: View {
         }
     }
 
-    @ViewBuilder private func row(_ spec: ModelSpec) -> some View {
+    /// `onDevice`: the row sits under "On this iPhone" — every row there is downloaded, so the ✓ would say the section's
+    /// own title again and read as "selected" (IMPROVE-4 #7); only the ⚡ for the model in use stays.
+    @ViewBuilder private func row(_ spec: ModelSpec, onDevice: Bool = false) -> some View {
         let state = store.states[spec.id] ?? .notDownloaded
         let isLoaded = engine.loadedModel?.id == spec.id
         let busy = engine.readiness.spec?.id == spec.id && engine.readiness.isBusy
@@ -253,7 +255,7 @@ struct ModelsView: View {
                 Task { await engine.select(spec) }
             } label: {
                 HStack {
-                    ModelPickerRow(spec: spec, loaded: isLoaded, downloaded: state.isDownloaded, loadedMark: loadedMark, downloading: progress(state))
+                    ModelPickerRow(spec: spec, loaded: isLoaded, downloaded: state.isDownloaded, loadedMark: loadedMark, downloading: progress(state), quietWhenDownloaded: onDevice)
                     if busy, !isLoaded { PulsingMark().frame(width: 16, height: 16).padding(.leading, 4).transition(.opacity) }
                 }
             }

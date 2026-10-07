@@ -186,7 +186,7 @@ struct CollectionSection<More: View>: View {
         let state = spec.flatMap { store.states[$0.id] }
         VStack(alignment: .leading, spacing: 6) {
             Button { LooplDesign.haptic(); selected = row.hit } label: {
-                CollectionRowLabel(row: row, subtitle: spec.flatMap(ModelBlurb.known) ?? row.note.map(ModelBlurb.plain), added: isAdded(row.hit), loaded: spec.map { engine.loadedModel?.id == $0.id } ?? false, state: state)
+                CollectionRowLabel(row: row, subtitle: spec.flatMap(ModelBlurb.known) ?? row.note.map(ModelBlurb.plain), added: isAdded(row.hit), loaded: spec.map { engine.loadedModel?.id == $0.id } ?? false, state: state, sizeBytes: spec.map(\.sizeBytes))
             }
             .buttonStyle(.plain)
             .matchedTransitionSource(id: "collection-\(row.id)", in: zoom)
@@ -245,12 +245,16 @@ struct CollectionRowLabel: View {
     var added: Bool
     var loaded: Bool
     var state: ModelStore.State?
+    /// The catalog's byte count when the row IS a catalog model — the Hub figure is the weights file alone
+    /// (1.72 GB) while onboarding and Models › On this iPhone say what is downloaded (1.75 GB): one model, one number (IMPROVE-4 #4).
+    var sizeBytes: Int64? = nil
+    private var shownBytes: Int64? { sizeBytes ?? row.hit.sizeBytes }
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(title).font(.body.weight(loaded ? .semibold : .regular)).lineLimit(1)
-                    if row.hit.isVision { (Text(Image(systemName: "eye")) + Text(" vision")).font(.caption.weight(.medium)).foregroundStyle(LooplDesign.accent).accessibilityLabel("vision") }
+                    if row.hit.isVision { (Text(Image(systemName: "eye")) + Text(" sees pictures")).font(.caption.weight(.medium)).foregroundStyle(LooplDesign.accent).accessibilityLabel("sees pictures") }
                     if row.hit.isPrivate { Image(systemName: "lock.fill").font(.caption2).foregroundStyle(.secondary).accessibilityLabel("private") }
                 }
                 if let note = subtitle {
@@ -261,7 +265,7 @@ struct CollectionRowLabel: View {
             }
             Spacer(minLength: 8)
             VStack(alignment: .trailing, spacing: 4) {
-                if let s = row.hit.sizeBytes, s > 0 { Text(ByteSize.label(s)).font(.footnote.monospacedDigit()).foregroundStyle(.secondary) }
+                if let s = shownBytes, s > 0 { Text(ByteSize.label(s)).font(.footnote.monospacedDigit()).foregroundStyle(.secondary) }
                 if loaded { Image(systemName: LooplDesign.iconLoaded).font(.footnote.weight(.semibold)).foregroundStyle(LooplDesign.accent).accessibilityLabel("in use") }
                 else if added { Image(systemName: "checkmark").font(.footnote.weight(.semibold)).foregroundStyle(.secondary).accessibilityLabel("on this device") }
                 else if case .downloading(let done, let total, _, _)? = state {
