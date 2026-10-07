@@ -35,9 +35,9 @@ public struct SystemPromptChange: Sendable, Hashable, Codable {
     /// The transcript marker — one quiet line, plain words.
     public var summary: String {
         switch action {
-        case .set: "system prompt replaced by the agent · revert in Settings › System prompt"
-        case .append: "system prompt extended by the agent · revert in Settings › System prompt"
-        case .reset: "system prompt reset to the default by the agent · revert in Settings › System prompt"
+        case .set: "The model replaced its instructions · undo in Settings › System prompt"
+        case .append: "The model added a rule to its instructions · undo in Settings › System prompt"
+        case .reset: "The model went back to the default instructions · undo in Settings › System prompt"
         }
     }
 }

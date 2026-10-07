@@ -9,7 +9,7 @@ final class ManageMessagesUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--design-fixture", "compacted", "--design-tab", "chat"]
         app.launch()
-        let marker = app.staticTexts["2 turns compacted by the agent · your history is unchanged"].firstMatch
+        let marker = app.staticTexts["The model tidied 2 turns of notes · your conversation is unchanged"].firstMatch
         XCTAssertTrue(marker.waitForExistence(timeout: 15), "the quiet marker is on screen")
         // The user's record: all three questions and both earlier answers are still rows above the marker.
         for text in ["What time is it in Istanbul?", "And 23 × 47, then 2^10?", "The context is getting long — tidy it up, then tell me what you kept."] {
