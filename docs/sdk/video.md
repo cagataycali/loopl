@@ -89,10 +89,41 @@ the transcript as its own chip under the clip, so what the model heard is visibl
 `MEASURE` line per run. The numbers below come from the synthetic fixture clips (moving coloured squares on a dark background,
 640×360, 30 fps, 10 s and 60 s, a sine audio track).
 
-<!-- MEASUREMENTS: filled by the lane from ~/.tiny/loopl-phase8/video-sdk/evidence/matrix.log -->
+All runs: the same question (*"What happens in this video? Describe the motion in two sentences."*), terse system prompt, no tools,
+plan `maxFrames 16 · 1 fps · 448 px` (10 s → 10 frames, 60 s → 16). `frames` = loopl's sampler (this page's design); `url` = the
+library's own sampler (keeps ~576×320 frames and ignores the plan's edge). `video tokens` = prompt minus the ~36 text tokens.
+
+| model | clip | source | frames | video tokens | tok/s | ttft | peak RSS | what it said |
+|---|---|---|---|---|---|---|---|---|
+| 2B Instruct | 10 s | frames | 10 | 560 | 41 | 1.3 s | 2.0 GB | "a blue square appears in the center" — colour/position right, motion missed |
+| 2B Instruct | 10 s | url | 10 | 900 | 19 | 2.0 s | 2.1 GB | same |
+| 2B Instruct | 60 s | frames | 16 | 896 | 40 | 2.3 s | 2.0 GB | two squares, colours right, no motion |
+| 2B Instruct | 60 s | url | 16 | 1440 | 23 | 4.9 s | 2.1 GB | colours + left/right right, no motion |
+| 4B Instruct | 10 s | frames | 10 | 560 | 24 | 2.2 s | 3.3 GB | "remains stationary" — wrong |
+| 4B Instruct | 10 s | url | 10 | 900 | 6 | 8.3 s | 3.3 GB | "no visible motion" — wrong, 4× slower |
+| 4B Instruct | 60 s | frames | 16 | 896 | 16 | 7.9 s | 3.3 GB | **"the blue square moves right, the yellow moves left"** — motion read |
+| 4B Instruct | 60 s | url | 16 | 1440 | 22 | 7.5 s | 3.4 GB | "remain stationary" — wrong |
+| 2B Thinking | 10 s | frames | 10 | 560 | 19 | 2.9 s | 2.0 GB | reasons "it's a static image" — wrong |
+| 2B Thinking | 60 s | frames | 16 | 896 | 41 | 1.7 s | 2.1 GB | colours + left/right right, calls it static |
+| 4B Thinking | 10 s | frames | 10 | 560 | 22 | 1.9 s | 3.3 GB | **"first frame the square is up, next it's moved down → moves downward"** — motion read |
+| 4B Thinking | 10 s | url | 10 | 900 | 17 | 4.2 s | 3.3 GB | "moves vertically downward" — motion read |
+| 4B Thinking | 60 s | frames | 16 | 896 | 17 | 3.5 s | 3.4 GB | "blue squares move downward from top left, yellow upward from bottom right" |
+
+Read it honestly:
+
+- **Token cost is exact and cheap**: 112 tokens per frame pair at 448 px 16:9 → a 16-frame clip is ~900 tokens, a 10-frame clip 560.
+  The library's sampler spends 1.6× the tokens for no better answers and (on the 4B) up to 4× the time to first token.
+- **Peak memory is the model, not the video**: +0.2 GB for 16 frames on either size (2B ≈ 2.0 GB, 4B ≈ 3.3 GB on macOS; on a
+  16 Pro the 4B + 16 frames is the heaviest thing the app does — `VisionBudget.maxFrames` caps the count to what fits).
+- **Motion is a 4B skill**: the 2B names colours and positions reliably but reads evenly spaced frames as a still; 4B Instruct reads
+  motion at 16 frames, 4B Thinking at 10 — it reasons frame-to-frame ("first frame up, next frame down"). Expect the same gap on
+  real footage; the frames are the same for every model, so the plan does not change the picture, the model does.
+- The clips are **synthetic** (coloured squares on a dark field). A loopl screen recording and a real camera clip are in the lane's
+  evidence; the device proof (16 Pro, camera clip with speech) is requested from the owner.
 
 ## Where it is not
 
-- No `describe_video` tool yet: a vision model reads the clip in the user turn, and the measurement decides whether a text-only
-  parent needs a tool — fewer tools unless one earns its place.
+- **No `describe_video` tool** — decided by the table: a vision model reads the clip in the user turn with no tool call at all, and
+  a text-only model cannot run the frames anyway (there is one model loaded; a text model has no vision tower to delegate to). What a
+  text-only model *can* use — the transcript — it already gets in the turn. A tool would add a round trip and a schema for nothing.
 - `UserInput.Video.avAsset` (library-side decoding on the fly) is not used; frames are decoded once, so the plan's cost is known up front.

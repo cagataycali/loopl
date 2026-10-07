@@ -51,13 +51,13 @@ final class VideoClip: Identifiable {
         return clip
     }
 
-    /// Frames for this device + model: headroom above 1.3× the weights picks 8 / 16 / 32, then the plan is shrunk
-    /// until the clip fits half the model's context window (the other half is the conversation + the answer).
-    /// P8-A's `VisionBudget` replaces the headroom rule when it lands — the per-frame arithmetic is `VideoFramePlan`'s.
+    /// Frames for this device + model: `MemoryBudget.maxVideoFrames` (P8-A's `VisionBudget`: the largest even count whose
+    /// tokens leave 2 k of context for the rest and whose bytes fit the jetsam budget, ≤ 32) is the cap; then the plan
+    /// is shrunk until the clip's frames fit half the model's context window. 0 frames → the smallest honest plan
+    /// (2 frames @ 224 px) rather than refusing — the overflow message names the count if it still does not fit.
     static func plan(for spec: ModelSpec?, probe: VideoFrameSampler.Probe) -> VideoFramePlan {
-        let headroom = Double(MemoryBudget.budget) - Double(spec?.sizeBytes ?? 0) * 1.3
-        let frames = headroom >= 3e9 ? 32 : headroom >= 1.5e9 ? 16 : 8
-        let start = VideoFramePlan(maxFrames: frames, fps: 1, maxEdge: 448)
+        let cap = spec.map { MemoryBudget.maxVideoFrames($0) } ?? 16
+        let start = VideoFramePlan(maxFrames: max(2, cap), fps: 1, maxEdge: 448)
         let ctx = spec?.defaultParams.contextLength ?? 8192
         return VideoFramePlan.fitting(tokenBudget: ctx / 2, duration: probe.duration, width: probe.width, height: probe.height, start: start)
             ?? VideoFramePlan(maxFrames: 2, fps: 1, maxEdge: 224)

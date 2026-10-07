@@ -24,6 +24,7 @@ Free, no sign-in, no analytics. On first launch you pick a model (loopl 0.8B · 
 | | |
 |---|---|
 | **Chat** | a document, not bubbles: streaming text, folded thinking, tool rows with timing, image attachments, a mic that records a take for `transcribe`, Stop. |
+| **Video** | with a Qwen3-VL model loaded, **+ → Photo or Video / Record Video / Video from Files** attaches one clip per message. The chip shows the poster · length · how many frames the model will see (8–32 evenly spaced, sized to this phone's memory and the model's context) · whether the clip had speech. The model sees the frames **natively**; the audio track is **transcribed on the phone** and handed over as text — Qwen3-VL has no ears, and loopl says so rather than pretending. A text-only model gets the words that were spoken and a plain note that it cannot see the frames. → [Video input](../sdk/video.md) |
 | **Models** | the catalog plus **Browse Hugging Face** — search, see size, context and whether it fits, download; your private repos under **Mine**; Apple's model on iOS 26. → [Models](models.md) |
 | **Settings** | the system prompt (yours — nothing is added in front of it, for any model), which tools, what asks first, **offline mode**, [**Storage**](storage.md) — models on the phone or a USB-C drive. |
 | **History** | finished conversations. Swipe to delete one; **Select** → *Select all*, then **Delete N** (asks once; messages, pictures and recordings leave the device) or [Share to Hugging Face](share-to-hugging-face.md): reviewed, redacted, into a private dataset of yours. |
