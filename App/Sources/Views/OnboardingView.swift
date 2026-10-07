@@ -350,18 +350,29 @@ struct OnboardingView: View {
         }
     }
 
-    /// An SE-class screen (667 pt) cannot show three cards, the network line and the Apple Intelligence card under
-    /// the hero mark; the mark gives way there so the fourth choice at least peeks above the Download bar.
-    private var shortScreen: Bool {
+    /// How tall the hero mark may be on the pick page, by how much room the device has below it.
+    ///
+    /// Three cards + the network line + the Apple Intelligence card is a fixed amount of content, so the only
+    /// adjustable thing above it is this mark. IMPROVE-4 #151 rescued the SE by dropping the mark to nothing
+    /// there, which left a band nobody measured: on an **iPhone 16 Pro (874 pt)** the card ended at y = 782 while
+    /// the Download bar started at 767.7 — a **14 pt overlap** — and it was invisible both ways, because the fix
+    /// had been checked on an SE and CI's runner picks the TALLEST iPhone available (where 56 pt fits fine).
+    /// So: nothing under 700, a smaller mark up to 900, the full mark on a Pro Max and on iPad.
+    /// A `ViewThatFits` cannot decide this: inside a `ScrollView` the proposed height is unbounded, so it would
+    /// always take the first candidate.
+    private var pickMarkHeight: CGFloat {
         #if os(iOS)
-        return UIScreen.main.bounds.height < 700
+        let h = UIScreen.main.bounds.height
+        if h < 700 { return 0 }          // SE: the card needs every point
+        if h < 900 { return 32 }         // 16 Pro 874, 16 / 15 Pro 852: 56 pt overflows by 14
+        return 56
         #else
-        return false
+        return 56
         #endif
     }
     private var header: some View {
         VStack(spacing: 10) {
-            markSlot(started ? 128 : (shortScreen && !needsSignIn ? 0 : 56), source: (stage == .pick || stage == .download) && !morphFromCard)
+            markSlot(started ? 128 : (needsSignIn ? 56 : pickMarkHeight), source: (stage == .pick || stage == .download) && !morphFromCard)
                 .accessibilityIdentifier("onboarding-mark")
                 .accessibilityElement()
                 .accessibilityLabel(started ? "Download progress" : "loopl")
