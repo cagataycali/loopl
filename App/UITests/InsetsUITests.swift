@@ -120,7 +120,16 @@ final class InsetsUITests: XCTestCase {
 
     func testSettingsDeleteHistoryButtonIsHittable() {
         let app = launch(tab: "settings")
-        let list = pane(app, "pane-settings", sidebar: "Settings")
+        // The destructive buttons moved off the Settings list into Settings > Storage (IMPROVE-3 #120), so this
+        // guard had been measuring a row that is not there any more — and UI tests do not run in CI, so it stayed
+        // red on main unnoticed until IMPROVE-5 ran the suite. Walk into Storage first, then measure as before.
+        let settings = pane(app, "pane-settings", sidebar: "Settings")
+        let storage = app.buttons["settings-storage"].firstMatch
+        for _ in 0..<8 where !storage.isHittable { settings.swipeUp(velocity: .fast) }
+        XCTAssertTrue(storage.waitForExistence(timeout: 5), "Settings has a Storage row")
+        storage.tap()
+        let list = app.collectionViews["pane-storage"]
+        XCTAssertTrue(list.waitForExistence(timeout: 10), "the Storage screen opened")
         let btn = app.buttons["Delete conversation history"]
         // Two steps, and both are needed. `scrollUntilVisible` only brings the row
         // into the accessibility tree (a `List` does not instantiate far-off rows,

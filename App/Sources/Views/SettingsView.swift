@@ -29,7 +29,7 @@ struct SettingsView: View {
                     .accessibilityIdentifier("settings-system-prompt")
                     ToolsSection(engine: engine, settings: settings)
                 } header: { Text("Agent") } footer: {
-                    Text("The model keeps working until it has an answer or you tap stop. " + ToolsSection.footer(expanded: toolsExpanded))
+                    Text("Runs until it has an answer or you tap Stop. " + ToolsSection.footer(expanded: toolsExpanded))   // IMPROVE-5: two lines on an SE
                 }
 
                 Section {

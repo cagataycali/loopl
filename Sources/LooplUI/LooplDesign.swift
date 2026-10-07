@@ -37,6 +37,13 @@ public enum LooplDesign {
     /// with `.callout`, never past `controlSideMax` — three of them at 56 pt left an SE composer two words wide.
     public static let controlSide: CGFloat = 40
     public static let controlSideMax: CGFloat = 44
+    /// Point size for the GLYPH inside a round control of `side` points. The circle stops growing at
+    /// `controlSideMax`, so the glyph must be sized from the circle and not from the text size: with a plain
+    /// `.font(.callout)` an accessibility text size drew `stop.fill` far larger than its 44 pt circle — in dark
+    /// mode the Stop button became a black square on black, and Send lost the orange disc that tells enabled from
+    /// disabled (IMPROVE-5, SE at AX-XL). 0.4 x the default 40 pt side = 16 pt = `.callout`, so the composer at
+    /// everyday text sizes is pixel-identical.
+    public static func controlGlyph(_ side: CGFloat) -> CGFloat { side * 0.4 }
     /// Fill of a round control that sits on bar material. `secondarySystemBackground` was the SAME tint as `.bar`
     /// in light mode, so the attach / mic circles vanished and the "+" read as a bare glyph (UX audit, 16 Pro).
     public static let controlFill = Color(.secondarySystemFill)

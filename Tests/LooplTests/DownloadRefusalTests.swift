@@ -58,7 +58,10 @@ final class DownloadRefusalTests: XCTestCase {
         XCTAssertEqual(drives, []); XCTAssertFalse(connected)
         let m = r!.message
         XCTAssertTrue(m.contains("Not enough space on This iPhone"), m)
-        XCTAssertTrue(m.contains("needs 734 MB") && m.contains("52.4 MB free"), "need vs free missing: \(m)")
+        // Built from the same formatter the message uses: a hard-coded "734 MB" / "52.4 MB" fails on a device whose
+        // region writes "52,4 MB" (IMPROVE-5 #11b). The contract is that the message quotes BOTH numbers.
+        XCTAssertTrue(m.contains("needs \(ByteSize.label(need))"), "need missing: \(m)")
+        XCTAssertTrue(m.contains("\(ByteSize.label(free)) free"), "free missing: \(m)")
         XCTAssertTrue(m.contains("Settings › Storage"), "must point at the external-drive option: \(m)")
         XCTAssertFalse(r!.isSilent); XCTAssertTrue(r!.suggestsStorageSettings)
     }
