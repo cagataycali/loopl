@@ -415,7 +415,7 @@
       "chat_template_kwargs": {
         "enable_thinking": false
       },
-      "notes": "loopl v1.1 — Qwen3.5-0.8B post-tuned by Cagatay Cali on cagataydev/loopl-train (agent loop, tools, robots, identity + who Cagatay Cali is and his projects; trained on loopl-train v2.1 rev db6fa452). Vision kept (mlx_vlm export: vision_tower + preprocessor_config, same layout as the mlx-community base). Public — no token. bf16 base for Train your own: cagataydev/loopl-0.8b."
+      "notes": "loopl v1.2 — Qwen3.5-0.8B post-tuned by Cagatay Cali on cagataydev/loopl-train (agent loop, tools, robots, identity + who Cagatay Cali is and his projects; trained on loopl-train v2.2.1 rev 47d27b44; right tool 174/250 (v1.1 113), installs a missing tool 25/48 (v1.1 1/48)). Vision kept (mlx_vlm export: vision_tower + preprocessor_config, same layout as the mlx-community base). Public — no token. bf16 base for Train your own: cagataydev/loopl-0.8b."
     },
     {
       "id": "loopl-0.8b-q4_k_m",
@@ -434,7 +434,7 @@
       "chat_template_kwargs": {
         "enable_thinking": false
       },
-      "notes": "loopl v1.1 GGUF (text-only, llama.cpp b11401 --no-mtp; trained on loopl-train v2.1 rev db6fa452 — identity/bio family, file cards, repair trajectories). Private: needs the user's HF token."
+      "notes": "loopl v1.2 GGUF (text-only, llama.cpp b11401 --no-mtp; trained on loopl-train v2.2.1 rev 47d27b44; right tool 174/250 (v1.1 113), installs a missing tool 25/48 (v1.1 1/48) — identity/bio family, file cards, repair trajectories). Private: needs the user's HF token."
     },
     {
       "id": "loopl-2b-4bit",
@@ -453,7 +453,7 @@
       "chat_template_kwargs": {
         "enable_thinking": false
       },
-      "notes": "loopl v1.1 — Qwen3.5-2B post-tuned by Cagatay Cali on cagataydev/loopl-train (agent loop, tools, robots, identity + who Cagatay Cali is and his projects; trained on loopl-train v2.1 rev db6fa452). Vision kept (mlx_vlm export: vision_tower + preprocessor_config, same layout as the mlx-community base). Public — no token. bf16 base for Train your own: cagataydev/loopl-2b."
+      "notes": "loopl v1.2 — Qwen3.5-2B post-tuned by Cagatay Cali on cagataydev/loopl-train (agent loop, tools, robots, identity + who Cagatay Cali is and his projects; trained on loopl-train v2.2.1 rev 47d27b44; right tool 163/250 (v1.1 135), installs a missing tool 19/48 (v1.1 3/48)). Vision kept (mlx_vlm export: vision_tower + preprocessor_config, same layout as the mlx-community base). Public — no token. bf16 base for Train your own: cagataydev/loopl-2b."
     },
     {
       "id": "loopl-2b-q4_k_m",
@@ -472,7 +472,7 @@
       "chat_template_kwargs": {
         "enable_thinking": false
       },
-      "notes": "loopl v1.1 GGUF (text-only, llama.cpp b11401 --no-mtp; trained on loopl-train v2.1 rev db6fa452 — identity/bio family, file cards, repair trajectories). Private: needs the user's HF token."
+      "notes": "loopl v1.2 GGUF (text-only, llama.cpp b11401 --no-mtp; trained on loopl-train v2.2.1 rev 47d27b44; right tool 163/250 (v1.1 135), installs a missing tool 19/48 (v1.1 3/48) — identity/bio family, file cards, repair trajectories). Private: needs the user's HF token."
     },
     {
       "id": "loopl-vl-2b-4bit",
@@ -508,7 +508,7 @@
       "chat_template_kwargs": {
         "enable_thinking": false
       },
-      "notes": "loopl v1.1 — Qwen3.5-4B LoRA r64 post-tuned by Cagatay Cali on cagataydev/loopl-train. Vision kept (mlx_vlm export: vision_tower + preprocessor_config, same layout as the mlx-community base). Public — no token. bf16 base for Train your own: cagataydev/loopl-4b."
+      "notes": "loopl v1.2 — Qwen3.5-4B LoRA r64 post-tuned by Cagatay Cali on cagataydev/loopl-train. Vision kept (mlx_vlm export: vision_tower + preprocessor_config, same layout as the mlx-community base). Public — no token. bf16 base for Train your own: cagataydev/loopl-4b."
     },
     {
       "id": "loopl-4b-q4_k_m",
@@ -527,7 +527,7 @@
       "chat_template_kwargs": {
         "enable_thinking": false
       },
-      "notes": "loopl v1.1 GGUF (text-only, llama.cpp b11401 --no-mtp; trained on loopl-train v2.1 rev db6fa452 — identity/bio family, file cards, repair trajectories). Private: needs the user's HF token."
+      "notes": "loopl v1.2 GGUF (text-only, llama.cpp b11401 --no-mtp; trained on loopl-train v2.2.1 rev 47d27b44; right tool 198/250 (v1.1 166), installs a missing tool 27/48 (v1.1 5/48) — identity/bio family, file cards, repair trajectories). Private: needs the user's HF token."
     },
     {
       "id": "loopl-vl-4b-4bit",
