@@ -53,6 +53,15 @@ jobs:
         run: |
           xcrun simctl boot "${{ steps.sim.outputs.udid }}" || true
           xcrun simctl bootstatus "${{ steps.sim.outputs.udid }}" -b || true
+      # Microphone and photo permissions, granted up front. Without them the FIRST test in the run that taps
+      # Record (or opens the picker) gets the system permission alert instead of the app's own UI and fails —
+      # and which test that is depends on the order, so the suite was unreproducible. Measured: on a clean sim
+      # AudioInputUITests.testCancelAndRemove passes alone and fails inside the full suite for exactly this.
+      - name: Grant the permissions the suite needs
+        run: |
+          for svc in microphone photos photos-add; do
+            xcrun simctl privacy "${{ steps.sim.outputs.udid }}" grant "$svc" technology.tiny.loopl || true
+          done
       - name: Build for testing
         run: |
           set -o pipefail
