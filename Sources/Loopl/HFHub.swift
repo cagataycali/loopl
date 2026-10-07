@@ -44,7 +44,8 @@ public enum HFHubError: LocalizedError, Equatable, Sendable {
         case .forbidden(let s): "Hugging Face refused (403): \(s)"
         case .notFound(let s): "not found on Hugging Face: \(s)"
         case .conflict(let s): "already exists on Hugging Face: \(s)"
-        case .http(let c, let p, let b): "HTTP \(c) for \(p)\(b.isEmpty ? "" : " — \(b)")"
+        // Plain words first, then what Hugging Face actually said (the body carries the real reason for a 5xx).
+        case .http(let c, let p, let b): HubStatus.sentence(c, path: p, downloading: false) + (b.isEmpty ? "" : " Hugging Face said: \(b)")
         case .decoding(let s): "unexpected Hugging Face response: \(s)"
         }
     }

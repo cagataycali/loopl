@@ -213,7 +213,8 @@ struct HuggingFaceSection: View {
             else { s += "To " + missing.map(\.needed).joined(separator: " and ") + ", create a token with " + missing.map(\.label).joined(separator: " + ") + " access." }
             return s
         }
-        return "Optional. Sign in with a Hugging Face token to download your private models, share conversations to your account and train there. The token stays in this device's Keychain and is only ever sent to huggingface.co."
+        // For someone who has never heard of it: what Hugging Face is, then what signing in unlocks (IMPROVE-5 copy pass 3).
+        return "Optional. Hugging Face hosts models online. Sign in to download your private ones, share conversations and train there. The token stays in the Keychain, sent only to huggingface.co."
     }
 }
 
