@@ -11,8 +11,20 @@ final class CollectionUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--design-fixture", "empty", "--design-tab", "models", "--design-collection", "bundled", "--design-gguf"]
         app.launch()
+        // Owner's order (MODELS-ORDER) is On this iPhone → Browse → Train → loopl models → Mine, so Browse is on
+        // screen BEFORE any scrolling and the collection is reached by scrolling down. Proving the order that way
+        // instead of comparing two frames is what makes this work on a short screen: on an iPhone SE the swipe that
+        // reaches the loopl row scrolls Browse out of the lazy List entirely, and the old frame comparison then
+        // failed on a row that was never missing. (Found by running this suite on an SE — the CI runner picks the
+        // tallest iPhone it has, so a test may quietly require a tall phone and nobody finds out.)
+        let browse = app.descendants(matching: .any).matching(identifier: "models-browse-hub").firstMatch
+        XCTAssertTrue(browse.waitForExistence(timeout: 15), "Browse Hugging Face is on screen at the top of Models")
         let four = app.descendants(matching: .any).matching(identifier: "collection-row-cagataydev/loopl-4b-4bit").firstMatch
-        if !four.waitForExistence(timeout: 10) { app.swipeUp() }   // below Browse + Train on a small screen
+        if four.exists {
+            // Tall screen: both fit, so the stronger claim is still available.
+            XCTAssertGreaterThan(four.frame.minY, browse.frame.minY, "loopl models below Browse Hugging Face")
+        }
+        for _ in 0..<4 where !four.exists { app.swipeUp() }        // below Browse + Train on a small screen
         XCTAssertTrue(four.waitForExistence(timeout: 5), "loopl 4B row from the bundled collection snapshot")
         // The badge reads "sees pictures" and the subtitle is the plain blurb since IMPROVE-4 #142/#152 —
         // the owner's standing order is plainer words, so the test follows the words, not the old ones
@@ -20,10 +32,6 @@ final class CollectionUITests: XCTestCase {
         XCTAssertTrue(four.label.contains("sees pictures"), "vision badge from the files: \(four.label)")
         XCTAssertTrue(four.label.contains("Most capable"), "the plain blurb is the subtitle: \(four.label)")
         XCTAssertTrue(four.label.contains("GB"), "the size is on the row: \(four.label)")
-        // Owner's order (MODELS-ORDER): On this iPhone → Browse → Train → loopl models → Mine — the section sits BELOW Browse now.
-        let browse = app.descendants(matching: .any).matching(identifier: "models-browse-hub").firstMatch
-        XCTAssertTrue(browse.waitForExistence(timeout: 5))
-        XCTAssertGreaterThan(four.frame.minY, browse.frame.minY, "loopl models below Browse Hugging Face")
         shoot(app, "collection-top")
         // The section sits below Browse + Train, so its tail is under the fold of the lazy List: scroll until each row is realised.
         func reach(_ id: String) -> XCUIElement {
