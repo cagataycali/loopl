@@ -182,10 +182,10 @@ struct TrainView: View {
                     }
                     .accessibilityIdentifier("train-method")
                 } label: {
-                    Label("Fine-tune manually", systemImage: "slider.horizontal.3")
+                    Label("More options", systemImage: "slider.horizontal.3")
                         .accessibilityIdentifier("train-manual")
                 }
-            } header: { Text("Recipe") } footer: {
+            } header: { Text("How it trains") } footer: {
                 VStack(alignment: .leading, spacing: 6) {
                     if let plan {
                         Text(plan.summary(user: user)).accessibilityIdentifier("train-summary")
