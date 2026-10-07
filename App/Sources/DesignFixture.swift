@@ -397,6 +397,10 @@ enum DesignFixture {
             engine.transcript = t
             Task { await writeFixtureRecording(to: url) }
             return
+        case "render":
+            // Phase 7 `render_ui`: `--design-render chart|map|diagram|table|keyvalue|list|progress|misc|unknown` = one card per kind;
+            // default = the mixed card (title + markdown + chart + keyvalue) the owner asked for ("maps, graphs, diagrams").
+            renderScene(&t, kind: value("--design-render") ?? "mixed")
         case "markdown":
             // Everything the block renderer knows: heading, table, quote, rule, lists, code — the shapes small models emit.
             t.user("Compare the three runtimes in a table, then quote the one-line rule.")
@@ -957,4 +961,92 @@ extension DesignFixture {
 
 private extension ApprovalRequest {
     func with(id: String) -> ApprovalRequest { var c = self; c.id = id; return c }
+}
+
+
+// MARK: - Phase 7 `render` scenes
+
+extension DesignFixture {
+    /// One `render_ui` call → one card. The specs here are the exact JSON shapes the FINAL schema documents (DATASET-V12 R1–R6).
+    static func renderScene(_ t: inout Transcript, kind: String) {
+        func call(_ ask: String, _ input: [String: JSONValue], answer: String, images: [ImageBlock] = [], ms: Double = 6) {
+            t.user(ask)
+            t.apply(.startEventLoop(cycle: 1))
+            let use = ToolUse(toolUseId: "tooluse_r_\(kind)", name: RenderUITool.toolName, input: input)
+            t.apply(.modelMessage(.assistant(text: "", toolUses: [use])))
+            t.apply(.toolStarted(use))
+            let text = (try? RenderSpec(args: input).resultText) ?? "rendered"
+            t.apply(.toolResult(ToolResult(toolUseId: use.toolUseId, name: RenderUITool.toolName, content: text, durationMs: ms, images: images)))
+            t.apply(.startEventLoop(cycle: 2))
+            t.apply(.text(answer))
+            t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant(answer), metrics: EventLoopMetrics())))
+        }
+        let steps: JSONValue = ["type": "chart", "title": "Steps this week", "kind": "bar", "series": [["name": "steps", "points": [
+            ["label": "Mon", "value": 4000], ["label": "Tue", "value": 6200], ["label": "Wed", "value": 7100], ["label": "Thu", "value": 3800],
+            ["label": "Fri", "value": 9400], ["label": "Sat", "value": 12100], ["label": "Sun", "value": 5600]]]]]
+        let cafes: JSONValue = ["type": "map", "title": "Three cafés in Hoboken", "pins": [
+            ["lat": 40.7447, "lon": -74.0323, "label": "bwè kafe"], ["lat": 40.7398, "lon": -74.0300, "label": "Black Rail Coffee"], ["lat": 40.7480, "lon": -74.0290, "label": "Hidden Grounds"]]]
+        let login: JSONValue = ["type": "diagram", "title": "Login flow", "nodes": [
+            ["id": "open", "label": "Open app"], ["id": "creds", "label": "Enter email + password"], ["id": "verify", "label": "Verify"],
+            ["id": "mfa", "label": "2FA code"], ["id": "home", "label": "Home"], ["id": "error", "label": "Show error"]],
+            "edges": [["from": "open", "to": "creds"], ["from": "creds", "to": "verify"], ["from": "verify", "to": "mfa", "label": "ok"],
+                      ["from": "verify", "to": "error", "label": "wrong"], ["from": "mfa", "to": "home"], ["from": "error", "to": "creds", "label": "retry"]]]
+        switch kind {
+        case "chart":
+            call("Chart my steps this week: Mon 4k, Tue 6.2k, Wed 7.1k, Thu 3.8k, Fri 9.4k, Sat 12.1k, Sun 5.6k.", ["components": [steps]],
+                 answer: "Saturday was your big day — 12,100 steps, about three times Thursday.")
+        case "line":
+            call("Plot the temperature by hour.", ["components": [["type": "chart", "title": "Today", "kind": "line", "series": [
+                ["name": "°C", "points": [["label": "6", "value": 11], ["label": "9", "value": 14], ["label": "12", "value": 19], ["label": "15", "value": 21], ["label": "18", "value": 17], ["label": "21", "value": 13]]],
+                ["name": "feels like", "points": [["label": "6", "value": 9], ["label": "9", "value": 13], ["label": "12", "value": 19], ["label": "15", "value": 22], ["label": "18", "value": 16], ["label": "21", "value": 11]]]]]]],
+                 answer: "Warmest around 3 pm, cooling fast after six.")
+        case "pie":
+            call("Show my budget split as a pie.", ["components": [["type": "chart", "title": "October", "kind": "pie", "series": [["points": [
+                ["label": "Rent", "value": 1850], ["label": "Food", "value": 620], ["label": "Transit", "value": 140], ["label": "Fun", "value": 310], ["label": "Savings", "value": 900]]]]]]],
+                 answer: "Rent is just under half; savings a quarter.")
+        case "map":
+            call("Show these 3 cafés on a map.", ["components": [cafes]], answer: "All three are within a ten-minute walk of each other — tap the map for directions.")
+        case "diagram":
+            call("Diagram the login flow.", ["components": [login]], answer: "Six steps; a wrong password loops back to the form.")
+        case "table":
+            call("Compare the loopl models in a table.", ["components": [["type": "table", "title": "loopl v1.1", "headers": ["Model", "Size", "Vision", "Speed"],
+                "rows": [["loopl-0.8b", "625 MB", "yes", "~70 tok/s"], ["loopl-2b", "1.3 GB", "yes", "~40 tok/s"], ["loopl-4b", "2.5 GB", "yes", "~22 tok/s"]]]]],
+                 answer: "The 2B is the sweet spot on this phone.")
+        case "keyvalue":
+            call("Show me this device's stats as a card.", ["components": [["type": "keyvalue", "title": "This iPhone", "data": [
+                "Model": "iPhone 17 Pro", "Battery": "82 %", "Free storage": "61.2 GB", "Memory for a model": "5.1 GB", "Network": "Wi-Fi"]]]],
+                 answer: "Plenty of room for the 4B if you want it.")
+        case "list":
+            call("List what I asked you to remember, as a card.", ["components": [["type": "list", "title": "Remembered", "items": [
+                ["title": "Coffee: oat milk, no sugar", "subtitle": "yesterday", "icon": "cup.and.saucer"],
+                ["title": "Mom's birthday is 14 March", "subtitle": "Monday", "icon": "gift"],
+                ["title": "Parking spot B2-17", "subtitle": "today", "icon": "car"]]]]],
+                 answer: "Three notes so far.")
+        case "progress":
+            call("How far along is the download?", ["components": [["type": "progress", "description": "loopl-4b-4bit", "total": 2_540, "completed": 1_740],
+                                                          ["type": "text", "content": "about 2 minutes left at this speed", "style": "secondary"]]],
+                 answer: "Two-thirds done — about two minutes left.")
+        case "misc":
+            call("Make a card with the rest.", ["title": "Everything else", "components": [
+                ["type": "markdown", "content": "**Markdown** with a [link](https://loopl.dev), `code` and a list:\n\n- one\n- two"],
+                ["type": "rule", "title": "styles"],
+                ["type": "text", "content": "plain"], ["type": "text", "content": "secondary", "style": "secondary"], ["type": "text", "content": "strong", "style": "strong"],
+                ["type": "text", "content": "caption", "style": "caption"], ["type": "text", "content": "let x = 42", "style": "mono"],
+                ["type": "rule"],
+                ["type": "image", "url": "https://loopl.dev/assets/readme/hero.png", "caption": "a picture by URL"]]],
+                 answer: "Done.")
+        case "unknown":
+            // R6: an invented type and "4k" strings → the card says what it could not read, the result tells the model.
+            call("Show a gauge of my steps.", ["components": [["type": "gauge", "value": 7421], ["type": "chart", "kind": "bar", "series": [["points": [["label": "Mon", "value": "4k"], ["label": "Tue", "value": "n/a"]]]]]]],
+                 answer: "I can't draw a gauge, so here is the bar instead — Tuesday had no reading.")
+        default:
+            call("How did this week go? Give me a card.", ["title": "Your week", "components": [
+                ["type": "markdown", "content": "Steps up **18 %** on last week; sleep steady."],
+                steps,
+                ["type": "keyvalue", "data": ["Total": "48,200", "Best day": "Saturday", "Resting HR": "58 bpm"]],
+                ["type": "rule", "title": "next"],
+                ["type": "list", "items": [["title": "Keep the Saturday walk", "icon": "figure.walk"], ["title": "Bed before 23:00 twice", "icon": "moon.zzz"]]]]],
+                 answer: "A good week — Saturday carried it. Shall I set the two reminders?")
+        }
+    }
 }

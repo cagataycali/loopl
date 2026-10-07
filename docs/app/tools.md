@@ -22,6 +22,7 @@ Fewer tools make a better agent — every tool is one more thing a small model c
 | `http` | any HTTPS request — writes ask first; refused in offline mode |
 | `device_info` | battery, storage, model, OS |
 | `manage_messages` | the model tidies its **own** context in a long chat — `compact` drops old tool calls and results but keeps every message's text, `drop`/`clear` remove old turns, `stats`/`list` show the size. The chat on screen never changes; the transcript gets one quiet line, *"2 turns compacted by the agent · your history is unchanged"*. No approval card — it edits only what the model sees |
+| `render_ui` | a **native card** instead of prose — bar/line/pie charts (Swift Charts), a map with pins and a route (tap opens Maps), a flow diagram, tables, key/value grids, lists, progress bars, markdown. The model sends a small typed spec; the app draws it — nothing runs, no web view. An unknown component type is named on the card, never dropped. Cards stay in History and re-render from the saved call |
 | `generate_image` | a picture from a prompt (Image Playground) |
 | `generate_voice` | speaks with on-device voices, Personal Voice included |
 | `transcribe` | speech to text, offline — tap the mic, record, send; the model sees `[audio attached: …]` and decides to call it |
