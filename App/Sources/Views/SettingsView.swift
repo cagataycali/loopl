@@ -20,6 +20,10 @@ struct SettingsView: View {
                         VStack(alignment: .leading, spacing: 3) {
                             Text("System prompt")
                             Text(settings.systemPrompt).font(.footnote).foregroundStyle(.secondary).lineLimit(2)
+                            if case .agent = settings.systemPromptOrigin {
+                                Label(settings.systemPromptOrigin.label, systemImage: "sparkles").font(.caption).foregroundStyle(LooplDesign.accent)
+                                    .accessibilityIdentifier("settings-system-prompt-origin")
+                            }
                         }
                     }
                     .accessibilityIdentifier("settings-system-prompt")
@@ -116,12 +120,43 @@ struct SettingsView: View {
 
 struct SystemPromptEditor: View {
     @Bindable var settings: AppSettings
+    /// "Revert to the prompt from before the agent's change" — names what comes back (your edit / the default / an earlier agent change).
+    private var revertLabel: String {
+        guard let previous = settings.systemPromptHistory.last else { return "Revert" }
+        switch previous.origin {
+        case .default: return "Revert to the default prompt"
+        case .user: return "Revert to your prompt"
+        case .agent: return "Revert to the previous prompt"
+        }
+    }
     var body: some View {
         Form {
+            // Phase 6 F: when the model changed this prompt (system_prompt tool, after an approval card) say so FIRST,
+            // with the way back beside it — the editor below can be 500 pt tall, so this cannot live under it.
+            if settings.canRevertSystemPrompt || { if case .agent = settings.systemPromptOrigin { true } else { false } }() {
+                Section {
+                    if case .agent = settings.systemPromptOrigin {
+                        Label(settings.systemPromptOrigin.label, systemImage: "sparkles").foregroundStyle(.secondary)
+                            .accessibilityElement(children: .combine).accessibilityIdentifier("system-prompt-origin")
+                    }
+                    if settings.canRevertSystemPrompt {
+                        Button { LooplDesign.haptic(); settings.revertSystemPrompt() } label: {
+                            Label(revertLabel, systemImage: "arrow.uturn.backward")
+                        }
+                        .accessibilityIdentifier("system-prompt-revert")
+                    }
+                } footer: { Text("Changed by the model through the system_prompt tool, after you approved it. Revert puts the previous prompt back.") }
+            }
             Section {
                 TextEditor(text: $settings.systemPrompt).frame(minHeight: 180).font(.body)
-            } footer: { Text("Sent at the start of every conversation, to every model — nothing is added in front of it.") }
-            Section { Button("Reset to default") { settings.systemPrompt = AppSettings.defaultSystemPrompt } }
+                    .accessibilityIdentifier("system-prompt-editor")
+            } footer: {
+                Text("Sent at the start of every conversation, to every model — nothing is added in front of it. When you ask for a standing rule, the model can change this with the system_prompt tool; each change asks you first.")
+            }
+            Section {
+                Button("Reset to default") { settings.systemPrompt = AppSettings.defaultSystemPrompt }
+                    .disabled(settings.systemPrompt == AppSettings.defaultSystemPrompt)
+            }
         }
         .looplScrollClearance()
         .navigationTitle("System prompt")
