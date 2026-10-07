@@ -9,6 +9,8 @@ enum ModelBlurb {
         switch spec.id {
         case "loopl-0.8b-4bit": "Smallest — quick answers and tools, sees pictures. Any recent \(LooplDesign.deviceName)."
         case "loopl-2b-4bit": "The best balance of speed and quality on \(LooplDesign.deviceName). Photos, tools, memory."
+        case "loopl-vl-2b-4bit": "Watches video and sees pictures — the 2B tuned for clips. Text, tools and memory too."
+        case "loopl-vl-4b-4bit": "Watches video and sees pictures — the most capable clip model; needs 8 GB of memory."
         case "loopl-4b-4bit": LooplDesign.deviceName == "iPhone" ? "Most capable — needs a Pro-class iPhone (8 GB of memory)." : "Most capable — needs 8 GB of memory (Pro-class \(LooplDesign.deviceName))."
         case "qwen3-0.6b-4bit": "Fastest. Chat, tools and quick answers — runs on any recent iPhone."
         case "qwen3.5-0.8b-4bit": "Small and sees pictures. Ask about a photo or a screenshot."

@@ -287,6 +287,7 @@ struct CollectionRowLabel: View {
         return parts.enumerated().map { i, p in
             if i == 0 { return p }
             if p.range(of: #"^\d+(\.\d+)?b$"#, options: .regularExpression) != nil { return p.uppercased() }
+            if p == "vl" { return "VL" }   // "loopl-vl-2b-4bit" → "loopl VL 2B", not "loopl vl 2B"
             return p
         }.joined(separator: " ")
     }
