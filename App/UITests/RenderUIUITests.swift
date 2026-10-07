@@ -22,7 +22,8 @@ final class RenderUIUITests: XCTestCase {
         XCTAssertTrue(chart.exists, "the chart component")
         XCTAssertTrue(chart.label.hasPrefix("bar chart Steps this week; steps: Mon 4000, Tue 6200"), "VoiceOver reads the data, not 'image': \(chart.label)")
         XCTAssertTrue(app.staticTexts["Resting HR: 58 bpm"].firstMatch.exists || app.descendants(matching: .any).matching(NSPredicate(format: "label == 'Resting HR: 58 bpm'")).firstMatch.exists, "key/value row is one spoken element")
-        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'render_ui'")).firstMatch.exists, "the tool row is visible — the call is not hidden")
+        // By identifier: the row reads "Card" since #140 (ToolLabel.table), not "render_ui".
+        XCTAssertTrue(app.descendants(matching: .any)["tool-row-render_ui"].exists, "the tool row is visible — the call is not hidden")
         XCTAssertFalse(any(app, "render-issues").exists, "a clean spec has no issues line")
         // The answer after the card is one sentence that does not repeat the numbers.
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Saturday carried it'")).firstMatch.exists)

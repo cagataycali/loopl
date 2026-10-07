@@ -25,7 +25,8 @@ final class SystemPromptUITests: XCTestCase {
         let marker = app.staticTexts["The model added a rule to its instructions · undo in Settings › System prompt"].firstMatch
         XCTAssertTrue(marker.waitForExistence(timeout: 15), "the quiet marker")
         XCTAssertEqual(app.staticTexts.matching(identifier: "transcript-note").count, 1, "exactly one")
-        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'system_prompt'")).firstMatch.exists, "the tool row is visible")
+        // By identifier: the row reads "Instructions" since #140 (ToolLabel.table).
+        XCTAssertTrue(app.descendants(matching: .any)["tool-row-system_prompt"].exists, "the tool row is visible")
 
         app.tabBars.buttons["Settings"].firstMatch.tap()
         let origin = app.staticTexts["settings-system-prompt-origin"].firstMatch

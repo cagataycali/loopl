@@ -181,7 +181,8 @@ final class OnboardingUITests: XCTestCase {
         let approve = card.buttons["Approve"].firstMatch
         XCTAssertTrue(approve.waitForExistence(timeout: 3))
         approve.tap()
-        let row = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'tool http'")).firstMatch
+        // By identifier: #140 changed the row's label from "tool http" to "Web request, finished".
+        let row = app.descendants(matching: .any)["tool-row-http"]
         XCTAssertTrue(row.waitForExistence(timeout: 5), "the http tool row follows the approval")
     }
 

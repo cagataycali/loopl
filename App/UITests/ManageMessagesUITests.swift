@@ -18,7 +18,8 @@ final class ManageMessagesUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'just past midnight in Istanbul'")).firstMatch.exists, "earlier answer kept")
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS '1081'")).firstMatch.exists, "earlier answer kept")
         // The tool row for manage_messages is there too (the model's call is honest, not hidden), and the marker is the only note.
-        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'manage_messages'")).firstMatch.exists, "the manage_messages tool row is visible")
+        // Found by identifier, not by label: the row reads "Tidy context" since #140 (ToolLabel.table).
+        XCTAssertTrue(app.descendants(matching: .any)["tool-row-manage_messages"].exists, "the manage_messages tool row is visible")
         XCTAssertEqual(app.staticTexts.matching(identifier: "transcript-note").count, 1, "exactly one quiet marker")
         // Marker sits BELOW the earlier rows (it marks the moment of the edit, the record above stays in place).
         let firstQuestion = app.staticTexts["What time is it in Istanbul?"].firstMatch
