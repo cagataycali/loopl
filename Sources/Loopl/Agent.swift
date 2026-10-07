@@ -85,6 +85,10 @@ public struct AgentResult: Sendable, Hashable {
 /// heuristic either: the loop trusts the model to read complete,
 /// honest tool results (including errors) and decide what to call next.
 public actor Agent {
+    /// What the history carries for a turn stopped before any text: the model API needs a non-empty assistant message.
+    /// Hosts do NOT show it — `Transcript` drops it and keeps one quiet "Stopped" note (IMPROVE-4 #19: it used to read as
+    /// the model saying "Cancelled by user", with a "cancelled" line under it).
+    public static let cancelledPlaceholder = "Cancelled by user"
     public let model: any Model
     /// The tools offered to the model. With a `registry`, this is a mirror of `registry.mounted`, refreshed before every
     /// model request and before every tool execution (`syncTools`) — so `manage_tools mount` inside a turn is effective
@@ -601,7 +605,7 @@ public actor Agent {
                 if cancelled {
                     // `process_stream` with cancel_signal set → stop_reason "cancelled".
                     stop.stopReason = .cancelled
-                    if stop.message.content.isEmpty { stop.message = .assistant("Cancelled by user") }
+                    if stop.message.content.isEmpty { stop.message = .assistant(Self.cancelledPlaceholder) }
                 }
                 var after = AfterModelCallEvent(stopResponse: .init(stopReason: stop.stopReason, message: stop.message), error: nil)
                 after = try await hooks.invoke(after)
