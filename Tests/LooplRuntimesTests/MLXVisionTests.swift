@@ -38,7 +38,8 @@ final class MLXVisionTests: XCTestCase {
         for try await ev in model.stream([msg], toolSpecs: [], systemPrompt: "You are a precise, terse assistant.") { _ = assembler.feed(ev) }
         let stop = assembler.finish()
         let text = stop.message.text.lowercased()
-        print("VL macOS: load \(String(format: "%.1f", loadS)) s · prompt \(stop.metrics.promptTokens) tok · \(stop.metrics.generatedTokens) tok · \(String(format: "%.1f", stop.metrics.tokensPerSecond)) tok/s · ttft \(Int(stop.metrics.ttftMs)) ms\nTEXT: \(stop.message.text)")
+        print("VL macOS: load \(String(format: "%.1f", loadS)) s · prompt \(stop.metrics.promptTokens) tok · \(stop.metrics.generatedTokens) tok · \(String(format: "%.1f", stop.metrics.tokensPerSecond)) tok/s · ttft \(Int(stop.metrics.ttftMs)) ms · reasoning \(stop.message.reasoning.count) chars\nTEXT: \(stop.message.text)\nREASONING: \(stop.message.reasoning.prefix(300))")
+        if spec.isThinking { XCTAssertFalse(stop.message.reasoning.isEmpty, "a Thinking checkpoint must land its reasoning in the reasoning block"); XCTAssertFalse(stop.message.text.contains("</think>")) }
         XCTAssertEqual(stop.stopReason, .endTurn)
         XCTAssertGreaterThan(stop.metrics.promptTokens, 64, "image tokens must be in the prompt")
         XCTAssertTrue(text.contains("circle") || text.contains("round"), "should see the circle: \(text)")
