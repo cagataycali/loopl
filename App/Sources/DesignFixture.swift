@@ -172,6 +172,11 @@ enum DesignFixture {
         case "nomodel":
             // The chat with no model running (a failed load, a skipped onboarding): the empty state must lead somewhere.
             engine.readiness = .failed(spec, "\(spec.displayName) needs 4.1 GB of free memory; this iPhone has 3.2 GB right now.")
+        case "downloadfailed":
+            // A REAL Hugging Face 429, as injected by improve-6/tools/hubproxy.py and measured on an iPhone 16 Pro:
+            // the banner's sentence came from the downloader and named no model. Shape pinned by
+            // DownloadFailureSubjectTests + InsetsUITests' touch-target check.
+            engine.readiness = .failed(spec, Engine.downloadFailed(spec, HubStatus.sentence(429, path: "model.safetensors", downloading: true)))
         case "live":
             engine.transcript = t
             replay = Task { await replayLive(engine, loop: CommandLine.arguments.contains("--design-loop")) }

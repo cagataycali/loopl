@@ -12,7 +12,7 @@ public typealias HFTokenProvider = @Sendable () -> String?
 /// Written by hand (not `HubApi`) so every byte that leaves the device goes through
 /// `NetworkPolicy.session` and the offline rule is one `guard` per request.
 public struct HFDownloader: Sendable {
-    public var host = "https://huggingface.co"
+    public var host = HubHost.current
     /// `nil` → anonymous. Consulted per request (see `HFTokenProvider`).
     public var token: HFTokenProvider?
     public init(token: HFTokenProvider? = nil) { self.token = token }
