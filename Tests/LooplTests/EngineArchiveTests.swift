@@ -91,5 +91,21 @@ final class EngineArchiveTests: XCTestCase {
         e.stop()
         await waitUntilIdle(e)
     }
+
+    /// A thread saved mid-turn reopens with a line that says what happened and what to do (IMPROVE-5 #17); a thread
+    /// that ends on an answer does not get it.
+    func testReopenedUnansweredTurnSaysSo() {
+        let e = Engine(settings: AppSettings(), store: ModelStore())
+        let cut = SavedConversation(id: UUID(), title: "cut", updated: Date(), modelName: "m", items: [.user("tell me about the sea")])
+        let whole = SavedConversation(id: UUID(), title: "whole", updated: Date(), modelName: "m", items: [.user("hi"), .assistant("hello")])
+        e.archive.upsert(cut); e.archive.upsert(whole)
+        defer { e.archive.delete(ids: [cut.id, whole.id]) }
+        e.open(cut)
+        XCTAssertEqual(e.transcript.items.count, 2)
+        if case .note(let s) = e.transcript.items.last!.kind { XCTAssertEqual(s, Engine.unansweredNote) } else { XCTFail("note expected") }
+        XCTAssertTrue(e.transcript.messages.isEmpty, "the dangling user turn is not handed to the model")
+        e.open(whole)
+        XCTAssertEqual(e.transcript.items.count, 2, "no note under an answered thread")
+    }
 }
 #endif
