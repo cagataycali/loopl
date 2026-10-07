@@ -56,43 +56,66 @@ public struct ApprovalCard: View {
     // MARK: pieces
 
     private var header: some View {
-        // Default sizes: one line — glyph · METHOD · host/path · risk pill. Accessibility sizes: the pill drops under
-        // the host and the host may wrap to two lines; the path is never middle-truncated to "/a…es".
-        let layout = stacked ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6)) : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 8))
-        return layout {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                if let d = decision {
-                    Image(systemName: d.isApproved ? "checkmark.shield.fill" : "xmark.shield.fill")
-                        .font(.footnote).foregroundStyle(d.isApproved ? LooplDesign.accent : Color.secondary)
-                        .transition(.scale.combined(with: .opacity))
-                } else {
-                    Image(systemName: "hand.raised.fill").font(.footnote).foregroundStyle(riskTint)
-                        .transition(.scale.combined(with: .opacity))
+        // The host is the one word a person must read before tapping Approve, so it is never shortened. One line while
+        // glyph · METHOD · host · risk pill all fit (ViewThatFits measures the host at full width — `fixedSize`); when
+        // they do not — a long host on a 375 pt screen, or an accessibility text size — the pill moves above the host
+        // and the host may wrap to two lines. IMPROVE-5: on an SE the pill squeezed it to "notes.examp…".
+        VStack(alignment: .leading, spacing: 2) {
+            if stacked {
+                stackedTitle
+            } else {
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        badges
+                        hostText(lines: 1).fixedSize(horizontal: true, vertical: false)
+                        if decision == nil { Pill(request.risk.rawValue, tint: riskTint).fixedSize() }
+                    }
+                    stackedTitle    // last candidate = the fallback, used whether or not it fits
                 }
-                if let m = request.method { MethodBadge(m, tint: riskTint).fixedSize() }
-                if stacked { Spacer(minLength: 0); if decision == nil { Pill(request.risk.rawValue, tint: riskTint).fixedSize() } }
             }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(request.host ?? titleParts.head).font(.callout.weight(.semibold)).lineLimit(stacked ? 2 : 1)
-                if let what = titleParts.what {
-                    // "Add reminder · Call the dentist back": the thing being approved gets its own line and may wrap —
-                    // it is the one part of the card the user must be able to read before tapping Approve.
-                    Text(what).font(.callout).lineLimit(3)
-                        .accessibilityIdentifier("approval-what")
-                }
-                if let path = pathLine {
-                    Text(path).font(.caption.monospaced()).foregroundStyle(.secondary)
-                        .lineLimit(stacked ? 3 : 1).truncationMode(stacked ? .tail : .middle)
-                }
-                if let d = decision { Text(verdict(d)).font(.caption).foregroundStyle(.secondary).transition(.opacity) }
+            if let what = titleParts.what {
+                // "Add reminder · Call the dentist back": the thing being approved gets its own line and may wrap —
+                // it is the one part of the card the user must be able to read before tapping Approve.
+                Text(what).font(.callout).lineLimit(3)
+                    .accessibilityIdentifier("approval-what")
             }
-            if !stacked {
-                Spacer(minLength: 0)
-                if decision == nil { Pill(request.risk.rawValue, tint: riskTint).fixedSize() }
+            if let path = pathLine {
+                Text(path).font(.caption.monospaced()).foregroundStyle(.secondary)
+                    .lineLimit(stacked ? 3 : 1).truncationMode(stacked ? .tail : .middle)
             }
+            if let d = decision { Text(verdict(d)).font(.caption).foregroundStyle(.secondary).transition(.opacity) }
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(a11y)
+    }
+
+    /// glyph · METHOD, then the risk pill pushed to the trailing edge (used when the title cannot be one line).
+    private var stackedTitle: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                badges
+                Spacer(minLength: 0)
+                if decision == nil { Pill(request.risk.rawValue, tint: riskTint).fixedSize() }
+            }
+            hostText(lines: 2)
+        }
+    }
+
+    @ViewBuilder private var badges: some View {
+        if let d = decision {
+            Image(systemName: d.isApproved ? "checkmark.shield.fill" : "xmark.shield.fill")
+                .font(.footnote).foregroundStyle(d.isApproved ? LooplDesign.accent : Color.secondary)
+                .transition(.scale.combined(with: .opacity))
+        } else {
+            Image(systemName: "hand.raised.fill").font(.footnote).foregroundStyle(riskTint)
+                .transition(.scale.combined(with: .opacity))
+        }
+        if let m = request.method { MethodBadge(m, tint: riskTint).fixedSize() }
+    }
+
+    private func hostText(lines: Int) -> some View {
+        Text(request.host ?? titleParts.head).font(.callout.weight(.semibold)).lineLimit(lines)
+            .accessibilityIdentifier("approval-host")
     }
 
     private var headersView: some View {

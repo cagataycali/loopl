@@ -332,6 +332,12 @@ struct Composer: View {
     @ScaledMetric(relativeTo: .callout) private var scaledSide: CGFloat = LooplDesign.controlSide
     @Environment(\.dynamicTypeSize) private var typeSize
     private var side: CGFloat { min(scaledSide, LooplDesign.controlSideMax) }
+    /// The glyph inside a round composer button, sized from the circle — not from the text size. The circle stops
+    /// growing at `controlSideMax`, so the glyph has to stop too: with `.font(.callout)` an accessibility size drew
+    /// `stop.fill` far bigger than its 44 pt circle, and since the glyph is `systemBackground` the Stop button became
+    /// a black square on black in dark mode, while Send lost its orange disc (so enabled and disabled looked alike).
+    /// 0.4 × 40 pt = 16 pt, exactly `.callout` at the default size — the everyday composer is unchanged. (IMPROVE-5)
+    private var glyphFont: Font { .system(size: LooplDesign.controlGlyph(side), weight: .bold) }
     /// Accessibility sizes: one "+" menu (photo / camera / paste / record) instead of two round buttons.
     private var compactControls: Bool { typeSize.isAccessibilitySize }
 
@@ -417,7 +423,7 @@ struct Composer: View {
             Button { paste() } label: { Label("Paste Image", systemImage: "doc.on.clipboard") }
                 .disabled(!ImageAttachment.pasteboardHasImage)
         } label: {
-            Image(systemName: "plus").font(.callout.weight(.bold)).frame(width: side, height: side)
+            Image(systemName: "plus").font(glyphFont).frame(width: side, height: side)
                 .background(LooplDesign.controlFill, in: Circle())
                 .foregroundStyle(attachments.count >= Self.maxAttachments ? Color.secondary : Color.primary)
         }
@@ -453,7 +459,7 @@ struct Composer: View {
             } label: { Label("Record Audio", systemImage: "mic") }
                 .disabled(clips.count >= Self.maxClips)
         } label: {
-            Image(systemName: "plus").font(.callout.weight(.bold)).frame(width: side, height: side)
+            Image(systemName: "plus").font(glyphFont).frame(width: side, height: side)
                 .background(LooplDesign.controlFill, in: Circle())
                 .foregroundStyle(Color.primary)
         }
@@ -559,7 +565,7 @@ struct Composer: View {
             focused.wrappedValue = false
             Task { await recorder.start(in: attachmentsDir()) }
         } label: {
-            Image(systemName: "mic").font(.callout.weight(.bold)).frame(width: side, height: side)
+            Image(systemName: "mic").font(glyphFont).frame(width: side, height: side)
                 .background(LooplDesign.controlFill, in: Circle())
                 .foregroundStyle(clips.count >= Self.maxClips ? Color.secondary : Color.primary)
         }
@@ -575,7 +581,7 @@ struct Composer: View {
                 LooplDesign.haptic()
                 recorder.cancel()
             } label: {
-                Image(systemName: "xmark").font(.callout.weight(.bold)).frame(width: side, height: side)
+                Image(systemName: "xmark").font(glyphFont).frame(width: side, height: side)
                     .background(LooplDesign.controlFill, in: Circle()).foregroundStyle(Color.primary)
             }
             .accessibilityLabel("Cancel recording")
@@ -595,7 +601,7 @@ struct Composer: View {
             Button {
                 finishRecording()
             } label: {
-                Image(systemName: "checkmark").font(.callout.weight(.bold)).frame(width: side, height: side)
+                Image(systemName: "checkmark").font(glyphFont).frame(width: side, height: side)
                     .background(LooplDesign.accent, in: Circle()).foregroundStyle(Color.white)
             }
             .accessibilityLabel("Finish recording")
@@ -649,7 +655,7 @@ struct Composer: View {
             Group {
                 if generating {
                     Button(action: stop) {
-                        Image(systemName: "stop.fill").font(.callout.weight(.bold)).frame(width: side, height: side)
+                        Image(systemName: "stop.fill").font(glyphFont).frame(width: side, height: side)
                             .background(Color.primary.opacity(0.85), in: Circle()).foregroundStyle(Color(.systemBackground))
                     }
                     .keyboardShortcut(".", modifiers: .command)
@@ -659,7 +665,7 @@ struct Composer: View {
                     .transition(.scale.combined(with: .opacity))
                 } else {
                     Button(action: send) {
-                        Image(systemName: "arrow.up").font(.callout.weight(.bold)).frame(width: side, height: side)
+                        Image(systemName: "arrow.up").font(glyphFont).frame(width: side, height: side)
                             .background(sendable ? LooplDesign.accent : Color(.tertiarySystemFill), in: Circle())
                             .foregroundStyle(sendable ? Color.white : Color.secondary)
                     }
