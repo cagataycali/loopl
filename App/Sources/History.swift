@@ -184,21 +184,67 @@ final class ConversationArchive {
     /// Where this archive lives — `Self.root` in the app; a temporary folder in tests.
     let root: URL
 
-    init(root: URL = ConversationArchive.root) {
+    /// True while the first read of the folder runs in the background (the list shows a spinner, not "nothing here yet").
+    private(set) var isLoading = false
+    /// Threads written or removed while the background read was still running — the read must not undo them.
+    private var touchedWhileLoading: [UUID: SavedConversation?] = [:]
+    private var loadTask: Task<Void, Never>?
+
+    /// The app's archive reads its folder in the background (IMPROVE-5 #2): with real history — pictures as base64
+    /// thumbnails, 60-turn threads — decoding every file on the main actor sat on the launch path (200 threads ≈ 11 MB
+    /// measured; a phone with 100 MB of threads would stall first paint). Tests and fixtures pass `inBackground: false`
+    /// and get the old synchronous read.
+    init(root: URL = ConversationArchive.root, inBackground: Bool? = nil) {
         self.root = root
         try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        reload()
+        if inBackground ?? (root == Self.root) { reloadInBackground() } else { reload() }
+    }
+
+    /// Everything `reload()` does, off the main actor; the result lands on the main actor and merges with whatever
+    /// `upsert`/`delete` did meanwhile. Idempotent: a second call while one runs is ignored.
+    func reloadInBackground() {
+        guard loadTask == nil else { return }
+        isLoading = true
+        touchedWhileLoading.removeAll()
+        let root = self.root
+        loadTask = Task.detached(priority: .userInitiated) { [weak self] in
+            let (decoded, listing) = Self.read(root)
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                var merged = decoded.filter { self.touchedWhileLoading[$0.id] == nil }
+                for case let (_, .some(c)) in self.touchedWhileLoading { merged.append(c) }   // written while loading → the newer copy wins
+                self.conversations = merged.sorted { $0.updated > $1.updated }
+                self.sweepOrphans(listing)
+                self.touchedWhileLoading.removeAll()
+                self.isLoading = false
+                self.loadTask = nil
+            }
+        }
+    }
+
+    /// Wait for a background read to finish (tests; the UI just observes `isLoading`).
+    func waitUntilLoaded() async { await loadTask?.value }
+
+    /// The folder → decoded threads (retitled) + the raw listing. Pure; runs on any thread.
+    nonisolated static func read(_ root: URL) -> (threads: [SavedConversation], listing: [URL]) {
+        let files = (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []
+        let dec = JSONDecoder(); dec.dateDecodingStrategy = .iso8601
+        let threads = files.filter { $0.pathExtension == "json" }
+            .compactMap { url -> SavedConversation? in
+                guard let data = try? Data(contentsOf: url, options: .mappedIfSafe) else { return nil }
+                return try? dec.decode(SavedConversation.self, from: data)
+            }
+            .map(retitled).sorted { $0.updated > $1.updated }
+        return (threads, files)
     }
 
     /// `<root>/<id>.attachments/` — the thread's pictures and recordings (see `AudioAttachment.directory(for:)`).
     func attachmentsDirectory(for id: UUID) -> URL { root.appendingPathComponent("\(id.uuidString).attachments", isDirectory: true) }
 
+    /// Synchronous read (tests, design fixtures that write a file and open it on the next line).
     func reload() {
-        let files = (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []
-        let dec = JSONDecoder(); dec.dateDecodingStrategy = .iso8601
-        conversations = files.filter { $0.pathExtension == "json" }
-            .compactMap { try? dec.decode(SavedConversation.self, from: Data(contentsOf: $0)) }
-            .map(Self.retitled).sorted { $0.updated > $1.updated }
+        let (threads, files) = Self.read(root)
+        conversations = threads
         sweepOrphans(files)
     }
 
@@ -221,7 +267,7 @@ final class ConversationArchive {
     /// Threads saved by earlier builds carry the raw first-60-characters title (blank first lines, empty rows for a
     /// photo). The title is derived from the first message anyway, so it is recomputed on load — in memory; the file
     /// catches up on its next save.
-    static func retitled(_ c: SavedConversation) -> SavedConversation {
+    nonisolated static func retitled(_ c: SavedConversation) -> SavedConversation {
         guard case .user(let s, let images, let videos)? = c.items.first(where: { if case .user = $0 { return true }; return false }) else { return c }
         var c = c
         c.title = ConversationTitle.make(s, hasImages: !(images ?? []).isEmpty, hasVideos: !(videos ?? []).isEmpty)
@@ -233,6 +279,7 @@ final class ConversationArchive {
         if let data = try? enc.encode(c) { try? data.write(to: root.appendingPathComponent("\(c.id.uuidString).json"), options: .atomic) }
         conversations.removeAll { $0.id == c.id }
         conversations.insert(c, at: 0)
+        if isLoading { touchedWhileLoading[c.id] = .some(c) }
     }
 
     func delete(_ c: SavedConversation) { delete(id: c.id) }
@@ -252,10 +299,55 @@ final class ConversationArchive {
         }
         let before = conversations.count
         conversations.removeAll { ids.contains($0.id) }
+        if isLoading { for id in ids { touchedWhileLoading[id] = .some(nil) } }
         return before - conversations.count
     }
 
     func deleteAll() { delete(ids: Set(conversations.map(\.id))) }
+}
+
+/// History at scale (IMPROVE-5 #3): 200 threads were one flat list under a single "History" header with no way to
+/// search. Rows are grouped by when they were last touched, and a search field filters by title and by what was said.
+enum HistoryGroups {
+    struct Group: Identifiable { let label: String; let conversations: [SavedConversation]; var id: String { label } }
+
+    /// Today · Yesterday · This week · This month · then one group per month ("September 2026"). Order is kept (newest first).
+    static func group(_ conversations: [SavedConversation], now: Date = Date(), calendar: Calendar = .current) -> [Group] {
+        var order: [String] = [], buckets: [String: [SavedConversation]] = [:]
+        let startOfToday = calendar.startOfDay(for: now)
+        let weekAgo = calendar.date(byAdding: .day, value: -6, to: startOfToday) ?? startOfToday
+        let startOfMonth = calendar.date(from: calendar.dateComponents([.year, .month], from: now)) ?? startOfToday
+        let monthFormat = Date.FormatStyle().month(.wide).year()
+        for c in conversations {
+            let label: String
+            if c.updated >= startOfToday { label = "Today" }
+            else if c.updated >= (calendar.date(byAdding: .day, value: -1, to: startOfToday) ?? startOfToday) { label = "Yesterday" }
+            else if c.updated >= weekAgo { label = "This week" }
+            else if c.updated >= startOfMonth { label = "This month" }
+            else { label = c.updated.formatted(monthFormat) }
+            if buckets[label] == nil { order.append(label) }
+            buckets[label, default: []].append(c)
+        }
+        return order.map { Group(label: $0, conversations: buckets[$0] ?? []) }
+    }
+
+    /// Case- and diacritic-insensitive match on the title and on what the person and the model said (not tool payloads).
+    static func matches(_ c: SavedConversation, _ query: String) -> Bool {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return true }
+        if c.title.localizedStandardContains(q) { return true }
+        return c.items.contains {
+            switch $0 {
+            case .user(let s, _, _), .assistant(let s): return s.localizedStandardContains(q)
+            default: return false
+            }
+        }
+    }
+
+    /// The search field earns its row only once there is something to search through.
+    static let searchThreshold = 6
+    /// A long history opens the iPhone sheet tall; a short one keeps the half-height peek (IMPROVE-5 #10).
+    static let tallSheetThreshold = 8
 }
 
 /// The sidebar (iPad) / sheet (iPhone) list of saved conversations. Swipe left deletes one; Select → the bottom
@@ -273,7 +365,16 @@ struct HistoryList: View {
     @State private var sharing: ShareBatch? = nil
     /// The "Delete N conversations?" dialog is up. Deleting is the one action here with no undo, so it always asks.
     @State private var confirmingDelete = false
+    /// Search (IMPROVE-5 #3): filters the list; while a query is typed the groups give way to one "Results" section.
+    @State private var query = ""
     struct ShareBatch: Identifiable { let id = UUID(); var conversations: [SavedConversation] }
+
+    private var searching: Bool { !query.trimmingCharacters(in: .whitespaces).isEmpty }
+    private var filtered: [SavedConversation] { engine.archive.conversations.filter { HistoryGroups.matches($0, query) } }
+    private var groups: [HistoryGroups.Group] {
+        searching ? [HistoryGroups.Group(label: filtered.isEmpty ? "No matches" : "Results · \(filtered.count)", conversations: filtered)]
+                  : HistoryGroups.group(engine.archive.conversations)
+    }
 
     private var allSelected: Bool { !engine.archive.conversations.isEmpty && selected.count == engine.archive.conversations.count }
     private var deleteLabel: String { selected.isEmpty ? "Delete" : "Delete \(selected.count)" }
@@ -318,8 +419,9 @@ struct HistoryList: View {
                 .accessibilityHint("starts an empty conversation")
             }
             if !engine.archive.conversations.isEmpty {
-                Section("History") {
-                    ForEach(engine.archive.conversations) { c in
+                ForEach(groups) { group in
+                  Section(group.label) {
+                    ForEach(group.conversations) { c in
                         Button {
                             if selecting { toggle(c.id); return }
                             LooplDesign.haptic(); engine.open(c); selection = .chat; dismiss?()
@@ -348,6 +450,7 @@ struct HistoryList: View {
                         .accessibilityLabel("\(c.title), \(c.updated.formatted(.relative(presentation: .named)))")
                         .accessibilityHint("opens the conversation; swipe up or down for delete")
                     }
+                  }
                 }
             }
             if dismiss == nil {
@@ -361,6 +464,7 @@ struct HistoryList: View {
         // in either case, so only the home-indicator air applies.
         .looplBottomBar(false)
         .looplScrollClearance()
+        .searchableIf(engine.archive.conversations.count >= HistoryGroups.searchThreshold, text: $query, prompt: "Search conversations")
         .navigationTitle(selecting ? "\(selected.count) selected" : "loopl")
         .environment(\.editMode, .constant(selecting ? .active : .inactive))
         .toolbar {
@@ -449,7 +553,9 @@ struct HistoryList: View {
             .presentationDragIndicator(.visible)
         }
         .overlay {
-            if engine.archive.conversations.isEmpty {
+            if engine.archive.isLoading, engine.archive.conversations.isEmpty {
+                ProgressView().controlSize(.large).accessibilityLabel("Loading your conversations")
+            } else if engine.archive.conversations.isEmpty {
                 ContentUnavailableView { LooplMark().frame(width: 56, height: 56) } description: { Text("Conversations you finish appear here.") }
                     .allowsHitTesting(false)
             }
@@ -495,4 +601,11 @@ struct HistoryList: View {
 @MainActor func copy(_ s: String) {
     UIPasteboard.general.string = s
     LooplDesign.haptic()
+}
+
+private extension View {
+    /// `.searchable` only when there is enough to search (a one-thread history should not open with a search field).
+    @ViewBuilder func searchableIf(_ on: Bool, text: Binding<String>, prompt: String) -> some View {
+        if on { self.searchable(text: text, placement: .navigationBarDrawer(displayMode: .automatic), prompt: prompt) } else { self }
+    }
 }

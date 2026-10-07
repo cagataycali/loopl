@@ -280,10 +280,11 @@ public struct TrainingPlan: Hashable, Sendable, Codable {
         }
         // Plain words (IMPROVE-3 audit): "LoRA adapter … merged" said nothing to a first-time user; the method still shows
         // under "Fine-tune manually". Full fine-tuning is the one choice worth a sentence of its own.
-        let how = method == .full ? "Every weight is updated" : "It runs"
-        let article = flavor.label.first.map { "AEFHILMNORSX".contains($0) ? "an" : "a" } ?? "a"   // "an A10G", "an H200", "a T4"
-        let formats = skipMLX ? "." : (skipGGUF ? ", ready for your iPhone." : ", ready for your iPhone and as GGUF.")
-        return "\(start) and \(what) \(passes). \(how) on \(article) \(flavor.label) at Hugging Face, in your account; the result is saved privately as \(outputRepo(user: user))\(formats)"
+        // IMPROVE-5 #8: two sentences, no GPU name, no file-format names — the footer was five lines and said "A10G 24 GB"
+        // and "GGUF". The GPU and the formats are shown where they are chosen (Fine-tune manually) and in the cost line.
+        let how = method == .full ? "Every weight is updated, on Hugging Face in your account" : "Runs on Hugging Face in your account"
+        let formats = skipMLX ? "." : ", ready for your iPhone."
+        return "\(start) and \(what) \(passes). \(how); the result is saved privately as \(outputRepo(user: user))\(formats)"
     }
 }
 
