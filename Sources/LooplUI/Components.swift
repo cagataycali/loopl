@@ -975,8 +975,13 @@ public struct EmptyState: View {
     public var body: some View {
         VStack(spacing: 18) {
             LooplMarkIntro().frame(width: 72, height: 72).accessibilityHidden(true)
+            // IMPROVE-5 re-audit: at AX-XXXL on an SE the hint read "Qwen3-0.6B is ready. Eve…" — the ZStack gave it less
+            // height than three giant lines need and Text truncated. The hint caps at AX2 and may shrink a little; it is a
+            // caption under the mark, not the content.
             Text(MarkdownBody.inline(hint)).font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
                 .frame(maxWidth: 300)
+                .minimumScaleFactor(0.8)
+                .dynamicTypeSize(...DynamicTypeSize.accessibility2)
             if let action {
                 Button(action.title, action: action.run).buttonStyle(.bordered).controlSize(.regular)
                     .accessibilityIdentifier(action.id)

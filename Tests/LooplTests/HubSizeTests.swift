@@ -58,7 +58,13 @@ final class HubSizeTests: XCTestCase {
         let real = Self.realBytes["cagataydev/loopl-0.8b-4bit"]!
         XCTAssertLessThan(Double(old) / Double(real), 0.78)              // 479.8 MB — what Mine used to show
         XCTAssertEqual(Double(new), Double(real), accuracy: Double(real) * 0.001)
-        XCTAssertEqual(ByteSize.label(new), "625.1 MB")
+        // The label, not a hard-coded string: `ByteCountFormatter` follows the device REGION, so an assertion on
+        // "625.1 MB" fails on a phone set to Turkey ("625,1 MB") — the product is right, the test was wrong
+        // (IMPROVE-5 #11b; 2 of 605 tests went red just by running the suite on a tr_TR simulator).
+        // The number, then its shape — never a hard-coded separator: the line above already pins `new` to the real
+        // size within 0.1 %, so all the label has to prove is that a person reads "625 … MB" and not "479.8 MB".
+        let shown = ByteSize.label(new)
+        XCTAssertTrue(shown.hasPrefix("625") && shown.hasSuffix(" MB"), shown)
     }
 
     /// A repo with nothing quantised: U32 then really is a 4-byte tensor, and bf16 weights cost 2 bytes.

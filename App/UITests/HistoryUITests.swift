@@ -33,7 +33,7 @@ final class HistoryUITests: XCTestCase {
         return select
     }
 
-    private var emptyState: XCUIElement { XCUIApplication().staticTexts["Conversations you finish appear here."] }
+    private var emptyState: XCUIElement { XCUIApplication().staticTexts["Your conversations appear here."] }
 
     func testSelectAllDeleteConfirmEmpties() {
         let app = launch()
@@ -75,7 +75,7 @@ final class HistoryUITests: XCTestCase {
         again.launch()
         let history = again.buttons["History"].firstMatch
         if history.waitForExistence(timeout: 15) { history.tap() }
-        XCTAssertTrue(again.staticTexts["Conversations you finish appear here."].waitForExistence(timeout: 5), "still empty after relaunch")
+        XCTAssertTrue(again.staticTexts["Your conversations appear here."].waitForExistence(timeout: 5), "still empty after relaunch")
     }
 
     func testCancelKeepsEverythingAndSingleRowCounts() {
