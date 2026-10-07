@@ -49,12 +49,20 @@ struct SettingsView: View {
                     Picker(selection: $settings.appearance) {
                         ForEach(AppSettings.Appearance.allCases, id: \.self) { Text($0.label).tag($0) }
                     } label: { Label("Appearance", systemImage: "circle.lefthalf.filled") }
-                    Toggle(isOn: $settings.haptics) { Label("Haptics", systemImage: "hand.tap") }
-                    Toggle("Show performance details", isOn: $settings.showPerformance)
-                    Toggle("Show GGUF builds", isOn: $settings.showGGUF).accessibilityIdentifier("settings-show-gguf")
-                } header: { Text("Look & feel") } footer: {
-                    Text("Haptics: a soft tap when you send, when a tool starts and finishes, and when a model is ready. Performance details: a quiet line under each answer — how fast the model wrote, how long it took to start, how much of its memory the conversation uses. GGUF builds: an older, text-only model format, shown in Models for people who need it.")
-                }
+                    // One short line under each switch instead of a six-line footer for three (IMPROVE-4 #16).
+                    VStack(alignment: .leading, spacing: 4) {
+                        Toggle(isOn: $settings.haptics) { Label("Haptics", systemImage: "hand.tap") }
+                        Text("A soft tap when you send, when a tool starts and finishes, and when a model is ready.").font(.footnote).foregroundStyle(.secondary)
+                    }
+                    VStack(alignment: .leading, spacing: 4) {
+                        Toggle("Show performance details", isOn: $settings.showPerformance)
+                        Text("A quiet line under each answer: how fast the model wrote, how long it took to start, how much of its memory the conversation uses.").font(.footnote).foregroundStyle(.secondary)
+                    }
+                    VStack(alignment: .leading, spacing: 4) {
+                        Toggle("Show GGUF builds", isOn: $settings.showGGUF).accessibilityIdentifier("settings-show-gguf")
+                        Text("An older, text-only model format — listed in Models for people who need it.").font(.footnote).foregroundStyle(.secondary)
+                    }
+                } header: { Text("Look & feel") }
 
                 Section {
                     NavigationLink {
@@ -73,9 +81,10 @@ struct SettingsView: View {
                 Section {
                     LabeledContent("Version", value: "\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?") (\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"))")
                     LabeledContent("Device memory", value: MemoryBudget.label(MemoryBudget.physical))
-                    runtimeStatus("MLX", MLXModel.availability())
+                    // Engines in words (IMPROVE-4 #15): "MLX ✓ / llama.cpp ✓" told a first-time user nothing.
+                    runtimeStatus("Fast engine (MLX)", MLXModel.availability())
                     runtimeStatus("Apple Intelligence", AppleFoundationModel.availability())
-                    runtimeStatus("llama.cpp", GGUFModel.availability())
+                    runtimeStatus("Older-format engine (llama.cpp)", GGUFModel.availability())
                     Link(destination: URL(string: "https://loopl.dev/privacy")!) { Label("Privacy — nothing leaves the device", systemImage: "hand.raised") }
                     Link(destination: URL(string: "https://loopl.dev")!) { Label("loopl.dev", systemImage: "book") }
                     Link(destination: URL(string: "https://github.com/cagataycali/loopl")!) { Label("Source on GitHub", systemImage: "chevron.left.forwardslash.chevron.right") }

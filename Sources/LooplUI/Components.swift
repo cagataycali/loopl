@@ -916,16 +916,30 @@ public extension AgentTranscriptView where Empty == AnyView, Banner == EmptyView
 }
 
 /// Where the answer will land, before its first token: the mark breathing and a quiet "…". Reduce Motion: static.
+/// A long prompt (many tools, a long thread, a slow chip) means seconds of nothing — after 4 s the row says what the
+/// model is doing, after 20 s that it is normal (IMPROVE-4 #12: 60 s of "…" on a first turn read as a hang).
 public struct PendingRow: View {
+    @State private var since = Date()
     public init() {}
     public var body: some View {
-        HStack(spacing: 10) {
-            PulsingMark().frame(width: 16, height: 16)
-            Text("…").font(.body).foregroundStyle(.tertiary)
+        TimelineView(.periodic(from: since, by: 4)) { ctx in
+            let waited = ctx.date.timeIntervalSince(since)
+            HStack(spacing: 10) {
+                PulsingMark().frame(width: 16, height: 16)
+                Text(Self.caption(after: waited)).font(.body).foregroundStyle(.tertiary)
+                    .contentTransition(.opacity)
+            }
+            .padding(.top, 2)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(waited < 4 ? "loopl is thinking" : Self.caption(after: waited))
+            .accessibilityIdentifier("transcript-pending")
         }
-        .padding(.top, 2)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("loopl is thinking")
+    }
+    /// "…" → "Reading your message and the tools…" → "Still reading — a long conversation takes longer."
+    public static func caption(after seconds: TimeInterval) -> String {
+        if seconds < 4 { return "…" }
+        if seconds < 20 { return "Reading your message and the tools…" }
+        return "Still reading — a long conversation takes longer."
     }
 }
 
@@ -1050,9 +1064,11 @@ public struct DownloadProgressRow: View {
                     .contentTransition(.numericText())
                     .animation(LooplDesign.Motion.value, value: done)
                 Spacer()
-                if let onPause { Button("Pause", action: onPause).font(.caption) }
+                if let onPause { Button("Pause", action: onPause).font(.caption).accessibilityLabel("Pause download") }
             }
         }
+        // One spoken element for the bar + caption; the Pause button keeps its own name (IMPROVE-4 #14 — it used to say the percentage).
+        .accessibilityElement(children: .contain)
         .accessibilityLabel("downloading, \(Int(Double(done) / Double(max(total, 1)) * 100)) percent")
     }
 }
