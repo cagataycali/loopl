@@ -193,7 +193,13 @@ public struct MarkdownBody: View {
 public struct MarkdownTable: View {
     public var header: [String]
     public var rows: [[String]]
-    @State private var overflows = false
+    /// `onScrollGeometryChange` reports CHANGES — before the first scroll nothing has changed, so the fade stayed off on
+    /// exactly the screen that needs it (an SE with a four-column table). Content and container widths are measured
+    /// directly; the scroll callback only turns the hint off once the user reaches the end.
+    @State private var contentWidth: CGFloat = 0
+    @State private var containerWidth: CGFloat = 0
+    @State private var atEnd = false
+    private var overflows: Bool { !staticRender && contentWidth > containerWidth + 2 && !atEnd }
     @Environment(\.looplStaticRender) private var staticRender
     public init(header: [String], rows: [[String]]) { self.header = header; self.rows = rows }
     public var body: some View {
@@ -216,15 +222,24 @@ public struct MarkdownTable: View {
                 }
             }
             .padding(.horizontal, 12)
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { contentWidth = $0 }
         }
-        .onScrollGeometryChange(for: Bool.self) { g in g.contentOffset.x + g.containerSize.width < g.contentSize.width - 2 } action: { _, o in overflows = o }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { containerWidth = $0 }
+        .onScrollGeometryChange(for: Bool.self) { g in g.contentOffset.x + g.containerSize.width >= g.contentSize.width - 2 } action: { _, end in atEnd = end }
         .overlay(alignment: .trailing) {
-            LinearGradient(colors: [LooplDesign.secondaryBackground.opacity(0), LooplDesign.secondaryBackground], startPoint: .leading, endPoint: .trailing)
-                .frame(width: 28).allowsHitTesting(false).opacity(overflows ? 1 : 0)
+            // A wider fade plus a chevron: on an SE in dark mode the 28 pt fade alone read as cut-off columns
+            // (IMPROVE-3 #21 — "Best", "iPho…", "olde…" with no hint that the table scrolls).
+            ZStack(alignment: .trailing) {
+                LinearGradient(colors: [LooplDesign.secondaryBackground.opacity(0), LooplDesign.secondaryBackground], startPoint: .leading, endPoint: .trailing)
+                    .frame(width: 44)
+                Image(systemName: "chevron.right").font(.caption2.weight(.semibold)).foregroundStyle(.tertiary).padding(.trailing, 6)
+            }
+            .allowsHitTesting(false).opacity(overflows ? 1 : 0)
+            .accessibilityHidden(true)
         }
         .background(LooplDesign.secondaryBackground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("table, \(header.count) columns, \(rows.count) rows")
+        .accessibilityLabel("table, \(header.count) columns, \(rows.count) rows\(overflows ? ", scrolls sideways" : "")")
     }
 }
 
