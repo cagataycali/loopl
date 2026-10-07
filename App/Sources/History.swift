@@ -225,6 +225,35 @@ struct HistoryList: View {
 
     private var allSelected: Bool { !engine.archive.conversations.isEmpty && selected.count == engine.archive.conversations.count }
     private var deleteLabel: String { selected.isEmpty ? "Delete" : "Delete \(selected.count)" }
+    @ViewBuilder private func deleteButton(fill: Bool) -> some View {
+        Button(role: .destructive) {
+            LooplDesign.haptic()
+            confirmingDelete = true
+        } label: {
+            Label(deleteLabel, systemImage: "trash").font(.body.weight(.semibold))
+                .frame(maxWidth: fill ? .infinity : nil)
+        }
+        .buttonStyle(.bordered).tint(.red)
+        .disabled(selected.isEmpty)
+        // ⌫ on a hardware keyboard while selecting (iPad / Mac) asks the same question.
+        .keyboardShortcut(.delete, modifiers: [])
+        .accessibilityIdentifier("history.delete")
+        .accessibilityHint("deletes the selected conversations from this \(deviceName), after asking")
+    }
+    @ViewBuilder private func shareButton(_ title: String, fill: Bool) -> some View {
+        Button {
+            LooplDesign.haptic(1)
+            sharing = ShareBatch(conversations: engine.archive.conversations.filter { selected.contains($0.id) })
+        } label: {
+            Label(title, systemImage: "square.and.arrow.up").font(.body.weight(.semibold))
+                .frame(maxWidth: fill ? .infinity : nil)
+        }
+        .buttonStyle(.borderedProminent).tint(LooplDesign.accent)
+        .disabled(selected.isEmpty)
+        .accessibilityIdentifier("history.share")
+        .accessibilityLabel("Share to Hugging Face")
+        .accessibilityHint("exports the selected conversations to a private dataset in your Hugging Face account")
+    }
     /// "iPhone" / "iPad" — the dialog names the device the files leave.
     private var deviceName: String { UIDevice.current.localizedModel }
 
@@ -311,35 +340,25 @@ struct HistoryList: View {
                 // At accessibility sizes they stack (an SE at AX-XL cut both to "Del…" / "Sha…" side by side) and the
                 // constructive one goes first, nearest the thumb's resting line.
                 let stacked = typeSize.isAccessibilitySize
-                let layout = stacked ? AnyLayout(VStackLayout(spacing: 10)) : AnyLayout(HStackLayout(spacing: 12))
-                layout {
-                    Button(role: .destructive) {
-                        LooplDesign.haptic()
-                        confirmingDelete = true
-                    } label: {
-                        Label(deleteLabel, systemImage: "trash").font(.body.weight(.semibold))
-                            .frame(maxWidth: stacked ? .infinity : nil)
+                Group {
+                    if stacked {
+                        VStack(spacing: 10) { deleteButton(fill: true); shareButton("Share to Hugging Face", fill: true) }.lineLimit(2)
+                    } else {
+                        // On a 375 pt screen "Delete 4" + "Share to Hugging Face" do not both fit at the default size
+                        // ("Share to Hugging F…" — IMPROVE-3 audit #18): the short label steps in only when needed.
+                        // (ViewThatFits must wrap the button alone: a Spacer inside the candidate makes its ideal width
+                        // infinite, so the full label would never "fit" — even on a 16 Pro.)
+                        HStack(spacing: 12) {
+                            deleteButton(fill: false)
+                            Spacer(minLength: 0)
+                            ViewThatFits(in: .horizontal) {
+                                shareButton("Share to Hugging Face", fill: false)
+                                shareButton("Share", fill: false)
+                            }
+                        }
+                        .lineLimit(1)
                     }
-                    .buttonStyle(.bordered).tint(.red)
-                    .disabled(selected.isEmpty)
-                    // ⌫ on a hardware keyboard while selecting (iPad / Mac) asks the same question.
-                    .keyboardShortcut(.delete, modifiers: [])
-                    .accessibilityIdentifier("history.delete")
-                    .accessibilityHint("deletes the selected conversations from this \(deviceName), after asking")
-                    if !stacked { Spacer(minLength: 0) }
-                    Button {
-                        LooplDesign.haptic(1)
-                        sharing = ShareBatch(conversations: engine.archive.conversations.filter { selected.contains($0.id) })
-                    } label: {
-                        Label("Share to Hugging Face", systemImage: "square.and.arrow.up").font(.body.weight(.semibold))
-                            .frame(maxWidth: stacked ? .infinity : nil)
-                    }
-                    .buttonStyle(.borderedProminent).tint(LooplDesign.accent)
-                    .disabled(selected.isEmpty)
-                    .accessibilityIdentifier("history.share")
-                    .accessibilityHint("exports the selected conversations to a private dataset in your Hugging Face account")
                 }
-                .lineLimit(stacked ? 2 : 1).minimumScaleFactor(0.8)
                 .padding(.horizontal, LooplDesign.gutter).padding(.vertical, 10)
                 .background(.bar)
                 .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))

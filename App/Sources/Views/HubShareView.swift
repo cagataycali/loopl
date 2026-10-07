@@ -69,7 +69,7 @@ struct HubShareView: View {
             } header: {
                 Text("\(shard.records.count) of \(share.conversations.count) conversation\(share.conversations.count == 1 ? "" : "s") will be shared")
             } footer: {
-                Text("Rows follow loopl-train's schema: the loopl system prompt, your turns, the model's answers, tool calls with their results\(share.hasTools ? ", and the tools each thread offered" : "").")
+                Text("Each conversation is shared as it happened: your messages, the model's answers\(share.hasTools ? ", and the tools it used" : "").")
             }
 
             Section("Before it leaves this device") {

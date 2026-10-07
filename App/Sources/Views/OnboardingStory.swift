@@ -15,7 +15,7 @@ enum OnboardingStory {
         let line: String
     }
     static let pages: [Page] = [
-        Page(id: 0, headline: "Works with the network off.", line: "The model runs on the GPU in your pocket. Airplane mode changes nothing."),
+        Page(id: 0, headline: "Works with the network off.", line: "The model runs on the chip in your pocket. Airplane mode changes nothing."),
         Page(id: 1, headline: "Asks before it acts.", line: "Anything that leaves the device waits for your tap. Deny, and the model is told so."),
         Page(id: 2, headline: "Sees. Listens.", line: "Send a photo. Record a take. The tools do the rest — on the device."),
     ]
