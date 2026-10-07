@@ -147,7 +147,7 @@ public struct HubCatalog: Sendable {
         public var errorDescription: String? {
             switch self {
             case .offline: "offline mode is on — browsing Hugging Face needs the network (models already on this device still load)"
-            case .http(let c, let p): "Hugging Face answered HTTP \(c) for \(p)"
+            case .http(let c, let p): HubStatus.sentence(c, path: p, downloading: false)
             case .signInRequired(let r): "\(r) is private or gated — sign in to Hugging Face in Settings to use it"
             case .noAccess(let r): "your Hugging Face account can't read \(r) — it is private or gated; check access on huggingface.co"
             case .noWeights(let r): "\(r) has no MLX safetensors and no .gguf file loopl can run"
