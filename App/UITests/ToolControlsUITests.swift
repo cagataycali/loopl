@@ -18,16 +18,16 @@ final class ToolControlsUITests: XCTestCase {
         let turnOff = app.buttons["control-toggle"].firstMatch
         XCTAssertTrue(turnOff.waitForExistence(timeout: 15), "the flashlight result carries a Turn off switch")
         XCTAssertEqual(turnOff.label, "Turn off, currently on", "VoiceOver reads the state")
-        let rowsBefore = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'tool flashlight'")).count
+        let rowsBefore = app.descendants(matching: .any).matching(identifier: "tool-row-flashlight").count
         turnOff.tap()
         let turnOn = app.buttons.matching(identifier: "control-toggle").matching(NSPredicate(format: "label == 'Turn on, currently off'")).firstMatch
         XCTAssertTrue(turnOn.waitForExistence(timeout: 10), "after the tap the switch reads Turn on (flashlight: off)")
         XCTAssertTrue(app.staticTexts["control-taps"].firstMatch.waitForExistence(timeout: 5), "'updated by your tap' caption")
         XCTAssertEqual(app.staticTexts["control-taps"].firstMatch.label, "updated by your tap")
-        let rowsAfter = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'tool flashlight'")).count
+        let rowsAfter = app.descendants(matching: .any).matching(identifier: "tool-row-flashlight").count
         XCTAssertEqual(rowsAfter, rowsBefore, "no new row: the tapped row is the row")
         // Open the row: the result text is the fresh one and the arguments are still the ORIGINAL call's.
-        app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'tool flashlight'")).firstMatch.tap()
+        app.descendants(matching: .any)["tool-row-flashlight"].tap()
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'flashlight: off'")).firstMatch.waitForExistence(timeout: 5), "fresh result text")
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'state: on'")).firstMatch.exists, "original arguments kept")
         // And back on again — the control is a real toggle.

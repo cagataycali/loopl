@@ -547,6 +547,11 @@ public struct ToolRow: View {
             .buttonStyle(.plain)
             .accessibilityLabel(a11y)
             .accessibilityHint(expanded ? "collapses the details" : "shows arguments and result")
+            // The id the model called, as a test identifier — never shown to anyone. #140 replaced the row's
+            // accessibility LABEL ("tool http, finished") with plain words ("Web request, finished"), which is
+            // right for a person and silently broke six UI tests that were finding the row by its label. An
+            // identifier is invisible, so the words stay free to keep improving.
+            .accessibilityIdentifier("tool-row-\(call.name)")
 
             if result == nil, !expanded {
                 // Running: a thin sweep under the row, never a spinner. It leaves the instant the result lands —

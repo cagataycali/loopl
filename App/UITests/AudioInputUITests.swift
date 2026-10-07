@@ -57,7 +57,8 @@ final class AudioInputUITests: XCTestCase {
         XCTAssertTrue(chip.waitForExistence(timeout: 10), "user turn shows the recording as a chip")
         XCTAssertFalse(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "[audio attached:")).firstMatch.exists,
                        "the marker line itself is not shown")
-        let row = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "transcribe")).firstMatch
+        // By identifier: #140 gave the row plain words, so "transcribe" is no longer in its label.
+        let row = app.descendants(matching: .any)["tool-row-transcribe"]
         XCTAssertTrue(row.waitForExistence(timeout: 5), "transcribe tool row")
         shot(app, "05-transcript-audio")
         row.tap()
