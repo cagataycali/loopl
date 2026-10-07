@@ -58,6 +58,20 @@ A call that writes — `http` with POST/PUT/DELETE, `open_app`, `clipboard_write
 
 `open_app` asks every time unless you put the app's scheme on its allowlist (**Settings › Tools › open_app › Open without asking**). `shortcuts://` is the useful one: the agent can run a Shortcut with text as input.
 
+## Controls on a result
+
+Some results come with a **live control** right under the tool row — no need to ask the model again:
+
+| Result | Control |
+|---|---|
+| `flashlight` on | **Turn off** (and *Turn on* once it's off) |
+| `vibrate` | **Vibrate again** |
+| `music` | a mini player — previous · pause/play · next, and the volume slider |
+| `location` | a pin on a small map; tap to open Maps |
+| `calendar_create` · `reminders_create` | **Open in Calendar** / **Open in Reminders** |
+
+Tapping one runs **the same tool** with those arguments through the normal path — if the tool asks first, you get the usual approval card — and the row updates with the fresh result (*"flashlight: off"*, the switch now says *Turn on*) plus a quiet *updated by your tap*. It is not a new message: the row keeps its original arguments and no new row appears; History saves the latest state; the model is told *the user tapped this in the app* so its next answer is right. Controls are drawn disabled while an answer is being generated or when no model is loaded — the state they show is still true. VoiceOver reads the state (*"Turn off, currently on"*).
+
 ## When a call fails
 
 The model sees the error, word for word, and tries again with better arguments or answers without the tool. loopl never silently retries or blocks a repeat — what you see in the row is what the model read.
