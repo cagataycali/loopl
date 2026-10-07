@@ -23,11 +23,12 @@ In the app: Models › **loopl models** → download (no account). On a Mac: `pi
 
 ## The loopl-vl models
 
-The same training data on **Qwen3-VL** Instruct bases (2B): these read pictures **and video** natively — the app sends sampled frames (see [Video input](sdk/video.md)) and transcribes the audio track on the device, because Qwen3-VL has no audio input. Tool calls use the Qwen3-VL (hermes JSON) dialect; no thinking blocks. No GGUF — llama.cpp cannot see. They sit next to the loopl models in **[the collection](https://huggingface.co/collections/cagataydev/loopl-on-device-agents-swift-6ac51395b13a9c41d4932eaf)**, 4-bit + bf16, public.
+The same training data on **Qwen3-VL** Instruct bases (2B and 4B): these read pictures **and video** natively — the app sends sampled frames (see [Video input](sdk/video.md)) and transcribes the audio track on the device, because Qwen3-VL has no audio input. Tool calls use the Qwen3-VL (hermes JSON) dialect; no thinking blocks. No GGUF — llama.cpp cannot see. They sit next to the loopl models in **[the collection](https://huggingface.co/collections/cagataydev/loopl-on-device-agents-swift-6ac51395b13a9c41d4932eaf)**, 4-bit + bf16, public.
 
 | | MLX 4-bit · vision + video · public | bf16 · post-tuning base · public |
 |---|---|---|
 | loopl-vl 2B | [loopl-vl-2b-4bit](https://huggingface.co/cagataydev/loopl-vl-2b-4bit) | [loopl-vl-2b](https://huggingface.co/cagataydev/loopl-vl-2b) |
+| loopl-vl 4B | [loopl-vl-4b-4bit](https://huggingface.co/cagataydev/loopl-vl-4b-4bit) | [loopl-vl-4b](https://huggingface.co/cagataydev/loopl-vl-4b) |
 
 In the app: Models › **loopl models** → the loopl-vl rows (the + button then offers *Photo or Video*). On a Mac: `python -m mlx_vlm.generate --model cagataydev/loopl-vl-2b-4bit --video clip.mp4 --fps 2 --video-max-frames 8 --prompt "What happens in this video?"`.
 
@@ -57,6 +58,7 @@ In the app: Models › **loopl models** → the loopl-vl rows (the + button then
 | [gemma-3-1b IT (4-bit)](https://huggingface.co/mlx-community/gemma-3-1b-it-4bit) | MLX | 1.0B | 733 MB | 32,768 | 8,192 | 6 GB | no | — |
 | [gemma-3-1b IT-qat (4-bit)](https://huggingface.co/mlx-community/gemma-3-1b-it-qat-4bit) | MLX | 1.0B | 733 MB | 32,768 | 8,192 | 6 GB | no | — |
 | [loopl 4B](https://huggingface.co/cagataydev/loopl-4b-4bit) | MLX | 4.0B | 3.06 GB | 262,144 | 8,192 | 6 GB | no | ✓ |
+| [loopl-vl 4B](https://huggingface.co/cagataydev/loopl-vl-4b-4bit) | MLX | 4.0B | 3.11 GB | 262,144 | 8,192 | 6 GB | no | ✓ |
 | [gemma-3-4b IT-qat (4-bit)](https://huggingface.co/mlx-community/gemma-3-4b-it-qat-4bit) | MLX | 4.3B | 3.00 GB | 131,072 | 6,838 | 8 GB | no | — |
 | [gemma-3-4b IT (4-bit)](https://huggingface.co/mlx-community/gemma-3-4b-it-4bit) | MLX | 4.3B | 3.40 GB | 131,072 | 5,383 | 12 GB | no | — |
 | [Gemma 3 1B IT · Q4_K_M (llama.cpp)](https://huggingface.co/unsloth/gemma-3-1b-it-GGUF) | GGUF | 1.0B | 806 MB | 32,768 | 8,192 | 6 GB | no | — |
@@ -106,6 +108,7 @@ In the app: Models › **loopl models** → the loopl-vl rows (the + button then
 - **loopl-vl 2B** — loopl-vl v1 — Qwen3-VL-2B-Instruct post-tuned by Cagatay Cali on the same loopl-train data as loopl v1.1 (rev db6fa452: agent loop, tools, identity + who Cagatay Cali is). Sees pictures AND video natively (frames in; the app transcribes the audio track). Vision tower kept (mlx_vlm export). No thinking blocks. Public — no token. bf16 base for Train your own: cagataydev/loopl-vl-2b.
 - **loopl 4B** — loopl v1.1 — Qwen3.5-4B LoRA r64 post-tuned by Cagatay Cali on cagataydev/loopl-train. Vision kept (mlx_vlm export: vision_tower + preprocessor_config, same layout as the mlx-community base). Public — no token. bf16 base for Train your own: cagataydev/loopl-4b.
 - **loopl 4B · Q4_K_M (llama.cpp)** — loopl v1.1 GGUF (text-only, llama.cpp b11401 --no-mtp; trained on loopl-train v2.1 rev db6fa452 — identity/bio family, file cards, repair trajectories). Private: needs the user's HF token.
+- **loopl-vl 4B** — loopl-vl v1 — Qwen3-VL-4B-Instruct post-tuned by Cagatay Cali on the same loopl-train data as loopl v1.1 (rev db6fa452: agent loop, tools, identity + who Cagatay Cali is). Sees pictures AND video natively (frames in; the app transcribes the audio track). Vision tower kept (mlx_vlm export). No thinking blocks. Public — no token. bf16 base for Train your own: cagataydev/loopl-vl-4b.
 
 ## Picking one
 
