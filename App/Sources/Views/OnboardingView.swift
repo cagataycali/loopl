@@ -656,7 +656,7 @@ struct OnboardingView: View {
 
 /// Paste a Hugging Face token (Settings › Hugging Face does the same, with more room). Verified with `whoami`
 /// before it is stored; the sheet closes itself on success.
-private struct HFSignInSheet: View {
+struct HFSignInSheet: View {
     var hf: HFSession
     var onDone: () -> Void
     @State private var token = ""

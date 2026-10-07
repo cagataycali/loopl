@@ -4,8 +4,10 @@ import Foundation
 public struct CurrentTimeTool: Tool {
     public init() {}
     public let name = "current_time"
-    public let description = "Get the current date and time. Optional IANA timezone such as Europe/Istanbul or America/Los_Angeles; defaults to the device timezone."
-    public let parameters: JSONValue = ["type": "object", "properties": ["timezone": ["type": "string", "description": "IANA timezone id"]], "required": []]
+    /// No example city in the description: a small model copies it into the call ("what time is it" → Istanbul time
+    /// on a phone in New Jersey, measured on Qwen3 0.6B). The device default is the loud part; the id format sits on the parameter.
+    public let description = "Get the current date and time here, on this device. Call it with no arguments unless the user names ANOTHER place — then pass that place's IANA timezone."
+    public let parameters: JSONValue = ["type": "object", "properties": ["timezone": ["type": "string", "description": "Only for another place: an IANA id like America/Los_Angeles, or a city name"]], "required": []]
     public func call(_ args: [String: JSONValue]) async throws -> String {
         let tzName = args["timezone"]?.stringValue ?? args["location"]?.stringValue
         var tz = TimeZone.current

@@ -98,4 +98,24 @@ final class CollectionUITests: XCTestCase {
             let att = XCTAttachment(screenshot: shot); att.lifetime = .keepAlways; att.name = name; a.add(att)
         }
     }
+
+    /// A private (gated) catalog model tapped while signed out asks for the Hugging Face account FIRST — the download
+    /// used to start, 401 on the first byte and park a red "is private or gated" row under "On this iPhone" with a Retry
+    /// that could never work (IMPROVE-4 #11).
+    func testGatedModelAsksToSignInBeforeDownloading() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--design-fixture", "empty", "--design-tab", "models", "--design-collection", "bundled", "--design-gguf", "--storage-fixture", "none", "--design-signed-out"]
+        app.launch()
+        app.swipeUp(); app.swipeUp()
+        let more = app.descendants(matching: .any).matching(identifier: "models-more").firstMatch
+        XCTAssertTrue(more.waitForExistence(timeout: 10), "More models row")
+        more.tap()
+        let row = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'loopl 0.8B · Q4_K_M'")).firstMatch
+        for _ in 0..<8 where !(row.exists && row.isHittable) { app.swipeUp() }
+        XCTAssertTrue(row.waitForExistence(timeout: 5), "the private loopl GGUF row (gated in models.json)")
+        row.tap()
+        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "onboarding-hf-token").firstMatch.waitForExistence(timeout: 5), "sign-in sheet before any download")
+        XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "models-failed-loopl-0.8b-q4_k_m").firstMatch.exists, "no failed row")
+        XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "models-retry-loopl-0.8b-q4_k_m").firstMatch.exists, "no Retry")
+    }
 }
