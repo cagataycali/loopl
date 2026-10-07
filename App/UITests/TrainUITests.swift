@@ -14,11 +14,34 @@ final class TrainUITests: XCTestCase {
     }
 
     /// SwiftUI puts a row's identifier on the cell, the button or a static text depending on the container — search everything, scrolling as needed.
+    /// Find by identifier, scrolling if needed. `scroll:` used to be a literal number of swipes chosen per call
+    /// site (1 almost everywhere), which is a screen-height assumption in disguise: on an iPhone SE `train-manual`
+    /// is more than one swipe down the form, so `find` returned a query matching nothing and the next `.tap()`
+    /// failed with *"Failed to tap train-manual: No matches found"* — a missing element, not a missing feature.
+    /// The number is a CEILING now, and the loop stops early when the screen stops producing anything new, so it
+    /// costs nothing on a tall phone. `scroll: 0` keeps its exact meaning: must be there without scrolling.
     private func find(_ app: XCUIApplication, _ id: String, scroll: Int = 4, timeout: TimeInterval = 10) -> XCUIElement {
         let q = app.descendants(matching: .any).matching(identifier: id).firstMatch
         if q.waitForExistence(timeout: timeout) { return q }
-        for _ in 0..<scroll { app.swipeUp(); if q.waitForExistence(timeout: 2) { return q } }
+        var lastSeen = ""
+        for _ in 0..<(scroll == 0 ? 0 : max(scroll, 8)) {
+            app.swipeUp()
+            if q.waitForExistence(timeout: 2) { return q }
+            let bottom = app.staticTexts.allElementsBoundByIndex.last?.label ?? ""
+            if bottom == lastSeen { break }
+            lastSeen = bottom
+        }
         return q
+    }
+
+    /// Tap something found by identifier, after proving it is really on screen. XCUITest taps a button's CENTRE
+    /// whether or not it is visible, so tapping an off-screen element hits whatever happens to be at those
+    /// coordinates and the failure surfaces somewhere else entirely.
+    private func tap(_ app: XCUIApplication, _ id: String, file: StaticString = #filePath, line: UInt = #line) {
+        let el = find(app, id)
+        XCTAssertTrue(el.exists, "\(id) is not on this screen at all", file: file, line: line)
+        XCTAssertTrue(el.isHittable, "\(id) exists but cannot be tapped: \(el.frame)", file: file, line: line)
+        el.tap()
     }
 
     private func shoot(_ app: XCUIApplication, _ name: String) {
@@ -42,14 +65,14 @@ final class TrainUITests: XCTestCase {
         XCTAssertTrue(blocked.exists && blocked.label.contains("loopl-old"), "a Mine model without a bf16 twin is named as not continuable")
         shoot(app, "train-form")
         // the disclosure opens the manual knobs: epochs 1–4 with the heuristic, GPU Auto · <flavor>, Method
-        find(app, "train-manual", scroll: 1).tap()
+        tap(app, "train-manual")
         XCTAssertTrue(find(app, "train-epochs-picker", scroll: 1, timeout: 5).exists, "epochs picker missing under Fine-tune manually")
         let epochsNote = find(app, "train-epochs-note", scroll: 1)
         XCTAssertTrue(epochsNote.exists && epochsNote.label.contains("3–4"), "heuristic footnote: \(epochsNote.label)")
         let gpu = find(app, "train-flavor", scroll: 1)
         XCTAssertTrue(gpu.exists && gpu.label.contains("Auto"), "GPU defaults to Auto and names the pick: \(gpu.label)")
         shoot(app, "train-form-manual")
-        find(app, "train-manual", scroll: 1).tap()
+        tap(app, "train-manual")
         let start = find(app, "train-start")
         XCTAssertTrue(start.exists, "Train button missing")
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS '≈ $'")).firstMatch.waitForExistence(timeout: 5), "estimate not shown")
