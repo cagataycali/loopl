@@ -18,23 +18,23 @@ final class VideoBlockTests: XCTestCase {
     }
 
     func testPlanTokenEstimateUsesTemporalPairsAndFittedEdge() {
-        // 1920×1080 → 448×252 → 16 × 9 patches = 144 per frame pair; 10 frames = 5 pairs → 720 tokens.
+        // 1920×1080 → 448×252 → 14 × 8 blocks of 32 px = 112 per frame pair; 10 frames = 5 pairs → 560 tokens.
         let plan = VideoFramePlan(maxFrames: 16, fps: 1, maxEdge: 448)
         XCTAssertTrue(VideoFramePlan.fitted(width: 1920, height: 1080, maxEdge: 448) == (448, 252))
-        XCTAssertEqual(plan.estimatedTokens(duration: 10, width: 1920, height: 1080), 720)
+        XCTAssertEqual(plan.estimatedTokens(duration: 10, width: 1920, height: 1080), 560)
         // Odd frame count rounds up to a whole pair (the processor pads the last temporal patch).
-        XCTAssertEqual(plan.estimatedTokens(duration: 9, width: 1920, height: 1080), 720)
-        XCTAssertEqual(plan.estimatedTokens(duration: 8, width: 1920, height: 1080), 576)
+        XCTAssertEqual(plan.estimatedTokens(duration: 9, width: 1920, height: 1080), 560)
+        XCTAssertEqual(plan.estimatedTokens(duration: 8, width: 1920, height: 1080), 448)
         // Small sources are never upscaled.
         XCTAssertTrue(VideoFramePlan.fitted(width: 320, height: 240, maxEdge: 448) == (320, 240))
     }
 
     func testFittingShrinksFramesBeforeEdge() {
         let fit = VideoFramePlan.fitting(tokenBudget: 400, duration: 60, width: 1920, height: 1080)
-        XCTAssertEqual(fit?.maxFrames, 4, "16 → 8 → 4 frames (2 pairs × 144 = 288 ≤ 400)")
+        XCTAssertEqual(fit?.maxFrames, 4, "16 → 8 → 4 frames (2 pairs × 112 = 224 ≤ 400)")
         XCTAssertEqual(fit?.maxEdge, 448)
         let tiny = VideoFramePlan.fitting(tokenBudget: 100, duration: 60, width: 1920, height: 1080)
-        XCTAssertEqual(tiny?.maxFrames, 2); XCTAssertEqual(tiny?.maxEdge, 336, "1 pair at 336×189 = 12×7 = 84 tokens")
+        XCTAssertEqual(tiny?.maxFrames, 2); XCTAssertEqual(tiny?.maxEdge, 336, "1 pair at 336×189 = 11×6 = 66 tokens")
         XCTAssertNil(VideoFramePlan.fitting(tokenBudget: 10, duration: 60, width: 1920, height: 1080), "honest nil when nothing fits")
     }
 
@@ -67,8 +67,8 @@ final class VideoBlockTests: XCTestCase {
     func testEstimatorCountsFramesNotFileBytes() {
         let m = Message.user("q", images: [], videos: [clip(10, transcript: "four words right here")])
         let n = TokenEstimator.estimate(m)
-        // 4 (role) + 1 (q) + 720 frames + transcript (~22 bytes → 6) + 8
-        XCTAssertGreaterThanOrEqual(n, 720); XCTAssertLessThan(n, 800, "\(n)")
+        // 4 (role) + 1 (q) + 560 frames + transcript (~22 bytes → 6) + 8
+        XCTAssertGreaterThanOrEqual(n, 560); XCTAssertLessThan(n, 640, "\(n)")
     }
 
     func testHistoryEditorNamesTheBlock() {

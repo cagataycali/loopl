@@ -152,15 +152,15 @@ public struct ImageBlock: Sendable, Hashable, Codable {
 }
 
 /// How a video is turned into frames for a vision model. Qwen3-VL (mlx-swift-lm) reads a video as
-/// evenly spaced frames; every PAIR of frames (temporal patch 2) costs `ceil(h/28)·ceil(w/28)` tokens
-/// after the frame is resized to fit `maxEdge`. The plan is decided where the budget is known (the app's
+/// evenly spaced frames; every PAIR of frames (temporal patch 2) costs `ceil(h/32)·ceil(w/32)` tokens
+/// (16 px patches merged 2×2) after the frame is resized to fit `maxEdge`. The plan is decided where the budget is known (the app's
 /// `MemoryBudget.frameBudget`) and travels with the block so a reload renders the same prompt.
 public struct VideoFramePlan: Sendable, Hashable, Codable {
     /// Upper bound on sampled frames (evenly spaced over the whole clip). Even numbers waste nothing.
     public var maxFrames: Int
     /// Sampling density cap — `min(duration·fps, maxFrames)` frames are taken. ≤ 2 for Qwen3-VL.
     public var fps: Double
-    /// Longest edge of a frame in pixels before it reaches the processor (448 ≈ 256 tokens per frame pair).
+    /// Longest edge of a frame in pixels before it reaches the processor (448 px 16:9 ≈ 112 tokens per frame pair).
     public var maxEdge: Int
 
     public init(maxFrames: Int = 16, fps: Double = 1, maxEdge: Int = 448) {
@@ -172,11 +172,14 @@ public struct VideoFramePlan: Sendable, Hashable, Codable {
     public func frameCount(duration: TimeInterval) -> Int {
         max(1, min(maxFrames, Int((duration * fps).rounded())))
     }
-    /// Vision tokens the frames cost: one 28 px patch per token, two frames per temporal patch.
+    /// Pixels per vision token along one edge: Qwen3-VL patch 16 × spatial merge 2 (Qwen2.5-VL would be 28).
+    public static let tokenPixels = 32
+    /// Vision tokens the frames cost: one token per 32×32 block, two frames per temporal patch.
     public func estimatedTokens(duration: TimeInterval, width: Int?, height: Int?) -> Int {
         let frames = frameCount(duration: duration)
         let (w, h) = Self.fitted(width: width ?? maxEdge, height: height ?? maxEdge, maxEdge: maxEdge)
-        let patches = max(1, (w + 27) / 28) * max(1, (h + 27) / 28)
+        let g = Self.tokenPixels
+        let patches = max(1, (w + g - 1) / g) * max(1, (h + g - 1) / g)
         return ((frames + 1) / 2) * patches
     }
     /// The size a `w×h` frame has after the long edge is capped at `maxEdge` (never upscaled).
