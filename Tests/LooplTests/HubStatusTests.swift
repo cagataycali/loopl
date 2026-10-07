@@ -26,7 +26,9 @@ final class HubStatusTests: XCTestCase {
         for code in [429, 500, 502, 503, 504, 408] {
             let down = HubStatus.sentence(code, downloading: true)
             XCTAssertTrue(down.contains("try again"), "\(code): \(down)")
-            XCTAssertTrue(down.contains("kept"), "\(code) must say the bytes survive: \(down)")
+            XCTAssertTrue(down.contains("Your progress is kept"), "\(code) must say the bytes survive: \(down)")
+            // It is drawn in red, unwrapped, beside a Retry button: two lines on a 375 pt screen, not three.
+            XCTAssertLessThanOrEqual(down.count, 110, "too long for the Models row: \(down.count) chars — \(down)")
             XCTAssertFalse(HubStatus.sentence(code, downloading: false).contains("kept"),
                            "browsing has nothing to keep: \(code)")
         }
