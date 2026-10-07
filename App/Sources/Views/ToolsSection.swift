@@ -63,7 +63,7 @@ struct ToolsSection: View {
     static func footer(expanded: Bool) -> String {
         expanded
         ? "The model only sees the tools that are on. Fewer tools help a small model, so the everyday set is on and the rest wait here — the model can still switch one on for a single conversation when it needs it. Everything runs on this device; a tool that needs an iOS permission asks for it the first time it runs. Settings › Network › Ask before decides when you are asked first."
-        : "The model only sees the tools that are on, and can switch one on for a single conversation when it needs it. Tap Tools to see every one."
+        : "It sees only the tools that are on (it can switch one on for a conversation). Tap Tools to choose."
     }
 
     @ViewBuilder private func group(_ title: String, _ rows: [ToolListing.Row], empty: String) -> some View {
