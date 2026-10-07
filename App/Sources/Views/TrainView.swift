@@ -123,16 +123,16 @@ struct TrainView: View {
                         .accessibilityIdentifier("train-dataset")
                     }
                     if dataset != nil {
-                        LabeledContent("Rows", value: inspecting ? "reading…" : conversations > 0 ? "≈ \(conversations) conversations · \(ByteSize.label(shardBytes))" : "no .jsonl shards found")
+                        LabeledContent("Size", value: inspecting ? "reading…" : conversations > 0 ? "≈ \(conversations) conversations · \(ByteSize.label(shardBytes))" : "no conversations found yet")
                             .accessibilityIdentifier("train-rows")
                         if let e = inspectError { Text(e).font(.footnote).foregroundStyle(.orange) }
                     }
                 }
             } header: { Text("Your conversations") } footer: {
                 if canRunJobs {
-                    Text("Private, in your account (@\(user)). The training script is committed next to the shards as train/loopl_sft.py.")
+                    Text("Private, in your Hugging Face account (@\(user)).")
                 } else {
-                    Label("Your token is read-only. Jobs need a write token — Settings › Hugging Face.", systemImage: LooplDesign.iconWarning).foregroundStyle(.orange)
+                    Label("Your Hugging Face token can only read. Training needs a token that can write — Settings › Hugging Face.", systemImage: LooplDesign.iconWarning).foregroundStyle(.orange)
                 }
             }
 
@@ -159,13 +159,13 @@ struct TrainView: View {
                             .accessibilityIdentifier("train-replay")
                     }
                 }
-                LabeledContent("Epochs", value: epochsChoice == 0 ? "Auto (recommended)" : "\(epochsChoice)")
+                LabeledContent("Passes", value: epochsChoice == 0 ? "Auto (recommended)" : "\(epochsChoice)")
                     .accessibilityIdentifier("train-epochs")
                 TextField("Model name", text: $outputName, prompt: Text(plan.map(\.outputName) ?? "loopl-mine-0-8b"))
                     .textInputAutocapitalization(.never).autocorrectionDisabled()
                     .accessibilityIdentifier("train-name")
                 DisclosureGroup(isExpanded: $manual) {
-                    Picker("Epochs", selection: $epochsChoice) {
+                    Picker("Passes", selection: $epochsChoice) {
                         Text("Auto (recommended)").tag(0)
                         ForEach(1...4, id: \.self) { Text("\($0)").tag($0) }
                     }
@@ -195,7 +195,7 @@ struct TrainView: View {
                     }
                     let blocked = tunedBases.filter { !$0.isTrainable }
                     if !blocked.isEmpty {
-                        Text("Can't continue \(blocked.map(\.name).joined(separator: ", ")): no bf16 checkpoint next to the 4-bit weights — training from 4-bit is refused.")
+                        Text("\(blocked.map(\.name).joined(separator: ", ")) can't be continued — \(blocked.count == 1 ? "it was" : "they were") not saved in a form that can be trained further. Start fresh or pick another model.")
                             .accessibilityIdentifier("train-continue-blocked")
                     }
                 }
@@ -234,8 +234,9 @@ struct TrainView: View {
 
     private var epochsFootnote: String {
         let h = TrainingEpochs.heuristic(forConversations: conversations)
-        let guide = "Guide: under 200 conversations 3–4 epochs · 200–1 000 → 2 · over 1 000 → 1–2. For \(conversations): \(h.text)."
-        return epochsChoice == 0 ? "Auto runs up to \(h.autoMax), keeps the best-scoring epoch and stops as soon as held-out loss rises. \(guide)" : guide
+        // A pass = the model reads every conversation once. Fewer conversations want more passes.
+        let guide = "Fewer conversations need more passes: under 200 → 3–4, up to 1 000 → 2, more → 1–2. For your \(conversations): \(h.text)."
+        return epochsChoice == 0 ? "Auto tries up to \(h.autoMax) pass\(h.autoMax == 1 ? "" : "es") and keeps the one that scores best. \(guide)" : guide
     }
 
     private func estimateCard(_ e: TrainingEstimate, plan: TrainingPlan) -> some View {
@@ -248,7 +249,7 @@ struct TrainView: View {
             Text("Stops by itself if it runs past \(TrainingEstimate.spoken(Double(e.capSeconds))) — Hugging Face bills your account per minute until then.")
                 .font(.footnote).foregroundStyle(.secondary)
                 .accessibilityIdentifier("train-cap")
-            Text("\(e.steps) steps on \(plan.flavor.label) at \(plan.flavor.priceLabel), then merge, score, and convert for iPhone\(plan.skipGGUF ? "" : " and GGUF"). An estimate, not a quote.")
+            Text("About \(e.steps) training steps on \(plan.flavor.label) at \(plan.flavor.priceLabel), then checking and making the iPhone version\(plan.skipGGUF ? "" : " and the Mac and PC version"). An estimate, not a quote.")
                 .font(.footnote).foregroundStyle(.tertiary)
         }
         .accessibilityElement(children: .combine)
@@ -264,7 +265,7 @@ struct TrainView: View {
             title: "Start a training job on Hugging Face",
             method: "POST", url: "https://huggingface.co/api/jobs/\(user)",
             bodyPreview: "flavor \(plan.flavor.id) · timeout \(TrainingEstimate.duration(Double(plan.timeoutSeconds)))\nloopl_sft.py \(args)",
-            detail: "\(plan.estimate.sentence) Output: \(plan.outputRepo(user: user)), -4bit, -GGUF — private.",
+            detail: "\(plan.estimate.sentence) Saved privately as \(plan.outputRepo(user: user)), with the iPhone version\(plan.skipGGUF ? "" : " and the Mac and PC version").",
             risk: .high)
     }
 
@@ -284,10 +285,10 @@ struct TrainView: View {
                     ProgressView(value: s.phase.isActive || s.progress.isDone ? s.progress.fraction : (s.progress.isFailed ? s.progress.fraction : 0))
                         .tint(s.progress.isFailed ? .orange : LooplDesign.accent)
                         .animation(LooplDesign.Motion.faded(LooplDesign.Motion.value, reduceMotion), value: s.progress.fraction)
-                    Text("\(s.plan.baseLabel) · \(s.plan.method.label) · \(s.plan.flavor.label) · \(s.plan.conversations) conversations · epochs \(s.plan.epochs.label.lowercased())")
+                    Text(([s.plan.baseLabel, s.plan.method == .full ? s.plan.method.label : nil, "\(s.plan.conversations) conversations", "passes: \(s.plan.epochs.label.lowercased())", s.plan.flavor.label].compactMap { $0 }).joined(separator: " · "))
                         .font(.footnote).foregroundStyle(.secondary)
                     if let p = s.progress.plan, (p.stitched ?? 0) > 0 || (p.round ?? 1) > 1 {
-                        Text([p.round.map { "round \($0)" }, p.stitched.map { "\($0) stitched" }, p.heuristic.map { "epochs auto ≤ \(Int(p.epochsMax ?? 0)) (guide \($0))" }].compactMap { $0 }.joined(separator: " · "))
+                        Text([p.stitched.map { "\($0) conversations joined by day" }, p.epochsMax.map { "up to \(Int($0)) passes" }].compactMap { $0 }.joined(separator: " · "))   // round is already on the line above
                             .font(.caption).foregroundStyle(.secondary).accessibilityIdentifier("train-plan")
                     }
                 }
@@ -401,22 +402,22 @@ struct TrainView: View {
         let lo = hist.map(\.evalLoss).min() ?? 0, hi = hist.map(\.evalLoss).max() ?? 1
         let span = max(hi - lo, 0.01)
         return VStack(alignment: .leading, spacing: 6) {
-            Text("Held-out loss by epoch").font(.footnote.weight(.medium))
+            Text("Score by pass — lower is better").font(.footnote.weight(.medium))
             HStack(alignment: .bottom, spacing: 10) {
                 ForEach(hist) { h in
                     VStack(spacing: 3) {
                         Text(String(format: "%.2f", h.evalLoss)).font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
                         Capsule().fill(h.epoch == best ? LooplDesign.accent : Color.secondary.opacity(0.35))
                             .frame(width: 22, height: 14 + 40 * CGFloat((h.evalLoss - lo) / span))
-                        Text("e\(h.epoch)").font(.caption2).foregroundStyle(h.epoch == best ? .primary : .secondary)
+                        Text("pass \(h.epoch)").font(.caption2).foregroundStyle(h.epoch == best ? .primary : .secondary)
                     }
                 }
                 Spacer()
             }
-            if let best { Text("Kept epoch \(best) — the one with the lowest held-out loss.").font(.caption).foregroundStyle(.secondary) }
+            if let best { Text("Kept pass \(best) — it scored best.").font(.caption).foregroundStyle(.secondary) }
         }
         .accessibilityIdentifier("train-epochs-chart")
-        .accessibilityLabel("Held-out loss by epoch: " + hist.map { "epoch \($0.epoch) \(String(format: "%.2f", $0.evalLoss))" }.joined(separator: ", "))
+        .accessibilityLabel("Score by pass, lower is better: " + hist.map { "pass \($0.epoch) \(String(format: "%.2f", $0.evalLoss))" }.joined(separator: ", "))
     }
 
     // MARK: actions

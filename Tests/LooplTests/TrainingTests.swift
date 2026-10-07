@@ -86,7 +86,8 @@ final class TrainingTests: XCTestCase {
         let fresh = TrainingPlan(dataset: "me/loopl-app-conversations", conversations: 191, base: .b0_8)
         let s = fresh.summary(user: "me")
         XCTAssertTrue(s.hasPrefix("Starts from loopl 0.8B and learns from your 191 conversations in up to 3 passes, keeping the one that scores best"), s)
-        XCTAssertTrue(s.contains("A small LoRA adapter is trained and merged in on an A10G 24 GB at Hugging Face"), s)
+        XCTAssertTrue(s.contains("It runs on an A10G 24 GB at Hugging Face, in your account"), s)
+        XCTAssertFalse(s.contains("LoRA") || s.contains("held-out") || s.contains("bf16"), "plain words on the Train screen: \(s)")
         XCTAssertTrue(TrainingPlan(dataset: "me/d", conversations: 10, base: .b0_8, flavor: .t4Small).summary(user: "me").contains("on a T4 16 GB"))
         XCTAssertTrue(TrainingPlan(dataset: "me/d", conversations: 10, base: .b0_8, flavor: .h200).summary(user: "me").contains("on an H200"))
         XCTAssertTrue(s.contains("saved privately as me/loopl-app-0-8b, ready for your iPhone and as GGUF."), s)
@@ -246,5 +247,15 @@ final class TrainingTests: XCTestCase {
         XCTAssertEqual(owned[0].looplRound, 1); XCTAssertEqual(owned[1].looplRound, 1); XCTAssertEqual(owned[1].looplParent, "me/loopl-app-sim"); XCTAssertNil(owned[2].looplRound)
         let url = HubCatalog(token: nil).ownedURL(author: "me").absoluteString
         XCTAssertTrue(url.contains("author=me") && url.contains("expand%5B%5D=cardData"))
+    }
+
+    // IMPROVE-3 audit #2: the Train screen's stage names are words a person can follow.
+    func testStageLabelsHaveNoJargon() {
+        for name in TrainingStage.order {
+            let l = TrainingStage(name: name).label
+            for bad in ["MLX", "GGUF", "4-bit", "weights", "Rendering", "merged"] { XCTAssertFalse(l.contains(bad), "\(name) → \(l)") }
+        }
+        XCTAssertEqual(TrainingStage(name: "mlx").label, "Making the iPhone version")
+        XCTAssertEqual(TrainingStage(name: "merge").label, "Finishing the model")
     }
 }
