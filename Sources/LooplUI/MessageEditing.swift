@@ -53,7 +53,7 @@ public struct EditableUserTurn: View {
                 UserTurnEditor(item: item, original: text, actions: actions)
                     .transition(reduceMotion ? .opacity : .asymmetric(insertion: .opacity.combined(with: .scale(scale: 0.98, anchor: .topLeading)), removal: .opacity))
             } else {
-                UserTurn(text, images: item.images, menu: false)
+                UserTurn(text, images: item.images, videos: item.videos, menu: false)
                     .holdPreviewShape()
                     .contextMenu {
                         if !actions.canEdit {

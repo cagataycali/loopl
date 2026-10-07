@@ -178,8 +178,10 @@ public struct VideoFramePlan: Sendable, Hashable, Codable {
     public func estimatedTokens(duration: TimeInterval, width: Int?, height: Int?) -> Int {
         let frames = frameCount(duration: duration)
         let (w, h) = Self.fitted(width: width ?? maxEdge, height: height ?? maxEdge, maxEdge: maxEdge)
-        let g = Self.tokenPixels
-        let patches = max(1, (w + g - 1) / g) * max(1, (h + g - 1) / g)
+        let g = Double(Self.tokenPixels)
+        // The processor snaps each edge to the NEAREST multiple of 32 (QwenVL.targetSize), not up — measured: a portrait
+        // 206×448 frame costs 6×14 = 84 tokens per pair, not 7×14.
+        let patches = max(1, Int((Double(w) / g).rounded())) * max(1, Int((Double(h) / g).rounded()))
         return ((frames + 1) / 2) * patches
     }
     /// The size a `w×h` frame has after the long edge is capped at `maxEdge` (never upscaled).

@@ -76,3 +76,20 @@ final class VideoBlockTests: XCTestCase {
         XCTAssertTrue(HistoryEditor.summarize(m.content).contains("[video]"))
     }
 }
+
+final class VideoExportTests: XCTestCase {
+    func testExportCarriesAReferenceNotTheBytes() throws {
+        let v = VideoBlock(path: "/tmp/x.attachments/CLIP.mov", duration: 42, width: 1920, height: 1080, transcript: "hello harbour")
+        let thread = ConversationExport.Thread(id: "t", title: "t", messages: [.user("what happens?", images: [], videos: [v]), .assistant("A boat.")], tools: [], modelId: "m", updated: Date())
+        let r = try ConversationExport.record(thread)
+        let row = r.json.objectValue!
+        let user = row["messages"]!.arrayValue![1].objectValue!
+        let content = user["content"]!.stringValue!
+        XCTAssertTrue(content.contains("[video attached: CLIP.mov (0:42)"), content)
+        XCTAssertTrue(content.contains("[audio transcript: hello harbour]"), content)
+        XCTAssertEqual(row["videos"]!.arrayValue!.first!.objectValue!["ref"], .string("CLIP.mov"))
+        XCTAssertEqual(row["videos"]!.arrayValue!.first!.objectValue!["frames"], .number(16))
+        XCTAssertNil(row["images"])
+        XCTAssertTrue(r.images.isEmpty, "no bytes shipped")
+    }
+}

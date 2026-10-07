@@ -1,5 +1,6 @@
 import SwiftUI
 import PhotosUI
+import UniformTypeIdentifiers
 import Loopl
 import LooplUI
 
@@ -12,6 +13,8 @@ struct ChatView: View {
     @State private var attachments: [ImageBlock] = []
     /// Recordings made in the composer (files already in the thread's attachments dir).
     @State private var clips: [AudioClip] = []
+    /// Clips attached in the composer (file already in the thread's attachments dir; Phase 8).
+    @State private var videos: [VideoClip] = []
     @State private var showHistory = false
     /// The user row being edited in place (hold → Edit). The composer dims while it is set.
     @State private var editing: UUID?
@@ -59,9 +62,10 @@ struct ChatView: View {
                     .padding(.horizontal, LooplDesign.gutter).padding(.bottom, 6)
                     .transition(.opacity)
                 }
-                Composer(draft: $draft, attachments: $attachments, clips: $clips, focused: $focused,
+                Composer(draft: $draft, attachments: $attachments, clips: $clips, videos: $videos, focused: $focused,
                          placeholder: placeholder,
                          generating: engine.isGenerating, canSend: engine.loadedModel != nil, canAttach: engine.canSeeImages,
+                         loadedSpec: engine.loadedModel,
                          attachmentsDir: { AudioAttachment.directory(for: engine.currentId) },
                          send: send, stop: engine.stop)
                 // The composer keeps the transcript's reading measure on wide screens; its bar background spans the window.
@@ -243,8 +247,9 @@ struct ChatView: View {
         // Each recording is one honest line in the message: the model sees the path and may call `transcribe`.
         // Nothing is transcribed for it behind the scenes — the point is to watch it pick the tool.
         if !clips.isEmpty { t = ([t.trimmingCharacters(in: .whitespacesAndNewlines)] + clips.map(\.marker.line)).filter { !$0.isEmpty }.joined(separator: "\n") }
-        withAnimation(LooplDesign.Motion.reduced(LooplDesign.Motion.snappy, reduceMotion)) { draft = ""; attachments = []; clips = [] }
-        engine.send(t, images: imgs)   // the engine emits the .send haptic
+        let vids = videos.map(\.block)
+        withAnimation(LooplDesign.Motion.reduced(LooplDesign.Motion.snappy, reduceMotion)) { draft = ""; attachments = []; clips = []; videos = [] }
+        engine.send(t, images: imgs, videos: vids)   // the engine emits the .send haptic
     }
 }
 
@@ -287,12 +292,15 @@ struct Composer: View {
     @Binding var draft: String
     @Binding var attachments: [ImageBlock]
     @Binding var clips: [AudioClip]
+    @Binding var videos: [VideoClip]
     var focused: FocusState<Bool>.Binding
     var placeholder: String
     var generating: Bool
     var canSend: Bool
     /// The loaded model has a vision tower — show the attach button (photos / camera / paste).
     var canAttach: Bool = false
+    /// The loaded model (frame plan for a clip is sized to it). nil while loading.
+    var loadedSpec: ModelSpec? = nil
     /// Where a new recording is written (the current thread's attachments dir).
     var attachmentsDir: () -> URL
     var send: () -> Void
@@ -304,6 +312,9 @@ struct Composer: View {
     @State private var pickerItems: [PhotosPickerItem] = []
     @State private var showPhotos = false
     @State private var showCamera = false
+    @State private var showVideoCamera = false
+    @State private var showFiles = false
+    @State private var importingVideo = false
     @State private var attachError: String?
 
     static let maxAttachments = 4
@@ -318,11 +329,13 @@ struct Composer: View {
 
     static let maxClips = 3
 
-    private var sendable: Bool { canSend && (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty || !clips.isEmpty) }
+    private var sendable: Bool { canSend && (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty || !clips.isEmpty || !videos.isEmpty) }
+    private var canAddVideo: Bool { canAttach && videos.count < VideoAttachment.maxClips && !importingVideo }
 
     var body: some View {
         VStack(spacing: 0) {
             AttachmentChips(images: $attachments)
+            videoChips
             audioChips
             if let attachError {
                 Text(attachError).font(.caption).foregroundStyle(.red).padding(.horizontal, 14).padding(.top, 6)
@@ -338,7 +351,11 @@ struct Composer: View {
         // `.bar` here was stacked inside the reading measure, so on iPad the composer read as a lighter slab on the bar.
         .offset(y: drag)
         .photosPicker(isPresented: $showPhotos, selection: $pickerItems, maxSelectionCount: Self.maxAttachments - attachments.count,
-                      matching: .images, photoLibrary: .shared())
+                      matching: canAddVideo ? .any(of: [.images, .videos]) : .images, photoLibrary: .shared())
+        .fileImporter(isPresented: $showFiles, allowedContentTypes: VideoAttachment.types) { result in
+            guard case .success(let url) = result else { return }
+            Task { await importVideo(url, move: false, securityScoped: true) }
+        }
         .onChange(of: pickerItems) { _, items in
             guard !items.isEmpty else { return }
             Task { await ingest(items); pickerItems = [] }
@@ -347,6 +364,12 @@ struct Composer: View {
         .fullScreenCover(isPresented: $showCamera) {
             CameraPicker { data in
                 if let data { add(ImageAttachment.block(from: data)) }
+            }
+            .ignoresSafeArea()
+        }
+        .fullScreenCover(isPresented: $showVideoCamera) {
+            VideoCameraPicker { url in
+                if let url { Task { await importVideo(url, move: true, securityScoped: false) } }
             }
             .ignoresSafeArea()
         }
@@ -373,12 +396,16 @@ struct Composer: View {
     /// Attach: Photos · Camera · Paste. Only shown for a vision model; disabled at the 4-picture cap.
     @ViewBuilder private var attachButton: some View {
         Menu {
-            Button { showPhotos = true } label: { Label("Photo Library", systemImage: "photo.on.rectangle") }
+            Button { showPhotos = true } label: { Label(canAddVideo ? "Photo or Video" : "Photo Library", systemImage: "photo.on.rectangle") }
             #if os(iOS)
             if UIImagePickerController.isSourceTypeAvailable(.camera) {
                 Button { showCamera = true } label: { Label("Take Photo", systemImage: "camera") }
+                Button { showVideoCamera = true } label: { Label("Record Video", systemImage: "video") }
+                    .disabled(!canAddVideo)
             }
             #endif
+            Button { showFiles = true } label: { Label("Video from Files", systemImage: "folder") }
+                .disabled(!canAddVideo)
             Button { paste() } label: { Label("Paste Image", systemImage: "doc.on.clipboard") }
                 .disabled(!ImageAttachment.pasteboardHasImage)
         } label: {
@@ -387,7 +414,7 @@ struct Composer: View {
                 .foregroundStyle(attachments.count >= Self.maxAttachments ? Color.secondary : Color.primary)
         }
         .disabled(attachments.count >= Self.maxAttachments || generating)
-        .accessibilityLabel("Attach an image")
+        .accessibilityLabel("Attach an image or video")
         .accessibilityIdentifier("composer-attach")
         .transition(.scale.combined(with: .opacity))
     }
@@ -396,14 +423,18 @@ struct Composer: View {
     private var compactMenu: some View {
         Menu {
             if canAttach {
-                Button { showPhotos = true } label: { Label("Photo Library", systemImage: "photo.on.rectangle") }
+                Button { showPhotos = true } label: { Label(canAddVideo ? "Photo or Video" : "Photo Library", systemImage: "photo.on.rectangle") }
                     .disabled(attachments.count >= Self.maxAttachments)
                 #if os(iOS)
                 if UIImagePickerController.isSourceTypeAvailable(.camera) {
                     Button { showCamera = true } label: { Label("Take Photo", systemImage: "camera") }
                         .disabled(attachments.count >= Self.maxAttachments)
+                    Button { showVideoCamera = true } label: { Label("Record Video", systemImage: "video") }
+                        .disabled(!canAddVideo)
                 }
                 #endif
+                Button { showFiles = true } label: { Label("Video from Files", systemImage: "folder") }
+                    .disabled(!canAddVideo)
                 Button { paste() } label: { Label("Paste Image", systemImage: "doc.on.clipboard") }
                     .disabled(!ImageAttachment.pasteboardHasImage || attachments.count >= Self.maxAttachments)
             }
@@ -422,6 +453,49 @@ struct Composer: View {
         .accessibilityLabel(canAttach ? "Attach an image or record audio" : "Record audio")
         .accessibilityIdentifier("composer-attach")
         .transition(.scale.combined(with: .opacity))
+    }
+
+    // MARK: - Video
+
+    /// One clip chip (poster · duration · frames · transcript state) above the field; an importing clip shows a spinner row.
+    @ViewBuilder private var videoChips: some View {
+        if !videos.isEmpty || importingVideo {
+            HStack(spacing: 8) {
+                ForEach(videos) { clip in
+                    VideoClipChip(video: clip.block, transcribing: clip.transcribing) { removeVideo(clip) }
+                        .transition(.scale(scale: 0.8).combined(with: .opacity))
+                }
+                if importingVideo {
+                    HStack(spacing: 8) { ProgressView().controlSize(.small); Text("reading video…").font(.caption).foregroundStyle(.secondary) }
+                        .padding(.horizontal, 12).padding(.vertical, 8)
+                        .background(LooplDesign.controlFill, in: Capsule())
+                        .accessibilityIdentifier("video-importing")
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 12).padding(.top, 8)
+            .animation(LooplDesign.Motion.faded(LooplDesign.Motion.snappy, reduceMotion), value: videos.count)
+        }
+    }
+
+    private func removeVideo(_ clip: VideoClip) {
+        VideoAttachment.remove(clip)
+        withAnimation(LooplDesign.Motion.reduced(LooplDesign.Motion.snappy, reduceMotion)) { videos.removeAll { $0.id == clip.id } }
+    }
+
+    /// Copy the clip into the thread, probe it, make the poster, start the transcript. `securityScoped` = a Files URL.
+    private func importVideo(_ url: URL, move: Bool, securityScoped: Bool) async {
+        guard canAddVideo else { attachError = "One video per message."; return }
+        importingVideo = true
+        defer { importingVideo = false }
+        let scoped = securityScoped && url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        guard let clip = await VideoAttachment.importClip(from: url, into: attachmentsDir(), move: move, spec: loadedSpec) else {
+            attachError = "That video could not be read."; return
+        }
+        attachError = nil
+        LooplDesign.haptic()
+        withAnimation(LooplDesign.Motion.reduced(LooplDesign.Motion.snappy, reduceMotion)) { videos.append(clip) }
     }
 
     // MARK: - Audio
@@ -604,6 +678,12 @@ struct Composer: View {
 
     private func ingest(_ items: [PhotosPickerItem]) async {
         for item in items {
+            // A movie comes as a FILE (never loaded into memory); anything else is treated as a picture.
+            if item.supportedContentTypes.contains(where: { $0.conforms(to: .movie) || $0.conforms(to: .video) }) {
+                if let movie = try? await item.loadTransferable(type: PickedMovie.self) { await importVideo(movie.url, move: true, securityScoped: false) }
+                else { attachError = "That video could not be read." }
+                continue
+            }
             let data = try? await item.loadTransferable(type: Data.self)
             add(data.flatMap(ImageAttachment.block(from:)))
         }
