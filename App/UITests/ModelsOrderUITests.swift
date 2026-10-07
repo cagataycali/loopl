@@ -54,8 +54,15 @@ final class ModelsOrderUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--design-fixture", "empty", "--design-tab", "models", "--design-collection", "bundled", "--design-models", "empty", "--storage-fixture", "none"]
         app.launch()
+        // This scene is ABOUT the empty shelf, and `--design-models empty` cannot invent one: a model that is
+        // really on the device is really listed, and its bytes are really counted in the Storage line. On a
+        // fresh simulator (CI) that is nothing; on a simulator someone has used it is a 403 MB row. Say which
+        // it is and skip, rather than fail — the assertions below are meaningless without the precondition.
         let empty = app.descendants(matching: .any).matching(identifier: "models-empty").firstMatch
-        XCTAssertTrue(empty.waitForExistence(timeout: 10), "the calm empty line")
+        if !empty.waitForExistence(timeout: 10) {
+            let storage = app.descendants(matching: .any).matching(identifier: "models-storage").firstMatch
+            throw XCTSkip("this device has a model downloaded, so there is no empty shelf to check — Storage says: \(storage.exists ? storage.label : "unknown")")
+        }
         XCTAssertTrue(empty.label.contains("Get a model"), empty.label)
         // The loopl models are still one swipe away, after Browse and Train.
         let four = app.descendants(matching: .any).matching(identifier: "collection-row-cagataydev/loopl-4b-4bit").firstMatch
