@@ -54,6 +54,10 @@ The last section. Paste a Hugging Face token in **Settings › Hugging Face** (r
 
 The photo button follows the weights on the phone, not the model's name: after a download loopl reads the model's own `config.json`, so a text-only export never shows a camera, and a vision export always does.
 
+### Qwen3-VL — Instruct and Thinking
+
+Four Qwen3-VL rows are in the catalog, all 4‑bit MLX with the vision tower: **Qwen3-VL 2B** and **4B** (Instruct — answer straight away) and **Qwen3-VL 2B Thinking** and **4B Thinking** (rows marked *🧠 thinks*). A Thinking model reasons first: its template always opens a `<think>` block, there is no switch to turn it off, so every answer begins in the reasoning row — fold it or read it — and then the answer follows. Expect a few hundred reasoning tokens per turn, so Thinking is slower than Instruct on the same phone (on a Mac: 2B 45 vs 44 tok/s, 4B 35 vs 30 tok/s — the cost is the extra tokens, not the speed). Tool calls work in both: the model reads a number off a photo and calls `calculator` with it; a tool call it merely drafts while thinking is never run. Sizes: 1.80 GB (2B) and 3.11 GB (4B); 4B wants an 8 GB iPhone. A picture costs about 980 tokens of context at loopl's 1 MP cap; a video (coming with the video pipeline) costs about 150 tokens per *pair* of frames at 448 px. Qwen3-VL has no audio input — a video's sound is transcribed on the device and given to the model as text.
+
 ## When a download won't start
 
 It says why, where you tapped: not enough space (need vs free, with *Open Settings › Storage*), the chosen drive is away, the repo needs a token, or you are offline. Failed rows keep a **Retry**. A model whose tokenizer files are out of date is fixed on first load — *Fixing model files* — without downloading the weights again.
