@@ -88,6 +88,25 @@ public enum AgendaStore {
     static let dayFormatter: DateFormatter = { let f = DateFormatter(); f.dateFormat = "EEE d MMM"; return f }()
     static let timeFormatter: DateFormatter = { let f = DateFormatter(); f.dateFormat = "HH:mm"; return f }()
     static let stampFormatter: DateFormatter = { let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd HH:mm"; return f }()
+    /// The date as a person says it on an approval card: "today at 9:00", "tomorrow at 9:00", "Thu 9 Oct at 15:00"
+    /// (within 7 days), "Fri 7 Nov 2026 at 15:00" beyond; all-day drops the clock. Never an ISO stamp.
+    static func spoken(_ d: Date, allDay: Bool = false, now: Date = Date(), calendar: Calendar = .current) -> String {
+        let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: now), to: calendar.startOfDay(for: d)).day ?? 99
+        func fmt(_ pattern: String?, time: Bool = false) -> String {
+            let f = DateFormatter(); f.calendar = calendar; f.timeZone = calendar.timeZone
+            if let pattern { f.dateFormat = pattern } else { f.timeStyle = .short; f.dateStyle = .none }
+            return f.string(from: d)
+        }
+        let day: String
+        switch days {
+        case 0: day = "today"
+        case 1: day = "tomorrow"
+        case -1: day = "yesterday"
+        case 2..<7: day = fmt("EEE d MMM")
+        default: day = fmt("EEE d MMM yyyy")
+        }
+        return allDay ? day + " (all day)" : day + " at " + fmt(nil)
+    }
     /// "Today is 2026-10-06 (Monday)." — appended to the tool descriptions, because the app prompt carries no date and a
     /// small model cannot turn "tomorrow at 12:30" into yyyy-MM-dd without it. Specs are rebuilt every turn.
     static var todayHint: String {
@@ -259,9 +278,9 @@ public struct CalendarCreateTool: AppleTool {
 
     public func requiresApproval(for input: [String: JSONValue]) -> ApprovalRequest? {
         guard let item = try? Self.parse(input) else { return nil }
-        let when = item.allDay ? AgendaStore.dayFormatter.string(from: item.start!) + " (all day)" : AgendaStore.stampFormatter.string(from: item.start!)
-        var detail = "Adds to your calendar: \(when)"
-        if let l = item.location, !l.isEmpty { detail += " @ \(l)" }
+        let when = AgendaStore.spoken(item.start!, allDay: item.allDay)
+        var detail = "Adds to your calendar — \(when)"
+        if let l = item.location, !l.isEmpty { detail += " at \(l)" }
         return ApprovalRequest(toolName: name, title: "Add event · \(item.title)", method: "ADD", url: nil, bodyPreview: AgendaStore.line(item), detail: detail, risk: .medium, input: input)
     }
     public func call(_ args: [String: JSONValue]) async throws -> String {
@@ -340,8 +359,8 @@ public struct RemindersCreateTool: AppleTool {
     }
     public func requiresApproval(for input: [String: JSONValue]) -> ApprovalRequest? {
         guard let item = try? Self.parse(input) else { return nil }
-        let when = item.start.map { item.allDay ? AgendaStore.dayFormatter.string(from: $0) : AgendaStore.stampFormatter.string(from: $0) } ?? "no due date"
-        return ApprovalRequest(toolName: name, title: "Add reminder · \(item.title)", method: "ADD", url: nil, bodyPreview: AgendaStore.line(item), detail: "Adds to Reminders: \(when)", risk: .medium, input: input)
+        let when = item.start.map { AgendaStore.spoken($0, allDay: item.allDay) } ?? "no due date"
+        return ApprovalRequest(toolName: name, title: "Add reminder · \(item.title)", method: "ADD", url: nil, bodyPreview: AgendaStore.line(item), detail: "Adds to Reminders — \(when)", risk: .medium, input: input)
     }
     public func call(_ args: [String: JSONValue]) async throws -> String {
         let item = try Self.parse(args)
