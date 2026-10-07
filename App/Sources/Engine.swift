@@ -548,12 +548,19 @@ public final class Engine {
         currentId = c.id
         currentEditedAt = c.editedAt
         transcript = c.transcript()
+        // IMPROVE-5 #17: a thread saved mid-turn (the app was killed while the model read the message — #166 keeps it)
+        // reopens with the question and no answer. Say so, and what to do; the model's history drops the dangling turn
+        // (`Transcript.messages`), so sending again or Retry both work.
+        if case .user? = transcript.items.last?.kind { transcript.note(Self.unansweredNote) }
         agent = nil
         openedUnder = c.modelName
         continuedHere = false
         resetMounted(c.mounted)          // the thread's own tool set (Phase 6), else Settings' defaults
         stopChildren()
     }
+
+    /// Under a reopened message that never got its answer.
+    static let unansweredNote = "The app closed before the model answered. Hold the message and choose Retry, or send it again."
 
     func delete(_ c: SavedConversation) { delete(ids: [c.id]) }
 
