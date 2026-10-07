@@ -60,25 +60,33 @@ public struct AskUserCard: View {
     // MARK: header / footer
 
     private var header: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Image(systemName: glyph).font(.footnote).foregroundStyle(pending ? LooplDesign.accent : Color.secondary)
-                .transition(.scale.combined(with: .opacity))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(request.title ?? defaultTitle).font(.callout.weight(.semibold)).lineLimit(stacked ? 3 : 2)
-                if let answer {
-                    Text(answer.summary(for: request)).font(.caption).foregroundStyle(.secondary).lineLimit(3)
-                        .transition(.opacity).accessibilityIdentifier("ask-summary")
+        // Default sizes: one line — glyph · title · pill/chevron. Accessibility sizes: the pill drops under the title so
+        // "Delete reminders" is never crushed to "Del-ete re…" beside a fixed-size pill (seen on the AX-XL capture).
+        let layout = stacked ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6)) : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 8))
+        return layout {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Image(systemName: glyph).font(.footnote).foregroundStyle(pending ? LooplDesign.accent : Color.secondary)
+                    .transition(.scale.combined(with: .opacity))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(request.title ?? defaultTitle).font(.callout.weight(.semibold)).lineLimit(stacked ? 3 : 2)
+                    if let answer {
+                        Text(answer.summary(for: request)).font(.caption).foregroundStyle(.secondary).lineLimit(3)
+                            .transition(.opacity).accessibilityIdentifier("ask-summary")
+                    }
                 }
+                if !stacked { Spacer(minLength: 0); trailing }
             }
-            Spacer(minLength: 0)
-            if pending { Pill("waiting for you", tint: LooplDesign.accent).fixedSize().accessibilityIdentifier("ask-waiting") }
-            else {
-                Button { LooplDesign.haptic(); showDetail.toggle() } label: { DisclosureChevron(expanded: showDetail) }
-                    .buttonStyle(.plain).accessibilityLabel(showDetail ? "hide the question" : "show the question")
-            }
+            if stacked { trailing }
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(a11y)
+    }
+    @ViewBuilder private var trailing: some View {
+        if pending { Pill("waiting for you", tint: LooplDesign.accent).fixedSize().accessibilityIdentifier("ask-waiting") }
+        else {
+            Button { LooplDesign.haptic(); showDetail.toggle() } label: { DisclosureChevron(expanded: showDetail) }
+                .buttonStyle(.plain).accessibilityLabel(showDetail ? "hide the question" : "show the question")
+        }
     }
 
     /// Cancel is always possible and honest: the model is told `{ok:false, cancelled:true}`.
