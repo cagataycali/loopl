@@ -258,4 +258,13 @@ final class TrainingTests: XCTestCase {
         XCTAssertEqual(TrainingStage(name: "mlx").label, "Making the iPhone version")
         XCTAssertEqual(TrainingStage(name: "merge").label, "Finishing the model")
     }
+
+    /// IMPROVE-4 #28: a failed job says what happened and what to do, not the Python exception.
+    func testFailurePlainWords() {
+        XCTAssertEqual(TrainingFailure.plain("torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 1.2 GiB."),
+                       "The training machine ran out of memory. Try the smaller base model, or train on fewer conversations.")
+        XCTAssertTrue(TrainingFailure.plain("HTTPError: 403 Client Error: Forbidden").contains("write token"))
+        XCTAssertTrue(TrainingFailure.plain("Job timed out after 7200 s").contains("time limit"))
+        XCTAssertEqual(TrainingFailure.plain("ValueError: bad shard\nTraceback…"), "Training stopped: ValueError: bad shard")
+    }
 }
