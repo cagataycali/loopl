@@ -62,6 +62,9 @@ extra_css:
 
 hooks:
   - docs/hooks/strip_snippet_tags.py
+  # One changelog fragment per pull request (docs/changelog.d/) spliced into the
+  # Unreleased section at build time, so two branches never edit the same line.
+  - docs/hooks/changelog_fragments.py
 
 extra_javascript:
   - javascripts/loopl.js
