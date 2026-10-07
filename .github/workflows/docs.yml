@@ -34,6 +34,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 15        # a hung step must not hold the `pages` group: queued runs wait behind it (see below)
     needs: swift
     if: ${{ always() }}      # a failing Swift job must not block the site; /api/ is simply absent then
     steps:
@@ -44,6 +45,10 @@ jobs:
           cache: pip
           cache-dependency-path: requirements-docs.txt
       - name: Native libs for social cards (cairo, freetype)
+        # MEASURED 2026-10-07 18:13-18:54Z: this step sat in_progress for 41 minutes (apt mirror), with every later
+        # step pending. Since the deploy now QUEUES rather than cancelling (the fix above), one hung apt call holds
+        # every following docs run hostage, so it gets its own ceiling and fails loudly instead.
+        timeout-minutes: 5
         run: sudo apt-get update -qq && sudo apt-get install -y -qq libcairo2-dev libfreetype6-dev libffi-dev libjpeg-dev libpng-dev libz-dev > /dev/null
       - run: pip install -r requirements-docs.txt
       - name: Regenerate models table from the bundled catalog

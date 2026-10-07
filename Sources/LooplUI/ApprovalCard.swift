@@ -115,7 +115,10 @@ public struct ApprovalCard: View {
             Image(systemName: "hand.raised.fill").font(.footnote).foregroundStyle(riskTint)
                 .transition(.scale.combined(with: .opacity))
         }
-        if let m = request.method { MethodBadge(m, tint: riskTint).fixedSize() }
+        // `fixedSize` keeps the badge from wrapping "POST" — but at an accessibility size its ideal width is no longer
+        // small, and a fixed-size child makes the whole card wider than the screen (measured: 502 pt of a 402 pt screen,
+        // clipped 50 pt at BOTH edges because the transcript then centres itself). Let it wrap when the type is huge.
+        if let m = request.method { MethodBadge(m, tint: riskTint).fixedSize(horizontal: !stacked, vertical: false) }
     }
 
     private func hostText(lines: Int) -> some View {
@@ -213,7 +216,9 @@ public struct ApprovalCard: View {
     /// The consequence pill. `approval-risk` is a stable identifier so a test can read it without pinning the words
     /// — the words are exactly what this lane keeps improving (IMPROVE-6's rule: find a row by its identifier).
     private var riskPill: some View {
-        Pill(Self.riskWord(of: request), tint: riskTint).fixedSize()
+        // Same reason as MethodBadge: "sends data out" at AccessibilityXL is ~250 pt of ideal width, and `fixedSize`
+        // made the card demand it whatever the screen offered.
+        Pill(Self.riskWord(of: request), tint: riskTint).fixedSize(horizontal: !stacked, vertical: false)
             .accessibilityIdentifier("approval-risk")
     }
     private var riskTint: Color {
