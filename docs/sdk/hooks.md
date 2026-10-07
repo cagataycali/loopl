@@ -140,6 +140,35 @@ and the transcript folds it into one quiet note — *"3 turns compacted by the a
 unchanged"*. Reopening a saved conversation already starts the model on a fresh context, so nothing else
 changes for the host.
 
+### The agent edits its own instructions — `system_prompt`
+
+The same seam carries one more self-management tool. `SystemPromptTool` lets the model **read or change its
+own system prompt**: `get` returns the prompt in force and where it came from, `append` adds a standing rule,
+`set` replaces the whole prompt, `reset` restores the host's default. The prompt is *global* on purpose — "its
+own system prompt" is the one the host sends to every conversation — so the tool writes through a
+`SystemPromptStore` you provide (the app's is Settings › System prompt; `InMemorySystemPromptStore` for tests
+and showcases).
+
+```swift
+// snippet: compile
+import Loopl
+
+func selfInstructing(_ model: any Model) -> Agent {
+    let store = InMemorySystemPromptStore(prompt: "You are loopl. Answer concisely.")
+    return Agent(model: model, tools: [SystemPromptTool(store: store)], systemPrompt: store.read())
+}
+```
+
+Every write is **human-in-the-loop**: `requiresApproval` returns a medium-risk `ApprovalRequest` whose
+`bodyPreview` is the change itself — `− old` / `+ new` for `set` and `reset`, `…N chars kept` / `+ rule` for
+`append` — so the person sees that the model is about to change its own future behaviour. A denied card is an
+`ERROR:` the model reads; nothing moves. A rule that is already present, or a reset when the prompt already is
+the default, skips the card and answers honestly. Once approved, `Agent.changeSystemPrompt` installs the new
+prompt for the **next model call of the same turn** and the store persists it for every later one; the agent
+announces it as `AgentEvent.systemPromptChanged(SystemPromptChange)` and the transcript shows one quiet note —
+*"system prompt extended by the agent · revert in Settings › System prompt"*. `SystemPromptToolTests` (5)
+include the end-to-end check: call *n* saw the old prompt, call *n + 1* ran on the new one.
+
 ## Transcript
 
 `Transcript` folds events into rows — text, reasoning, tool rows with timing, metrics — that `LooplUI` draws.
