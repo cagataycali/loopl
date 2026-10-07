@@ -404,6 +404,11 @@ public actor SubAgentHub {
         guard let agent = runs[id]?.agent else { return false }
         return await agent.resolve(approval: toolUseId, decision)
     }
+    /// Answer any other interrupt raised inside a child (Phase 7 `ask_user`: `.child(id, .interruptRaised(i))`).
+    public func resolve(child id: String, interrupt interruptId: String, response: JSONValue) async -> Bool {
+        guard let agent = runs[id]?.agent else { return false }
+        return await agent.resolve(interrupt: interruptId, response: response)
+    }
 
     // MARK: event routing
 

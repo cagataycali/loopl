@@ -30,9 +30,12 @@ public struct Interrupt: Sendable, Hashable, Codable, Identifiable {
     public var reason: JSONValue?
     /// The human's answer, once there is one.
     public var response: JSONValue?
+    /// Phase 7: how long the agent waits for this interrupt before substituting its timeout answer
+    /// (`ask_user` passes `timeout_s`); `nil` = the agent's `approvalTimeout`. Optional so saved state decodes.
+    public var timeout: TimeInterval?
 
-    public init(id: String, name: String, reason: JSONValue? = nil, response: JSONValue? = nil) {
-        self.id = id; self.name = name; self.reason = reason; self.response = response
+    public init(id: String, name: String, reason: JSONValue? = nil, response: JSONValue? = nil, timeout: TimeInterval? = nil) {
+        self.id = id; self.name = name; self.reason = reason; self.response = response; self.timeout = timeout
     }
 }
 
@@ -105,11 +108,12 @@ public struct InterruptContext: Sendable {
     /// `_Interruptible.interrupt`. Returns the human's response when one
     /// exists; otherwise records the interrupt and throws `InterruptException`.
     @discardableResult
-    public mutating func interrupt(_ name: String, reason: JSONValue? = nil, response: JSONValue? = nil) throws -> JSONValue {
+    public mutating func interrupt(_ name: String, reason: JSONValue? = nil, response: JSONValue? = nil,
+                                   timeout: TimeInterval? = nil) throws -> JSONValue {
         let id = id(for: name)
         if let existing = known[id], let answer = existing.response { return answer }
         if let response { return response }
-        let raisedInterrupt = known[id] ?? Interrupt(id: id, name: name, reason: reason)
+        let raisedInterrupt = known[id] ?? Interrupt(id: id, name: name, reason: reason, timeout: timeout)
         if !raised.contains(where: { $0.id == id }) { raised.append(raisedInterrupt) }
         throw InterruptException(raisedInterrupt)
     }
@@ -145,11 +149,11 @@ public enum InterruptScope {
     /// time, returns the human's answer when the tool runs again with it.
     /// Throws `ToolError` when the tool is called outside an agent (no context).
     @discardableResult
-    public static func interrupt(_ name: String, reason: JSONValue? = nil) throws -> JSONValue {
+    public static func interrupt(_ name: String, reason: JSONValue? = nil, timeout: TimeInterval? = nil) throws -> JSONValue {
         guard var ctx = context else {
             throw ToolError("InterruptScope.interrupt(\(name)) outside an agent tool call")
         }
-        return try ctx.interrupt(name, reason: reason)
+        return try ctx.interrupt(name, reason: reason, timeout: timeout)
     }
 
     /// True when the tool is running with an agent's interrupt context around it.
