@@ -813,9 +813,14 @@ public struct AgentTranscriptView<Empty: View, Banner: View>: View {
             if let actions { RetryableAssistantTurn(item: item, text: s, streaming: streaming, actions: actions) }
             else { StreamingTextView(s, streaming: streaming) }
         case .toolUse(let c, let r):
-            VStack(alignment: .leading, spacing: 8) {
-                ToolRow(call: c, result: r, expanded: expandTools)
-                if !item.images.isEmpty { ImageStrip(item.images, maxHeight: 260) }   // tool-produced pictures (generate_image…)
+            // Phase 7: a `render_ui` call draws its typed spec as a native card under the row (RenderCard.swift).
+            if c.name == RenderUITool.toolName, let spec = try? RenderSpec(args: c.input) {
+                RenderCard(call: c, result: r, spec: spec, images: item.images)
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    ToolRow(call: c, result: r, expanded: expandTools)
+                    if !item.images.isEmpty { ImageStrip(item.images, maxHeight: 260) }   // tool-produced pictures (generate_image…)
+                }
             }
         case .approval(let req, let d): ApprovalCard(request: req, decision: d) { onApproval?(req, $0) }
         case .ask(let id, let req, let a): AskUserCard(toolUseId: id, request: req, answer: a) { onAsk?(id, $0) }   // Phase 7 ask_user

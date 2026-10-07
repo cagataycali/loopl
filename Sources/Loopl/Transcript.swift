@@ -137,6 +137,7 @@ public struct Transcript: Sendable, Hashable {
             }
         case .toolResultMessage: break
         case .historyEdited(let edit): items.append(.init(kind: .note(edit.summary)))   // quiet marker; the rows above stay — the user's record is untouched
+        case .systemPromptChanged(let change): items.append(.init(kind: .note(change.summary)))   // Phase 6 F: "system prompt … by the agent · revert in Settings"
         case .forceStop(let why): items.append(.init(kind: .note("stopped: \(why)")))
         case .toolsChanged(let mounted): toolsMounted = mounted            // Phase 6: the host shows "mounted for this conversation"
         case .result(let r):
