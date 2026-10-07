@@ -133,15 +133,21 @@ struct ToolToggleRow: View {
                     }
                 }
                 Text(row.available ? row.copy : row.reason).font(.caption).foregroundStyle(.secondary)
-                HStack(spacing: 8) {
-                    Text(row.defaultTag).accessibilityIdentifier("tool.\(row.name).default")
-                    if let tag = row.conversationTag {
-                        Text("·").accessibilityHidden(true)
-                        Text(tag).foregroundStyle(LooplDesign.accent).accessibilityIdentifier("tool.\(row.name).conversation")
+                // "on by default · mounted for this conversation" on one line; the approval note gets its OWN line —
+                // in one HStack SwiftUI left it whatever width the tag did not use, so "Asks before POST, PUT, PATCH
+                // or DELETE — reads go through." wrapped into a ragged ~150 pt column on the 16 Pro as well as the SE.
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 8) {
+                        Text(row.defaultTag).accessibilityIdentifier("tool.\(row.name).default")
+                        if let tag = row.conversationTag {
+                            Text("·").accessibilityHidden(true)
+                            Text(tag).foregroundStyle(LooplDesign.accent).accessibilityIdentifier("tool.\(row.name).conversation")
+                        }
                     }
                     if let ask = row.asksFirst {
-                        Text("·").accessibilityHidden(true)
-                        Label(ask, systemImage: "hand.raised").labelStyle(.titleOnly).accessibilityIdentifier("tool.\(row.name).asksFirst")
+                        Label(ask, systemImage: "hand.raised").labelStyle(.titleOnly)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("tool.\(row.name).asksFirst")
                     }
                 }
                 .font(.caption2).foregroundStyle(.tertiary)
