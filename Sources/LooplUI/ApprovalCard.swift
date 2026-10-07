@@ -114,14 +114,15 @@ public struct ApprovalCard: View {
                 showBody.toggle()
             } label: {
                 HStack(spacing: 6) {
-                    Text(bodyWord).font(.caption2.weight(.semibold)).foregroundStyle(.secondary).textCase(.uppercase).kerning(0.5)
-                    Text("\(preview.utf8.count) B").font(.caption2.monospacedDigit()).foregroundStyle(.tertiary)
+                    // "Show what is sent" rather than "BODY 51 B" (IMPROVE-3 audit #11); the size is for the a11y label.
+                    Text(showBody ? "Hide \(bodyWord == "change" ? "the change" : "what is sent")" : "Show \(bodyWord == "change" ? "the change" : "what is sent")")
+                        .font(.caption.weight(.medium)).foregroundStyle(.secondary)
                     DisclosureChevron(expanded: showBody)
                 }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(showBody ? "hide \(bodyWord)" : "show \(bodyWord)")
+            .accessibilityLabel((showBody ? "hide \(bodyWord)" : "show \(bodyWord)") + ", \(preview.utf8.count) bytes")
             .accessibilityIdentifier("approval-\(bodyWord)-toggle")
             if showBody {
                 Text(preview).font(.footnote.monospaced()).textSelection(.enabled).lineLimit(14)

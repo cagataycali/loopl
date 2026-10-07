@@ -42,7 +42,7 @@ final class SystemPromptToolTests: XCTestCase {
         // The approval card led with the right words and a diff-style preview.
         let req = events.compactMap { if case .approvalRequested(let r) = $0 { return r }; return nil }.first!
         XCTAssertEqual(req.title, "Add to my instructions"); XCTAssertEqual(req.risk, .medium)
-        XCTAssertEqual(req.bodyPreview, "  …32 chars kept\n+ Always answer in Turkish.")
+        XCTAssertEqual(req.bodyPreview, "  …your current instructions stay (32 characters)\n+ Always answer in Turkish.")
     }
 
     func testDeniedChangeIsHonestAndChangesNothing() async throws {

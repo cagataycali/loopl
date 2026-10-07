@@ -100,9 +100,10 @@ final class HttpToolTests: XCTestCase {
         XCTAssertEqual(post.headers["Authorization"], "•••"); XCTAssertEqual(post.headers["Accept"], "*/*")
         XCTAssertEqual(post.headers["Content-Type"], "application/json", "a JSON body gets its content type")
         XCTAssertEqual(post.bodyPreview, "{\"a\":1}")
-        XCTAssertTrue(post.detail?.contains("POST") == true)
+        XCTAssertEqual(post.detail, "Sends data to api.example.com · 3 headers", "plain words, no byte counts (IMPROVE-3 #11)")
+        XCTAssertEqual(get.detail, "Reads a page from api.example.com")
         let del = try XCTUnwrap(t.requiresApproval(for: ["url": "https://api.example.com/v1/1", "method": "DELETE"]))
-        XCTAssertEqual(del.risk, .high)
+        XCTAssertEqual(del.risk, .high); XCTAssertEqual(del.detail, "Deletes something at api.example.com")
         XCTAssertNil(t.requiresApproval(for: ["url": "ftp://x"]), "invalid input is not asked about — call() reports the error")
     }
 

@@ -62,8 +62,8 @@ struct ToolsSection: View {
     /// Footer for the section that holds the disclosure — one sentence collapsed, the rules when open.
     static func footer(expanded: Bool) -> String {
         expanded
-        ? "The model only sees the tools under On. Fewer tools help small models — the everyday set is on by default, the rest wait here; with manage_tools the model can mount one it needs for the current conversation and it works on its very next step. Everything runs on this device; on-device tools ask for their iOS permission the first time they run, never at install. Settings › Network › Ask before decides when an approval card is shown."
-        : "The model only sees the tools that are on, and can mount others for a conversation with manage_tools. Tap Tools to see every one and switch them on or off."
+        ? "The model only sees the tools that are on. Fewer tools help a small model, so the everyday set is on and the rest wait here — the model can still switch one on for a single conversation when it needs it. Everything runs on this device; a tool that needs an iOS permission asks for it the first time it runs. Settings › Network › Ask before decides when you are asked first."
+        : "The model only sees the tools that are on, and can switch one on for a single conversation when it needs it. Tap Tools to see every one."
     }
 
     @ViewBuilder private func group(_ title: String, _ rows: [ToolListing.Row], empty: String) -> some View {

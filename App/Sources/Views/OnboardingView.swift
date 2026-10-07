@@ -633,7 +633,7 @@ private struct HFSignInSheet: View {
                         .accessibilityIdentifier("onboarding-hf-token")
                     if let e = hf.error { Text(e).font(.footnote).foregroundStyle(.red) }
                 } header: { Text("Access token") } footer: {
-                    Text("A read token is enough to download your private models; a write token lets you share conversations and train. Stored in the Keychain, sent only to huggingface.co.")
+                    Text("A read token downloads your private models; a write token also lets you share conversations and train. It stays in this device's Keychain and is only ever sent to huggingface.co.")
                 }
                 Section {
                     Link("Create a token on huggingface.co", destination: URL(string: "https://huggingface.co/settings/tokens")!)
