@@ -19,7 +19,17 @@ permissions:
 
 concurrency:
   group: pages
-  cancel-in-progress: true
+  # NOT cancel-in-progress. MEASURED 2026-10-07: with `true`, two merges ~20 minutes apart produced a docs run
+  # (`6435a2e3`) whose `swift` and `build` jobs both SUCCEEDED, with no annotations, while the **`deploy` job never
+  # ran at all** — the run reports `failure` with every job it contains green, because the job that would have
+  # failed is simply absent. The green run before it (`8630c28c`) had four jobs; the red one had three. The site
+  # also kept serving the older build, so the symptom is invisible on the page itself.
+  #
+  # That is the worst shape a guard can have: a REAL docs failure (a broken link under `--strict`, a documented
+  # symbol that no longer exists) looks exactly the same as this. GitHub Pages deployments serialise on the
+  # `github-pages` environment anyway, so cancelling buys nothing: the only thing `true` can do here is discard a
+  # deployment. Runs queue instead — docs runs are ~5 minutes and only fire on docs/Sources/mkdocs changes.
+  cancel-in-progress: false
 
 jobs:
   build:
