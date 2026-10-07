@@ -15,7 +15,7 @@ final class MLXVisionTests: XCTestCase {
         let name = url.lastPathComponent
         let spec = ModelSpec(id: "hub:mlx-community/\(name.lowercased())", name: name, repo: "mlx-community/\(name)", runtime: .mlx, family: .hermes,
                              paramsB: 0.8, sizeBytes: 650_000_000, ctxNominal: 32768, ctxUsable8GB: 8192, minRAMGB: 2,
-                             chatTemplateKwargs: ["enable_thinking": .bool(false)], vision: true)
+                             chatTemplateKwargs: name.contains("Thinking") ? nil : ["enable_thinking": .bool(false)], vision: true, thinking: name.contains("Thinking"))
         return (url, spec)
     }
 
