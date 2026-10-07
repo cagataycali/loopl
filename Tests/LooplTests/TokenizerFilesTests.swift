@@ -80,11 +80,27 @@ final class TokenizerFilesTests: XCTestCase {
         XCTAssertFalse(TokenizerFiles.names.contains(files[1].path), "weights are never part of a repair")
     }
 
-    func testRepairMessageNamesTheModelAndTheAction() {
-        let m = TokenizerFiles.repairMessage(for: "loopl 4B")
-        XCTAssertTrue(m.contains("loopl 4B"))
-        XCTAssertTrue(m.contains("Repair"))
-        XCTAssertTrue(m.contains("weights stay"))
+    /// IMPROVE-9: this test used to read
+    /// ```
+    /// XCTAssertTrue(m.contains("Repair"))
+    /// XCTAssertTrue(m.contains("weights stay"))
+    /// ```
+    /// — and so it **held the bug in place**. loopl has never had a Repair button (the repair is automatic in
+    /// `Engine.load`; the only control in the failed state is Try again), and "weights" is the packager's word,
+    /// not the reader's. A test asserting the presence of a defect is why nobody questioned it. What actually
+    /// matters is that each message names the model and an action that exists.
+    func testLoadFailureMessagesNameTheModelAndARealAction() {
+        for m in [TokenizerFiles.needsInternetMessage(for: "loopl 4B"),
+                  TokenizerFiles.fetchFailedMessage(for: "loopl 4B"),
+                  TokenizerFiles.cannotBeFixedMessage(for: "loopl 4B")] {
+            XCTAssertTrue(m.contains("loopl 4B"), m)
+            XCTAssertFalse(m.lowercased().contains("repair"), "no such button: \(m)")
+            XCTAssertFalse(m.contains("weights"), "the packager's word: \(m)")
+        }
+        // Only the two recoverable states point at the retry; the dead end must not dangle one.
+        XCTAssertTrue(TokenizerFiles.needsInternetMessage(for: "m").contains("Try again"))
+        XCTAssertTrue(TokenizerFiles.fetchFailedMessage(for: "m").contains("Try again"))
+        XCTAssertFalse(TokenizerFiles.cannotBeFixedMessage(for: "m").contains("Try again"))
     }
 }
 

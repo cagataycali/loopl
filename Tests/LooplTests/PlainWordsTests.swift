@@ -28,18 +28,56 @@ final class PlainWordsTests: XCTestCase {
         XCTAssertEqual(PendingRow.caption(after: 20), "Still reading — a big prompt takes longer on this device.")
     }
 
-    /// The repair message is read by someone whose model will not start, with a Repair button under it.
-    /// It must say what is wrong, what the button does, and that the big download is not happening again —
-    /// without the packager's vocabulary (IMPROVE-9).
-    func testRepairMessageAvoidsThePackagersVocabulary() {
-        let m = TokenizerFiles.repairMessage(for: "loopl 2B")
-        XCTAssertTrue(m.hasPrefix("loopl 2B"), m)
-        for word in ["tokenizer", "weights", "a few KB"] {
-            XCTAssertFalse(m.lowercased().contains(word.lowercased()), "\(word) is not the reader's word: \(m)")
+    /// The three load-failure messages. Each is read by someone whose model will not start, so each must say
+    /// what is wrong and name an action **that exists** — and they must not be interchangeable, because the
+    /// three states are not (IMPROVE-9).
+    func testLoadFailureMessagesMatchTheirState() {
+        let internet = TokenizerFiles.needsInternetMessage(for: "loopl 2B")
+        let fetch = TokenizerFiles.fetchFailedMessage(for: "loopl 2B")
+        let stuck = TokenizerFiles.cannotBeFixedMessage(for: "loopl 2B")
+
+        for m in [internet, fetch, stuck] {
+            XCTAssertTrue(m.hasPrefix("loopl 2B"), m)
+            // The packager's vocabulary.
+            for word in ["tokenizer", "weights", "a few KB", "repo itself"] {
+                XCTAssertFalse(m.lowercased().contains(word.lowercased()), "\(word) is not the reader's word: \(m)")
+            }
+            // THE BUG THIS REPLACED: there is no Repair button in loopl, so no message may send anyone to one.
+            XCTAssertFalse(m.lowercased().contains("repair"), "names a control that does not exist: \(m)")
         }
-        XCTAssertTrue(m.contains("Repair"), "the button is named: \(m)")
-        XCTAssertTrue(m.contains("kilobytes"), "the size is spelled out so nobody fears a second big download: \(m)")
-        XCTAssertTrue(m.lowercased().contains("stays on your device"), "the model is not re-downloaded: \(m)")
+
+        // Offline is the one state where waiting helps, so it says so and points at the real button.
+        XCTAssertTrue(internet.contains("needs the internet"), internet)
+        XCTAssertTrue(internet.contains("Try again"), "names the button that is really there: \(internet)")
+        XCTAssertTrue(internet.contains("kilobytes"), "nobody should fear a second big download: \(internet)")
+        XCTAssertTrue(internet.lowercased().contains("stays on your device"), internet)
+
+        // A failed fetch is worth retrying.
+        XCTAssertTrue(fetch.contains("Try again"), fetch)
+
+        // The dead end must NOT offer a retry — and must say whose fault it is not.
+        XCTAssertFalse(stuck.contains("Try again"), "a dead end must not dangle a retry: \(stuck)")
+        XCTAssertTrue(stuck.contains("nothing here will fix it"), stuck)
+        XCTAssertTrue(stuck.contains("Try another model"), "gives them the move that is theirs: \(stuck)")
+    }
+
+    /// **No message may name a control the app does not have.** `repairMessage` said "tap Repair" at all three
+    /// failure sites and loopl has never had a Repair button — the repair is automatic and the only control in
+    /// the failed state is Try again. This is the generalisable half of that bug: if the string says *tap X*,
+    /// some view had better declare X.
+    func testNoMessageSendsTheReaderToAButtonThatDoesNotExist() throws {
+        let root = try repoRoot()
+        let views = try source(in: root, "App/Sources")
+        let all = views + (try source(in: root, "Sources"))
+        for (name, text) in all {
+            for line in text.split(separator: "\n") where !line.trimmingCharacters(in: .whitespaces).hasPrefix("//") {
+                let l = line.lowercased()
+                guard l.contains("tap repair") || l.contains("tap the repair") else { continue }
+                // Only legitimate if a view really declares one.
+                let declared = views.contains { $0.1.contains("Button(\"Repair\")") || $0.1.contains("\"Repair\")") }
+                XCTAssertTrue(declared, "\(name) says “tap Repair” but no view declares a Repair button: \(line)")
+            }
+        }
     }
 
     /// **The retired sentences, pinned so they cannot come back.** Each one was measured wrong in IMPROVE-9 and
@@ -51,12 +89,10 @@ final class PlainWordsTests: XCTestCase {
     /// still says MLX and GGUF, because someone choosing between them needs the names). This has no false
     /// positives and still stops the exact regression.
     func testRetiredPackagerSentencesDoNotComeBack() throws {
-        let root = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()   // Tests/LooplTests
-            .deletingLastPathComponent()   // Tests
-            .deletingLastPathComponent()   // repo root
+        let root = try repoRoot()
         let retired = [
             "tokenizer files are out of date",        // asked the reader to know what a tokenizer is
+            "tap Repair",                             // named a control loopl has never had
             "the repo itself needs fixing",           // asked them to fix a repository they do not own
             "instruct checkpoints only",              // jargon, and untrue: the filter is isTextGeneration
             "gated repos are hidden",
@@ -65,19 +101,34 @@ final class PlainWordsTests: XCTestCase {
         ]
         var offenders: [String] = []
         for dir in ["App/Sources", "Sources"] {
-            let base = root.appendingPathComponent(dir)
-            guard let walk = FileManager.default.enumerator(at: base, includingPropertiesForKeys: nil) else { continue }
-            for case let url as URL in walk where url.pathExtension == "swift" {
-                guard let text = try? String(contentsOf: url, encoding: .utf8) else { continue }
+            for (name, text) in try source(in: root, dir) {
                 // Skip the lines that quote a retired sentence in order to explain why it was retired.
                 let live = text.split(separator: "\n", omittingEmptySubsequences: false)
                     .filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("//") }
                     .joined(separator: "\n")
                 for phrase in retired where live.contains(phrase) {
-                    offenders.append("\(url.lastPathComponent): “\(phrase)”")
+                    offenders.append("\(name): “\(phrase)”")
                 }
             }
         }
         XCTAssertTrue(offenders.isEmpty, "retired copy is back: \(offenders.joined(separator: " · "))")
+    }
+
+    private func repoRoot() throws -> URL {
+        URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()   // Tests/LooplTests
+            .deletingLastPathComponent()   // Tests
+            .deletingLastPathComponent()   // repo root
+    }
+
+    /// Every `.swift` file under `dir`, as (filename, contents).
+    private func source(in root: URL, _ dir: String) throws -> [(String, String)] {
+        let base = root.appendingPathComponent(dir)
+        guard let walk = FileManager.default.enumerator(at: base, includingPropertiesForKeys: nil) else { return [] }
+        var out: [(String, String)] = []
+        for case let url as URL in walk where url.pathExtension == "swift" {
+            if let text = try? String(contentsOf: url, encoding: .utf8) { out.append((url.lastPathComponent, text)) }
+        }
+        return out
     }
 }
