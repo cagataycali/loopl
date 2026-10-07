@@ -140,7 +140,7 @@ public struct SystemPromptTool: Tool {
         switch action {
         case .append:
             let added = after.hasPrefix(before.trimmingCharacters(in: .whitespacesAndNewlines)) ? String(after.dropFirst(before.trimmingCharacters(in: .whitespacesAndNewlines).count)).trimmingCharacters(in: .whitespacesAndNewlines) : after
-            return "  \(before.isEmpty ? "(no instructions yet)" : "…\(before.count) chars kept")\n+ \(cut(added))"
+            return "  \(before.isEmpty ? "(no instructions yet)" : "…your current instructions stay (\(before.count) characters)")\n+ \(cut(added))"
         case .set, .reset:
             return "− \(cut(before))\n+ \(cut(after))"
         }

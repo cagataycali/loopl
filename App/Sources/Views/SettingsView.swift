@@ -29,7 +29,7 @@ struct SettingsView: View {
                     .accessibilityIdentifier("settings-system-prompt")
                     ToolsSection(engine: engine, settings: settings)
                 } header: { Text("Agent") } footer: {
-                    Text("The loop runs until the model stops calling tools or you tap stop. " + ToolsSection.footer(expanded: toolsExpanded))
+                    Text("The model keeps working until it has an answer or you tap stop. " + ToolsSection.footer(expanded: toolsExpanded))
                 }
 
                 Section {
@@ -53,7 +53,7 @@ struct SettingsView: View {
                     Toggle("Show performance details", isOn: $settings.showPerformance)
                     Toggle("Show GGUF builds", isOn: $settings.showGGUF).accessibilityIdentifier("settings-show-gguf")
                 } header: { Text("Look & feel") } footer: {
-                    Text("Haptics: a soft tap when you send, when a tool starts and finishes, when a model is loaded. Performance: a quiet line under the conversation — tokens per second, time to first token, context used. GGUF: llama.cpp builds (text only) in the Models tab, next to the MLX models.")
+                    Text("Haptics: a soft tap when you send, when a tool starts and finishes, and when a model is ready. Performance details: a quiet line under each answer — how fast the model wrote, how long it took to start, how much of its memory the conversation uses. GGUF builds: an older, text-only model format, shown in Models for people who need it.")
                 }
 
                 Section {
@@ -100,11 +100,11 @@ struct SettingsView: View {
     }
 
     private var askBeforeFooter: String {
-        let base = "Offline mode refuses every network call: downloads and the http tool. "
+        let base = "Offline mode blocks every network call — downloads and the model's web requests. "
         switch settings.askBefore {
-        case .always: return base + "Ask before: every http request shows an approval card first."
-        case .mutating: return base + "Ask before: GET and HEAD run; POST, PUT, PATCH and DELETE wait for your approval (2 minutes, then denied)."
-        case .never: return base + "Ask before is off — the model's http calls run without asking."
+        case .always: return base + "Ask before: every web request waits for your tap."
+        case .mutating: return base + "Ask before: reading a page runs on its own; anything that sends or changes data waits for your tap (2 minutes, then it is denied)."
+        case .never: return base + "Ask before is off — the model's web requests run without asking."
         }
     }
 

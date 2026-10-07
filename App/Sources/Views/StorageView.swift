@@ -38,7 +38,7 @@ struct StorageView: View {
                           used: store.diskUsed, free: storage.internalFree, system: "iphone")
                     .accessibilityIdentifier("storage-internal")
             } footer: {
-                Text("Free space is what iOS lets a download use right now. loopl keeps \(ByteSize.label(ExternalStorage.headroom)) free on every volume.")
+                Text("Free space is what iOS lets a download use right now. loopl always leaves \(ByteSize.label(ExternalStorage.headroom)) free on every drive.")
             }
 
             Section {
@@ -76,7 +76,7 @@ struct StorageView: View {
                 .accessibilityIdentifier("storage-add-drive")
                 if let pickError { Text(pickError).font(.caption).foregroundStyle(.red) }
             } header: { Text("External drives") } footer: {
-                Text("Plug a USB-C drive into the iPhone and pick a folder on it. loopl only ever reads and writes inside that folder. Weights load more slowly from a drive than from the iPhone's own flash — on a USB 3 phone a 0.8B model takes a few seconds, on USB 2 about a minute.")
+                Text("Plug a USB-C drive into the iPhone and pick a folder on it. loopl only ever reads and writes inside that folder. Models open more slowly from a drive than from the iPhone itself — a small model takes a few seconds on a USB 3 phone, about a minute on USB 2.")
             }
 
             if !storage.volumes.isEmpty {
@@ -126,7 +126,7 @@ struct StorageView: View {
                     .disabled(!FileManager.default.fileExists(atPath: storage.diagnostics.url.path))
                     .accessibilityIdentifier("storage-diagnostics")
                 } footer: {
-                    Text("A small log of what happened with each drive (grant, mount, listing, writes). Share it when a drive misbehaves.")
+                    Text("A short log of what happened with each drive — connecting, reading, writing. Share it when a drive misbehaves.")
                 }
             }
         }
