@@ -44,8 +44,12 @@ final class VLModelsUITests: XCTestCase {
         // Tap → engine.select → HFDownloader on the real repo. We only need to see bytes arrive.
         for _ in 0..<6 where !twoB.isHittable { app.swipeDown() }
         twoB.tap()
+        // A downloading row LEAVES More models and joins "On this iPhone" at the top (Models order #112) — the List is lazy,
+        // so scroll back up before looking for it.
         let progress = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'downloading'")).firstMatch
+        for _ in 0..<8 where !progress.exists { app.swipeDown(); _ = progress.waitForExistence(timeout: 2) }
         XCTAssertTrue(progress.waitForExistence(timeout: 60), "download did not start for mlx-community/Qwen3-VL-2B-Thinking-4bit")
+        XCTAssertTrue(app.staticTexts["Qwen3-VL 2B Thinking"].firstMatch.exists, "the row now sits under On this iPhone")
         let bytes = app.staticTexts.matching(NSPredicate(format: "label CONTAINS ' of 1.8 GB' OR label CONTAINS ' of 1,8 GB'")).firstMatch
         XCTAssertTrue(bytes.waitForExistence(timeout: 60), "progress row with bytes of 1.8 GB")
         shoot(app, "vl-thinking-downloading")
