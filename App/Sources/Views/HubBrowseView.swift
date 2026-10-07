@@ -342,7 +342,13 @@ struct HubRepoSheet: View {
                                     withAnimation(LooplDesign.Motion.faded(LooplDesign.Motion.spring, reduceMotion)) { showAllFiles.toggle() }
                                 }.font(.footnote)
                             }
-                        } header: { Text("Files") } footer: { Text("Weights, tokenizer and configs are downloaded; README and git files are not.") }
+                        } header: { Text("Files") } footer: {
+                            // IMPROVE-9: said "Weights, tokenizer and configs are downloaded; README and git
+                            // files are not." Same shape as #205's fixes — it names the parts of a model
+                            // package rather than telling the reader the thing they care about, which is that
+                            // the download skips what it does not need.
+                            Text("Only the files needed to run the model are downloaded — not its readme or page history.")
+                        }
                     }
                     Section {
                         Link(destination: URL(string: "https://huggingface.co/\(repo.id)")!) { Label("Open on Hugging Face", systemImage: "safari") }
