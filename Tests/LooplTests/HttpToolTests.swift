@@ -129,6 +129,16 @@ final class HttpToolTests: XCTestCase {
         XCTAssertEqual(j["ua"] as? String, "loopl/0.1 (iOS)")
     }
 
+    /// {"url","body"} with no method is a POST — and therefore a write that asks first (IMPROVE-4: Qwen3 0.6B sent exactly
+    /// that; it went out as a GET-with-body → 405 and no approval card).
+    func testBodyWithoutMethodIsAPost() async throws {
+        let r = try HttpTool.parse(["url": .string("https://example.com/post"), "body": ["note": "hello"]])
+        XCTAssertEqual(r.method, "POST"); XCTAssertTrue(r.isMutating); XCTAssertEqual(r.risk, .medium)
+        XCTAssertNotNil(HttpTool().requiresApproval(for: ["url": .string("https://example.com/post"), "body": .string("x")]), "a write asks first")
+        XCTAssertEqual(try HttpTool.parse(["url": .string("https://example.com/"), "body": .string("")]).method, "GET", "an empty body is no body")
+        XCTAssertEqual(try HttpTool.parse(["url": .string("https://example.com/"), "method": "PUT", "body": .string("x")]).method, "PUT", "an explicit method wins")
+    }
+
     func testPostJsonBodyAndHeaders() async throws {
         let out = try await HttpTool().call(["url": .string("\(base)/items"), "method": "POST", "body": ["name": "x"], "headers": ["Authorization": "Bearer t"]])
         let j = try json(out)

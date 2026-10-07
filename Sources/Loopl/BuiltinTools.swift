@@ -146,11 +146,11 @@ public struct HttpTool: Tool {
         self.maxBytes = maxBytes; self.maxChars = maxChars; self.maxTimeout = maxTimeout
     }
     public let name = "http"
-    public let description = "Make an HTTPS request. `url` is required — pass the full https URL as the `url` argument, e.g. {\"url\": \"https://example.com\"}. Optional: method GET/HEAD/POST/PUT/PATCH/DELETE (default GET), headers object, body (string or JSON object), timeout seconds. Returns status, content-type and the body text (truncated). Writes may ask the user for approval. Unavailable in offline mode."
+    public let description = "Make an HTTPS request. `url` is required — pass the full https URL as the `url` argument, e.g. {\"url\": \"https://example.com\"}. Optional: method GET/HEAD/POST/PUT/PATCH/DELETE (default GET; a body with no method is sent as POST), headers object, body (string or JSON object), timeout seconds. Returns status, content-type and the body text (truncated). Writes may ask the user for approval. Unavailable in offline mode."
     public let parameters: JSONValue = [
         "type": "object",
         "properties": [
-            "method": ["type": "string", "enum": ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"], "description": "HTTP method, default GET"],
+            "method": ["type": "string", "enum": ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"], "description": "HTTP method — default GET, or POST when a body is given"],
             "url": ["type": "string", "description": "full https URL, required", "examples": ["https://example.com"]],
             "headers": ["type": "object", "description": "request headers, e.g. {\"Accept\": \"application/json\"}"],
             "body": ["type": "string", "description": "request body — a string, or a JSON object which is sent as application/json"],
@@ -186,7 +186,11 @@ public struct HttpTool: Tool {
         }
         let loopback = ["localhost", "127.0.0.1", "::1", "[::1]"].contains(host.lowercased())
         guard url.scheme == "https" || (url.scheme == "http" && loopback) else { throw ToolError("only https urls are allowed") }
-        let method = (args["method"]?.stringValue ?? "GET").uppercased()
+        // A body with no method is a POST (what every HTTP client does: `curl -d` implies it). Measured on Qwen3 0.6B
+        // (IMPROVE-4): {"url", "body"} with no "method" went out as a GET with a body → 405, and because GET needs no
+        // approval the card the user expects for a write never showed. The body is what makes it a write.
+        let hasBody: Bool = switch args["body"] { case nil, .null?: false; case .string(let s)?: !s.isEmpty; default: true }
+        let method = (args["method"]?.stringValue ?? (hasBody ? "POST" : "GET")).uppercased()
         guard methods.contains(method) else { throw ToolError("unsupported method \(method) — use GET, HEAD, POST, PUT, PATCH or DELETE") }
         var headers: [String: String] = [:]
         if case .object(let h)? = args["headers"] { for (k, v) in h { headers[k] = v.stringValue ?? v.compact } }
@@ -234,7 +238,8 @@ public struct HttpTool: Tool {
             var line = "HTTP \(code) \(HTTPURLResponse.localizedString(forStatusCode: code)) for \(r.method) \(r.url.absoluteString)."
             switch code {
             case 404: line += " The path does not exist on this server — check the URL."
-            case 405: line += " The server does not allow \(r.method) here — use GET (or the method the API documents)."
+            case 405: line += r.isMutating ? " The server does not allow \(r.method) here — check which method this API documents for that path."
+                                           : " The server does not allow \(r.method) here — this path probably expects POST with a body (or the method the API documents)."
             case 401, 403: line += " The server refused access — this URL needs credentials the tool does not have."
             case 429: line += " Rate limited — do not retry immediately."
             case 500...: line += " Server-side failure — retrying the same request is unlikely to help."
