@@ -20,12 +20,21 @@ public final class AppleToolPrefs {
     public var preciseLocation: Bool { didSet { LocationTool.precise = preciseLocation } }
     /// Tools this install has already seen — a tool added in an update starts ON even when a saved list exists.
     private static let seenKey = "loopl.appleTools.seen"
+    /// Tools that were default-OFF when first shipped and are default-ON now (once-only switch-on, see init).
+    static let laterDefaultOn: Set<String> = ["location"]
+    private static let flippedOnKey = "loopl.appleTools.flippedOn"
     private init() {
         let d = UserDefaults.standard
         let names = Set(AppleTools.names)
         let seen = Set((d.array(forKey: Self.seenKey) as? [String]) ?? [])
         var set = Set((d.array(forKey: "loopl.appleTools") as? [String]) ?? AppleTools.defaultOnNames)
         set.formUnion(names.subtracting(seen).filter(AppleTools.isDefaultOn))     // new in this build → on only when the tool is default-on
+        // A tool whose default flipped to ON in a later build switches on ONCE for installs that already had it off
+        // (STOP-LOCATION 2026-10-07: `location` shipped off; the owner's "not working" was partly the model saying it
+        // could not). Switching it off again afterwards is respected — the flip is recorded.
+        let flipped = Set((d.array(forKey: Self.flippedOnKey) as? [String]) ?? [])
+        set.formUnion(Self.laterDefaultOn.subtracting(flipped).filter(AppleTools.isDefaultOn))
+        d.set(Array(Self.laterDefaultOn).sorted(), forKey: Self.flippedOnKey)
         set.formIntersection(names)                // removed tools (apple_intelligence) drop out of the saved list
         enabled = set
         openAppSchemes = Set(OpenAppTool.allowedSchemes)

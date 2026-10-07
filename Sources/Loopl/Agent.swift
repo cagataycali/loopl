@@ -938,17 +938,19 @@ extension Agent {
     }
 }
 
-/// One continuation, resumed at most once from any thread.
-final class ResumeOnce<T: Sendable>: @unchecked Sendable {
+/// One continuation, resumed at most once from any thread; a result that arrives before anyone parks is kept.
+/// Public so device tools (`LooplAppleTools`) wait on delegate callbacks with the same once-only semantics.
+public final class ResumeOnce<T: Sendable>: @unchecked Sendable {
     private let lock = NSLock()
     private var continuation: CheckedContinuation<T, any Error>?
     private var early: Result<T, any Error>?
-    func park(_ c: CheckedContinuation<T, any Error>) {
+    public init() {}
+    public func park(_ c: CheckedContinuation<T, any Error>) {
         lock.lock()
         if let early { lock.unlock(); c.resume(with: early); return }
         continuation = c; lock.unlock()
     }
-    func resume(_ r: Result<T, any Error>) {
+    public func resume(_ r: Result<T, any Error>) {
         lock.lock()
         guard early == nil else { lock.unlock(); return }
         early = r

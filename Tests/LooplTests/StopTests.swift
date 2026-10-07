@@ -95,3 +95,20 @@ final class StopTests: XCTestCase {
         XCTAssertEqual(n, "stopped")
     }
 }
+
+/// `ResumeOnce` — the once-only waiter the device tools (location) park on, so a late or doubled delegate callback is harmless.
+final class ResumeOnceTests: XCTestCase {
+    func testEarlyResultIsKeptAndSecondResumeIgnored() async throws {
+        let w = ResumeOnce<Int>()
+        w.resume(.success(1)); w.resume(.success(2))
+        let v = try await withCheckedThrowingContinuation { (c: CheckedContinuation<Int, any Error>) in w.park(c) }
+        XCTAssertEqual(v, 1)
+    }
+    func testFailureAfterSuccessIsIgnored() async throws {
+        let w = ResumeOnce<String>()
+        let t = Task { try await withCheckedThrowingContinuation { (c: CheckedContinuation<String, any Error>) in w.park(c) } }
+        try await Task.sleep(nanoseconds: 10_000_000)
+        w.resume(.success("fix")); w.resume(.failure(CancellationError()))
+        XCTAssertEqual(try await t.value, "fix")
+    }
+}
