@@ -4,7 +4,9 @@
 # external (Apple/stdlib/MLX) and skipped. Run from the repo root.
 set -euo pipefail; cd "$(dirname "$0")/.."
 grep -rhoE '^\s*(public |open )?(final class|class|struct|indirect enum|enum|protocol|actor|typealias) [A-Z][A-Za-z0-9_]+' Sources | awk '{print $NF}' | sort -u > /tmp/loopl-src-types.txt
-grep -rhoE '`[A-Z][A-Za-z0-9_]+`' docs --include='*.md' --exclude=changelog.md | tr -d '`' | sort -u > /tmp/loopl-doc-types.txt
+# changelog.md and its fragment directory are skipped: release notes legitimately name test
+# suites (`EngineArchiveTests`) and other symbols that live in Tests/, not Sources/.
+grep -rhoE '`[A-Z][A-Za-z0-9_]+`' docs --include='*.md' --exclude=changelog.md --exclude-dir=changelog.d | tr -d '`' | sort -u > /tmp/loopl-doc-types.txt
 allowed=docs/allowed_symbols.txt; [[ -f $allowed ]] || : > $allowed
 missing=$(comm -23 /tmp/loopl-doc-types.txt /tmp/loopl-src-types.txt | grep -vxF -f <(grep -v '^#' $allowed) || true)
 undocumented=$(comm -13 /tmp/loopl-doc-types.txt /tmp/loopl-src-types.txt | tr '\n' ' ')

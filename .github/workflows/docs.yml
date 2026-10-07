@@ -53,6 +53,8 @@ jobs:
       - run: pip install -r requirements-docs.txt
       - name: Regenerate models table from the bundled catalog
         run: python3 docs/gen_models.py
+      - name: Changelog fragments splice the way the site expects
+        run: python3 docs/hooks/changelog_fragments.py --selftest
       - run: mkdocs build --strict
       - name: Every documented type exists in Sources/
         run: ./docs/check_symbols.sh

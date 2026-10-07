@@ -1,0 +1,55 @@
+# Validate the documentation site on pull requests — WITHOUT deploying it.
+#
+# docs.yml is a deploy pipeline: it holds `pages: write` + `id-token: write`, it lives in the
+# `pages` concurrency group with cancel-in-progress, and it ends in actions/deploy-pages. Adding
+# `pull_request` to it would therefore (a) let a pull-request run CANCEL main's in-flight site
+# deploy, and (b) try to deploy a branch to production. So PR validation gets its own
+# deploy-free workflow instead, with read-only permissions and a per-ref concurrency group.
+#
+# Why this exists at all: until now NO pull request ever built the site, so a docs change was
+# only ever proven after it reached main — where the failure is a site that stops updating.
+# The PR that added this found a real example in review: a changelog fragment naming a test
+# suite turned docs/check_symbols.sh red, which nothing before main would have caught.
+#
+# Deliberately NOT a copy of docs.yml's build job: no social cards (they need cairo and are a
+# minute of apt), no DocC, no /api merge. Those stay on main, which still builds the real site.
+name: docs-pr
+
+on:
+  pull_request:
+    paths:
+      - "docs/**"
+      - "mkdocs.yml"
+      - "requirements-docs.txt"
+      - ".github/workflows/docs.yml"
+      - ".github/workflows/docs-pr.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-pr-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: mkdocs build --strict (no deploy)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-docs.txt
+      - run: pip install -r requirements-docs.txt
+      - name: Changelog fragments splice the way the site expects
+        run: python3 docs/hooks/changelog_fragments.py --selftest
+      - name: Regenerate the models table from the bundled catalog
+        run: python3 docs/gen_models.py
+      - name: Build the site strictly (social cards off — cairo is not installed here)
+        run: LOOPL_SOCIAL_CARDS=false mkdocs build --strict
+      - name: Every documented type exists in Sources/, and the copy rules hold
+        run: ./docs/check_symbols.sh
