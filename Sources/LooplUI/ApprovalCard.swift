@@ -22,8 +22,13 @@ public struct ApprovalCard: View {
         // An http body is a detail the user may open; a CHANGE preview (old → new, e.g. `system_prompt`) IS the decision — open.
         _showBody = State(initialValue: request.method == nil && request.url == nil && (request.bodyPreview?.isEmpty == false))
     }
-    /// The disclosure's word: `body` for a request, `change` for a preview without a URL (what the tool will alter).
-    private var bodyWord: String { request.url == nil && request.method == nil ? "change" : "body" }
+    /// The disclosure's word: `body` for something actually sent over the network, `change` for what a tool will
+    /// alter on this phone. The discriminator is the HOST, not the method — keying it off `method == nil` meant the
+    /// clipboard card (`method: "COPY"`, no URL) offered **"Show what is sent"** for a write that sends nothing
+    /// anywhere, which flatly contradicts the card's own pill. Same rule as `riskWord`: a host means data leaves.
+    private var bodyWord: String { request.host == nil ? "change" : "body" }
+    /// Pure form of the rule above, so a test can pin it without rendering a view.
+    public static func bodyWord(of request: ApprovalRequest) -> String { request.host == nil ? "change" : "body" }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -68,7 +73,7 @@ public struct ApprovalCard: View {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         badges
                         hostText(lines: 1).fixedSize(horizontal: true, vertical: false)
-                        if decision == nil { Pill(request.risk.rawValue, tint: riskTint).fixedSize() }
+                        if decision == nil { riskPill }
                     }
                     stackedTitle    // last candidate = the fallback, used whether or not it fits
                 }
@@ -95,7 +100,7 @@ public struct ApprovalCard: View {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 badges
                 Spacer(minLength: 0)
-                if decision == nil { Pill(request.risk.rawValue, tint: riskTint).fixedSize() }
+                if decision == nil { riskPill }
             }
             hostText(lines: 2)
         }
@@ -205,8 +210,40 @@ public struct ApprovalCard: View {
         .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom)))
     }
 
+    /// The consequence pill. `approval-risk` is a stable identifier so a test can read it without pinning the words
+    /// — the words are exactly what this lane keeps improving (IMPROVE-6's rule: find a row by its identifier).
+    private var riskPill: some View {
+        Pill(Self.riskWord(of: request), tint: riskTint).fixedSize()
+            .accessibilityIdentifier("approval-risk")
+    }
     private var riskTint: Color {
         switch request.risk { case .low: LooplDesign.accent; case .medium: LooplDesign.amber; case .high: .red }
+    }
+    /// What the pill SAYS. `ApprovalRequest.Risk` is the SDK's grade — "low", "medium", "high" — and a grade is a
+    /// developer's word for a policy decision, not an answer to the question the person holding the phone is asking:
+    /// *what does tapping Approve actually do to me?* So the pill names the consequence, from the two facts that
+    /// decide it — whether a network host is involved (does my data leave this phone, which is the whole point of
+    /// an on-device app) and whether the thing can be taken back.
+    ///
+    /// Kept to three short words on purpose: the header is one line while glyph · METHOD · host · pill all fit, and
+    /// the host is the part that must never be shortened (IMPROVE-5 #170). The sentence underneath already says
+    /// exactly what the tool will do ("Sends 41 bytes of JSON to api.notes.app."), so the pill is the headline, not
+    /// the explanation. The colour (accent · amber · red) still carries the grade.
+    public static func riskWord(of request: ApprovalRequest) -> String {
+        switch request.risk {
+        case .low:    return "only reads"
+        case .medium: return request.host == nil ? "makes a change" : "sends data out"
+        case .high:   return "hard to undo"
+        }
+    }
+    /// The same fact as a sentence, for VoiceOver — the pill is a visual shorthand and is folded into the card's
+    /// combined label. Before this, a VoiceOver user heard the severity only on a `.high` card.
+    public static func riskSentence(of request: ApprovalRequest) -> String {
+        switch request.risk {
+        case .low:    return "It only reads."
+        case .medium: return request.host == nil ? "It changes something on your phone." : "It sends data off your phone."
+        case .high:   return "This is hard to undo."
+        }
     }
     private var borderTint: Color {
         guard decision == nil else { return LooplDesign.accent.opacity(0.12) }
@@ -240,7 +277,7 @@ public struct ApprovalCard: View {
         if let d = decision { return "\(what), \(verdict(d))" }
         var line = "Asks you first: \(what)."
         if let detail = request.detail, !detail.isEmpty { line += " \(detail)" }
-        if request.risk == .high { line += " Hard to undo." }
+        line += " " + Self.riskSentence(of: request)
         return line
     }
 }

@@ -257,4 +257,67 @@ final class ApprovalTests: XCTestCase {
         let bare = ApprovalRequest(toolName: "clipboard_write", title: "Copy to clipboard · ")
         XCTAssertNil(ApprovalCard.titleParts(of: bare).what, "an empty payload falls back to the whole title")
     }
+
+    // MARK: the consequence pill (AUDIT improve-7 #1: the pill read "medium" — the SDK's grade, not an answer to
+    // "what does Approve do to me?"). The words may keep improving; what these pin is that no card shows a grade,
+    // that the off-device fact is told when a host is involved, and that the pill stays short enough for one line.
+    func testPillNamesTheConsequenceNotTheRiskGrade() {
+        let post = ApprovalRequest(toolName: "http", title: "POST notes.example.com", method: "POST",
+                                   url: "https://notes.example.com/api/notes", risk: .medium)
+        XCTAssertEqual(ApprovalCard.riskWord(of: post), "sends data out", "a network write must say the data leaves the phone")
+        let copy = ApprovalRequest(toolName: "clipboard_write", title: "Copy to clipboard · See you at six", method: "COPY", risk: .medium)
+        XCTAssertEqual(ApprovalCard.riskWord(of: copy), "makes a change", "an on-device write changes something here, it sends nothing")
+        let del = ApprovalRequest(toolName: "http", title: "DELETE notes.example.com", method: "DELETE",
+                                  url: "https://notes.example.com/api/notes/4", risk: .high)
+        XCTAssertEqual(ApprovalCard.riskWord(of: del), "hard to undo")
+        let get = ApprovalRequest(toolName: "http", title: "GET notes.example.com", method: "GET",
+                                  url: "https://notes.example.com/api/notes", risk: .low)
+        XCTAssertEqual(ApprovalCard.riskWord(of: get), "only reads")
+
+        for r in [ApprovalRequest.Risk.low, .medium, .high] {
+            for host in [nil, "https://notes.example.com/x"] as [String?] {
+                let req = ApprovalRequest(toolName: "http", title: "t", method: "POST", url: host, risk: r)
+                let word = ApprovalCard.riskWord(of: req)
+                for grade in ["low", "medium", "high"] {
+                    XCTAssertFalse(word.contains(grade), "the pill must not print the grade \(grade): \(word)")
+                }
+                XCTAssertLessThanOrEqual(word.split(separator: " ").count, 3, "the pill shares one line with the host: \(word)")
+                XCTAssertLessThanOrEqual(word.count, 15, "longer than this and the host wraps on a 375 pt screen: \(word)")
+                XCTAssertEqual(word, word.lowercased(), "the pill is a chip, not a sentence: \(word)")
+            }
+        }
+    }
+
+    // AUDIT improve-7 #2, found by shooting the pill on an SE: the clipboard card offered "Show what is sent" for
+    // a write that sends nothing off the phone, because the disclosure keyed off `method == nil` instead of the host.
+    func testOnlyACardWithAHostCallsItsPreviewSomethingSent() {
+        let copy = ApprovalRequest(toolName: "clipboard_write", title: "Copy to clipboard · See you at six", method: "COPY", risk: .medium)
+        XCTAssertEqual(ApprovalCard.bodyWord(of: copy), "change", "nothing is sent — it changes the clipboard on this phone")
+        let reminder = ApprovalRequest(toolName: "reminders_create", title: "Add reminder · Call the dentist", method: "ADD", risk: .medium)
+        XCTAssertEqual(ApprovalCard.bodyWord(of: reminder), "change")
+        let prompt = ApprovalRequest(toolName: "system_prompt", title: "Add to my instructions", risk: .medium)
+        XCTAssertEqual(ApprovalCard.bodyWord(of: prompt), "change", "SystemPromptUITests reads approval-change-preview")
+        let post = ApprovalRequest(toolName: "http", title: "POST notes.example.com", method: "POST",
+                                   url: "https://notes.example.com/api/notes", risk: .medium)
+        XCTAssertEqual(ApprovalCard.bodyWord(of: post), "body", "this one really is sent")
+        // The pill and the disclosure must never disagree about whether data leaves the phone.
+        for req in [copy, reminder, prompt, post] {
+            let sends = ApprovalCard.riskWord(of: req).contains("sends")
+            XCTAssertEqual(sends, ApprovalCard.bodyWord(of: req) == "body",
+                           "pill says sends=\(sends) but the disclosure says \(ApprovalCard.bodyWord(of: req))")
+        }
+    }
+
+    func testVoiceOverGetsTheConsequenceOnEveryCardNotOnlyHighRisk() {
+        let copy = ApprovalRequest(toolName: "clipboard_write", title: "Copy to clipboard · See you at six", method: "COPY", risk: .medium)
+        XCTAssertEqual(ApprovalCard.riskSentence(of: copy), "It changes something on your phone.")
+        let post = ApprovalRequest(toolName: "http", title: "POST notes.example.com", method: "POST",
+                                   url: "https://notes.example.com/api/notes", risk: .medium)
+        XCTAssertEqual(ApprovalCard.riskSentence(of: post), "It sends data off your phone.")
+        for r in [ApprovalRequest.Risk.low, .medium, .high] {
+            let s = ApprovalCard.riskSentence(of: ApprovalRequest(toolName: "http", title: "t", risk: r))
+            XCTAssertTrue(s.hasSuffix("."), "VoiceOver reads sentences: \(s)")
+            XCTAssertFalse(s.lowercased().contains("risk"), "\(s)")
+        }
+    }
 }
