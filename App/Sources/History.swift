@@ -184,21 +184,67 @@ final class ConversationArchive {
     /// Where this archive lives — `Self.root` in the app; a temporary folder in tests.
     let root: URL
 
-    init(root: URL = ConversationArchive.root) {
+    /// True while the first read of the folder runs in the background (the list shows a spinner, not "nothing here yet").
+    private(set) var isLoading = false
+    /// Threads written or removed while the background read was still running — the read must not undo them.
+    private var touchedWhileLoading: [UUID: SavedConversation?] = [:]
+    private var loadTask: Task<Void, Never>?
+
+    /// The app's archive reads its folder in the background (IMPROVE-5 #2): with real history — pictures as base64
+    /// thumbnails, 60-turn threads — decoding every file on the main actor sat on the launch path (200 threads ≈ 11 MB
+    /// measured; a phone with 100 MB of threads would stall first paint). Tests and fixtures pass `inBackground: false`
+    /// and get the old synchronous read.
+    init(root: URL = ConversationArchive.root, inBackground: Bool? = nil) {
         self.root = root
         try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        reload()
+        if inBackground ?? (root == Self.root) { reloadInBackground() } else { reload() }
+    }
+
+    /// Everything `reload()` does, off the main actor; the result lands on the main actor and merges with whatever
+    /// `upsert`/`delete` did meanwhile. Idempotent: a second call while one runs is ignored.
+    func reloadInBackground() {
+        guard loadTask == nil else { return }
+        isLoading = true
+        touchedWhileLoading.removeAll()
+        let root = self.root
+        loadTask = Task.detached(priority: .userInitiated) { [weak self] in
+            let (decoded, listing) = Self.read(root)
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                var merged = decoded.filter { self.touchedWhileLoading[$0.id] == nil }
+                for case let (_, .some(c)) in self.touchedWhileLoading { merged.append(c) }   // written while loading → the newer copy wins
+                self.conversations = merged.sorted { $0.updated > $1.updated }
+                self.sweepOrphans(listing)
+                self.touchedWhileLoading.removeAll()
+                self.isLoading = false
+                self.loadTask = nil
+            }
+        }
+    }
+
+    /// Wait for a background read to finish (tests; the UI just observes `isLoading`).
+    func waitUntilLoaded() async { await loadTask?.value }
+
+    /// The folder → decoded threads (retitled) + the raw listing. Pure; runs on any thread.
+    nonisolated static func read(_ root: URL) -> (threads: [SavedConversation], listing: [URL]) {
+        let files = (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []
+        let dec = JSONDecoder(); dec.dateDecodingStrategy = .iso8601
+        let threads = files.filter { $0.pathExtension == "json" }
+            .compactMap { url -> SavedConversation? in
+                guard let data = try? Data(contentsOf: url, options: .mappedIfSafe) else { return nil }
+                return try? dec.decode(SavedConversation.self, from: data)
+            }
+            .map(retitled).sorted { $0.updated > $1.updated }
+        return (threads, files)
     }
 
     /// `<root>/<id>.attachments/` — the thread's pictures and recordings (see `AudioAttachment.directory(for:)`).
     func attachmentsDirectory(for id: UUID) -> URL { root.appendingPathComponent("\(id.uuidString).attachments", isDirectory: true) }
 
+    /// Synchronous read (tests, design fixtures that write a file and open it on the next line).
     func reload() {
-        let files = (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []
-        let dec = JSONDecoder(); dec.dateDecodingStrategy = .iso8601
-        conversations = files.filter { $0.pathExtension == "json" }
-            .compactMap { try? dec.decode(SavedConversation.self, from: Data(contentsOf: $0)) }
-            .map(Self.retitled).sorted { $0.updated > $1.updated }
+        let (threads, files) = Self.read(root)
+        conversations = threads
         sweepOrphans(files)
     }
 
@@ -221,7 +267,7 @@ final class ConversationArchive {
     /// Threads saved by earlier builds carry the raw first-60-characters title (blank first lines, empty rows for a
     /// photo). The title is derived from the first message anyway, so it is recomputed on load — in memory; the file
     /// catches up on its next save.
-    static func retitled(_ c: SavedConversation) -> SavedConversation {
+    nonisolated static func retitled(_ c: SavedConversation) -> SavedConversation {
         guard case .user(let s, let images, let videos)? = c.items.first(where: { if case .user = $0 { return true }; return false }) else { return c }
         var c = c
         c.title = ConversationTitle.make(s, hasImages: !(images ?? []).isEmpty, hasVideos: !(videos ?? []).isEmpty)
@@ -233,6 +279,7 @@ final class ConversationArchive {
         if let data = try? enc.encode(c) { try? data.write(to: root.appendingPathComponent("\(c.id.uuidString).json"), options: .atomic) }
         conversations.removeAll { $0.id == c.id }
         conversations.insert(c, at: 0)
+        if isLoading { touchedWhileLoading[c.id] = .some(c) }
     }
 
     func delete(_ c: SavedConversation) { delete(id: c.id) }
@@ -252,6 +299,7 @@ final class ConversationArchive {
         }
         let before = conversations.count
         conversations.removeAll { ids.contains($0.id) }
+        if isLoading { for id in ids { touchedWhileLoading[id] = .some(nil) } }
         return before - conversations.count
     }
 
@@ -505,7 +553,9 @@ struct HistoryList: View {
             .presentationDragIndicator(.visible)
         }
         .overlay {
-            if engine.archive.conversations.isEmpty {
+            if engine.archive.isLoading, engine.archive.conversations.isEmpty {
+                ProgressView().controlSize(.large).accessibilityLabel("Loading your conversations")
+            } else if engine.archive.conversations.isEmpty {
                 ContentUnavailableView { LooplMark().frame(width: 56, height: 56) } description: { Text("Conversations you finish appear here.") }
                     .allowsHitTesting(false)
             }
