@@ -46,6 +46,7 @@ struct LooplApp: App {
             // or one iOS mounted late — is re-resolved the moment the app is active again.
             .onChange(of: scenePhase) { _, p in
                 if p == .active, engine != nil { store.refresh(); store.storage.retryLateMounts() }
+                if p == .background { engine?.saveNow() }   // a kill in the background keeps the turn (IMPROVE-5 #1)
             }
         }
     }
