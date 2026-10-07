@@ -10,6 +10,7 @@ import Tokenizers
 import Hub
 import Jinja
 import CoreImage
+import CoreMedia
 import os
 
 private let tokenizerLog = Logger(subsystem: "technology.tiny.loopl", category: "tokenizer")
@@ -131,17 +132,18 @@ public actor MLXModel: Model {
 
                     let specDicts = toolSpecs.templateDictionaries
                     let kwargs = spec.chatTemplateKwargs?.mapValues { $0.anyValue }
-                    let hasImages = messages.contains { $0.hasImage }
+                    let hasImages = messages.contains { $0.hasVisualMedia }
                     // Text path: loopl renders the template (fallback chain). Vision path: the checkpoint's own
-                    // processor renders it and places the image tokens — images never reach a text model.
+                    // processor renders it and places the image/video tokens — pixels never reach a text model
+                    // (it reads `Message.textWithVideoFallback` instead).
                     let promptCount: Int
                     var promptTokens: [Int] = []
                     var promptTail = ""      // last few prompt tokens decoded — tells the gate when the template opened `<think>`
                     let gen: AsyncStream<Generation>
                     if isVLM && hasImages {
-                        let chat = VisionPrompt.chat(systemPrompt: systemPrompt, messages: messages)
+                        let chat = try await VisionPrompt.chat(systemPrompt: systemPrompt, messages: messages)
                         // Tools go through `additionalContext` in canonical key order (see `PromptEncoder.toolsContext`).
-                        let input = UserInput(chat: chat, processing: VisionPrompt.processing, tools: nil,
+                        let input = UserInput(chat: chat, processing: VisionPrompt.processing(for: messages), tools: nil,
                                               additionalContext: toolSpecs.isEmpty ? kwargs : PromptEncoder.toolsContext(toolSpecs, kwargs: kwargs))
                         let lmInput = try await container.prepare(input: input)
                         promptCount = lmInput.text.tokens.size
@@ -149,6 +151,11 @@ public actor MLXModel: Model {
                         let visionIds: [Int] = lmInput.text.tokens.asArray(Int.self)
                         promptTail = try await container.perform { context in PromptEncoder.tail(of: visionIds, tokenizer: context.tokenizer) }
                         if promptCount >= params.contextLength - 16 {
+                            let clips = messages.flatMap(\.videos)
+                            if let worst = clips.max(by: { $0.frameCount < $1.frameCount }) {
+                                let frames = clips.reduce(0) { $0 + $1.frameCount }
+                                throw ContextWindowOverflowError("prompt is \(promptCount) tokens (\(frames) video frames included); context window is \(params.contextLength) — attach the clip with fewer frames (now \(worst.frameCount) at \(worst.framePlan.maxEdge) px) or a shorter clip")
+                            }
                             throw ContextWindowOverflowError("prompt is \(promptCount) tokens (images included); context window is \(params.contextLength)")
                         }
                         stats.promptTokens = promptCount
@@ -270,7 +277,31 @@ enum VisionPrompt {
     /// Caps the processor's pixel budget at ~1 MP ⇒ ≤ 1280 vision tokens for a 28 px patch (Qwen-VL family).
     static let processing = UserInput.Processing(maxPixels: 1280 * 28 * 28)
 
-    static func chat(systemPrompt: String?, messages: [Loopl.Message]) -> [Chat.Message] {
+    /// `.frames` = loopl samples the frames itself (`VideoFrameSampler`, honours the block's plan: count,
+    /// fps, edge — the processor only patchifies). `.url` = hand the file to mlx-swift-lm's own sampler
+    /// (kept for the A/B measurement in docs/sdk/video.md; shares the image pixel budget).
+    enum VideoSource: Sendable { case frames, url }
+    nonisolated(unsafe) static var videoSource: VideoSource = .frames
+
+    /// Per-request processing: images keep their 1 MP budget; when the turn carries clips the frame
+    /// count comes from the SMALLEST plan among them (one `VideoProcessing` per request).
+    static func processing(for messages: [Loopl.Message]) -> UserInput.Processing {
+        let clips = messages.flatMap(\.videos)
+        guard let plan = clips.min(by: { $0.frameCount < $1.frameCount }) else { return processing }
+        var p = processing
+        switch videoSource {
+        case .frames:
+            // Frames arrive already at ≤ plan.maxEdge; `targetFrames` = all of them (the sampler chose the count).
+            p.video = UserInput.VideoProcessing(targetFrames: plan.frameCount)
+        case .url:
+            p.video = UserInput.VideoProcessing(targetFrames: plan.frameCount)
+            let edge = plan.framePlan.maxEdge
+            p.maxPixels = edge * edge
+        }
+        return p
+    }
+
+    static func chat(systemPrompt: String?, messages: [Loopl.Message]) async throws -> [Chat.Message] {
         var out: [Chat.Message] = []
         if let s = systemPrompt, !s.isEmpty { out.append(.system(s)) }
         for m in messages {
@@ -279,7 +310,16 @@ enum VisionPrompt {
                 if m.hasToolResult {
                     for r in m.toolResults { out.append(.tool(r.promptContent, id: r.toolUseId, name: r.name)) }
                 } else {
-                    out.append(.user(m.text, images: m.images.compactMap(image)))
+                    var videos: [UserInput.Video] = []
+                    var text = m.text
+                    for v in m.videos {
+                        if let video = try await video(v) { videos.append(video) } else {
+                            // File gone (History trimmed, external drive unplugged): say so instead of pretending.
+                            text += (text.isEmpty ? "" : "\n") + "[video attached: \(v.fileName) (\(v.clock)) — file is missing]"
+                        }
+                        if let line = v.transcriptLine { text += (text.isEmpty ? "" : "\n") + line }
+                    }
+                    out.append(.user(text, images: m.images.compactMap(image), videos: videos))
                 }
             case .assistant:
                 let calls = m.toolUses.map { u in
@@ -301,6 +341,26 @@ enum VisionPrompt {
             ci = ci.transformed(by: CGAffineTransform(scaleX: k, y: k))
         }
         return UserInput.Image.ciImage(ci)
+    }
+
+    /// A clip → what the processor takes. `nil` when the file is not there.
+    static func video(_ block: VideoBlock) async throws -> UserInput.Video? {
+        guard block.exists else { return nil }
+        switch videoSource {
+        case .url:
+            return .url(block.url)
+        case .frames:
+            let sampled = try await VideoFrameSampler.frames(of: block.url, plan: block.framePlan, duration: block.duration)
+            guard !sampled.isEmpty else { return nil }
+            // mlx-swift-lm re-samples a `.frames` video (`targetFrames` evenly spaced over first…last timestamp, each
+            // target → "the last frame at or before it"). With real timestamps the targets land a rounding error
+            // BEFORE some frames and those frames are silently dropped (measured: 10 frames in → 6 used). Index
+            // timestamps (frame i at i seconds) make the targets hit every frame exactly; the processor does not
+            // read the times for anything else (no per-frame timestamp text in 3.32.3).
+            return .frames(sampled.enumerated().map { i, f in
+                UserInput.VideoFrame(image: .ciImage(f.image), timeStamp: CMTime(value: CMTimeValue(i), timescale: 1))
+            })
+        }
     }
 }
 

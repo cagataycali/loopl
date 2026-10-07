@@ -151,6 +151,107 @@ public struct ImageBlock: Sendable, Hashable, Codable {
     }
 }
 
+/// How a video is turned into frames for a vision model. Qwen3-VL (mlx-swift-lm) reads a video as
+/// evenly spaced frames; every PAIR of frames (temporal patch 2) costs `ceil(h/32)·ceil(w/32)` tokens
+/// (16 px patches merged 2×2) after the frame is resized to fit `maxEdge`. The plan is decided where the budget is known (the app's
+/// `MemoryBudget.frameBudget`) and travels with the block so a reload renders the same prompt.
+public struct VideoFramePlan: Sendable, Hashable, Codable {
+    /// Upper bound on sampled frames (evenly spaced over the whole clip). Even numbers waste nothing.
+    public var maxFrames: Int
+    /// Sampling density cap — `min(duration·fps, maxFrames)` frames are taken. ≤ 2 for Qwen3-VL.
+    public var fps: Double
+    /// Longest edge of a frame in pixels before it reaches the processor (448 px 16:9 ≈ 112 tokens per frame pair).
+    public var maxEdge: Int
+
+    public init(maxFrames: Int = 16, fps: Double = 1, maxEdge: Int = 448) {
+        self.maxFrames = max(1, maxFrames); self.fps = max(0.1, min(2, fps)); self.maxEdge = max(56, maxEdge)
+    }
+    public static let `default` = VideoFramePlan()
+
+    /// Frames this plan samples from a clip of `duration` seconds.
+    public func frameCount(duration: TimeInterval) -> Int {
+        max(1, min(maxFrames, Int((duration * fps).rounded())))
+    }
+    /// Pixels per vision token along one edge: Qwen3-VL patch 16 × spatial merge 2 (Qwen2.5-VL would be 28).
+    public static let tokenPixels = 32
+    /// Vision tokens the frames cost: one token per 32×32 block, two frames per temporal patch.
+    public func estimatedTokens(duration: TimeInterval, width: Int?, height: Int?) -> Int {
+        let frames = frameCount(duration: duration)
+        let (w, h) = Self.fitted(width: width ?? maxEdge, height: height ?? maxEdge, maxEdge: maxEdge)
+        let g = Self.tokenPixels
+        let patches = max(1, (w + g - 1) / g) * max(1, (h + g - 1) / g)
+        return ((frames + 1) / 2) * patches
+    }
+    /// The size a `w×h` frame has after the long edge is capped at `maxEdge` (never upscaled).
+    public static func fitted(width: Int, height: Int, maxEdge: Int) -> (Int, Int) {
+        let longest = max(width, height)
+        guard longest > maxEdge, longest > 0 else { return (max(1, width), max(1, height)) }
+        let k = Double(maxEdge) / Double(longest)
+        return (max(1, Int((Double(width) * k).rounded())), max(1, Int((Double(height) * k).rounded())))
+    }
+    /// A plan that fits `tokenBudget` for this clip: shrinks the frame count first (fewer frames keep
+    /// the picture readable), then the edge, never below 2 frames @ 224 px. `nil` when even that misses.
+    public static func fitting(tokenBudget: Int, duration: TimeInterval, width: Int?, height: Int?, start: VideoFramePlan = .default) -> VideoFramePlan? {
+        var plan = start
+        while plan.estimatedTokens(duration: duration, width: width, height: height) > tokenBudget {
+            if plan.maxFrames > 2 { plan.maxFrames = max(2, plan.maxFrames / 2); continue }
+            if plan.maxEdge > 224 { plan.maxEdge = max(224, plan.maxEdge - 112); continue }
+            return nil
+        }
+        return plan
+    }
+}
+
+/// `ContentBlock.video`: a clip the user attached. The bytes stay in a FILE (the thread's attachments
+/// folder — videos are too big for the JSON history and for a dataset row); the block carries what the
+/// UI and the model need without opening it: duration, size, a poster thumbnail, the frame plan, and
+/// the spoken words. Qwen3-VL has NO audio input — the audio track is transcribed on device and given
+/// to the model as text next to the frames (`transcript`), which the UI shows as its own chip.
+public struct VideoBlock: Sendable, Hashable, Codable {
+    /// Absolute path of the clip (`<thread>.attachments/<id>.mov|mp4`).
+    public var path: String
+    /// `video/quicktime`, `video/mp4`.
+    public var mime: String
+    public var duration: TimeInterval
+    /// Pixel size of the source when known.
+    public var width: Int?
+    public var height: Int?
+    /// Poster frame (≤ 256 px JPEG) for chips and History. Not fed to the model.
+    public var thumbnail: ImageBlock?
+    public var framePlan: VideoFramePlan
+    /// What was said in the clip (on-device transcribe), `nil` = no audio track / not transcribed.
+    public var transcript: String?
+
+    public init(path: String, mime: String = "video/quicktime", duration: TimeInterval, width: Int? = nil, height: Int? = nil,
+                thumbnail: ImageBlock? = nil, framePlan: VideoFramePlan = .default, transcript: String? = nil) {
+        self.path = path; self.mime = mime; self.duration = duration; self.width = width; self.height = height
+        self.thumbnail = thumbnail; self.framePlan = framePlan; self.transcript = transcript
+    }
+    public var url: URL { URL(fileURLWithPath: path) }
+    public var exists: Bool { FileManager.default.fileExists(atPath: path) }
+    public var fileName: String { url.lastPathComponent }
+    /// Frames the plan takes from this clip.
+    public var frameCount: Int { framePlan.frameCount(duration: duration) }
+    /// Vision tokens the frames cost (estimate; the processor reports the real count).
+    public var estimatedTokens: Int { framePlan.estimatedTokens(duration: duration, width: width, height: height) }
+
+    /// `m:ss` for chips.
+    public var clock: String { let s = Int(duration.rounded(.down)); return String(format: "%d:%02d", s / 60, s % 60) }
+
+    /// The line a TEXT-ONLY model reads in place of the frames (honest: it cannot see them), and the
+    /// transcript line every model gets. Vision runtimes add the frames themselves.
+    public var textFallback: String {
+        var lines = ["[video attached: \(fileName) (\(clock)) — the frames need a vision model; this model cannot see them]"]
+        if let t = transcript, !t.isEmpty { lines.append("[audio transcript: \(t)]") }
+        return lines.joined(separator: "\n")
+    }
+    /// What accompanies the frames for a vision model: the spoken words, if any.
+    public var transcriptLine: String? {
+        guard let t = transcript, !t.isEmpty else { return nil }
+        return "[audio transcript: \(t)]"
+    }
+}
+
 /// `ContentBlock` — the union of things a message can carry.
 public enum ContentBlock: Sendable, Hashable, Codable {
     case text(String)
@@ -160,11 +261,15 @@ public enum ContentBlock: Sendable, Hashable, Codable {
     case reasoning(String)
     /// A picture (user attachment or tool output). Text models ignore it; vision runtimes feed it to the model.
     case image(ImageBlock)
+    /// A video clip (user attachment). Vision runtimes sample frames from the file; text models read `textFallback`.
+    case video(VideoBlock)
 
     /// `.image(data, mime: "image/png")` — the shape the Phase 4 brief names.
     public static func image(_ data: Data, mime: String) -> ContentBlock { .image(ImageBlock(data: data, mime: mime)) }
     public var image: ImageBlock? { if case .image(let i) = self { return i }; return nil }
     public var isImage: Bool { image != nil }
+    public var video: VideoBlock? { if case .video(let v) = self { return v }; return nil }
+    public var isVideo: Bool { video != nil }
 
     public var text: String? { if case .text(let s) = self { return s }; return nil }
     public var toolUse: ToolUse? { if case .toolUse(let t) = self { return t }; return nil }
@@ -191,6 +296,13 @@ public struct Message: Sendable, Hashable, Codable, Identifiable {
         blocks += images.map(ContentBlock.image)
         return Message(role: .user, content: blocks)
     }
+    /// A user turn with pictures and clips: text first, then `.image` blocks, then `.video` blocks.
+    public static func user(_ text: String, images: [ImageBlock], videos: [VideoBlock]) -> Message {
+        var blocks: [ContentBlock] = text.isEmpty ? [] : [.text(text)]
+        blocks += images.map(ContentBlock.image)
+        blocks += videos.map(ContentBlock.video)
+        return Message(role: .user, content: blocks)
+    }
     public static func assistant(_ text: String) -> Message { Message(role: .assistant, content: [.text(text)]) }
     public static func assistant(text: String, toolUses: [ToolUse]) -> Message {
         var blocks: [ContentBlock] = text.isEmpty ? [] : [.text(text)]
@@ -212,6 +324,18 @@ public struct Message: Sendable, Hashable, Codable, Identifiable {
     /// Pictures carried by this message (user attachments). Tool-produced images live in `ToolResult.images`.
     public var images: [ImageBlock] { content.compactMap(\.image) }
     public var hasImage: Bool { content.contains { $0.isImage } }
+    /// Clips carried by this message (user attachments).
+    public var videos: [VideoBlock] { content.compactMap(\.video) }
+    public var hasVideo: Bool { content.contains { $0.isVideo } }
+    /// Anything a vision runtime must feed to the model besides text.
+    public var hasVisualMedia: Bool { hasImage || hasVideo }
+    /// The text a TEXT path renders for this message: the typed text plus, per clip, the honest
+    /// "needs a vision model" line and the transcript. Vision paths use `text` + frames + `transcriptLine`.
+    public var textWithVideoFallback: String {
+        let vids = videos
+        guard !vids.isEmpty else { return text }
+        return ([text] + vids.map(\.textFallback)).filter { !$0.isEmpty }.joined(separator: "\n")
+    }
     /// 0.1 spelling.
     public var toolCalls: [ToolUse] { toolUses }
 
@@ -243,7 +367,7 @@ extension Message {
             if hasToolResult {
                 return toolResults.map { r in ["role": "tool", "content": r.promptContent, "tool_call_id": r.toolUseId, "name": r.name] }
             }
-            return [["role": "user", "content": text]]
+            return [["role": "user", "content": textWithVideoFallback]]
         case .assistant:
             var d: [String: any Sendable] = ["role": "assistant", "content": text]
             let uses = toolUses

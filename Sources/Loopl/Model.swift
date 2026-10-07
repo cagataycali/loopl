@@ -144,6 +144,7 @@ public enum TokenEstimator {
             case .toolUse(let u): n += 8 + estimate(u.name) + estimate(JSONValue.object(u.input).compact)
             case .toolResult(let r): n += 8 + estimate(r.content)
             case .image(let i): n += estimate(image: i)
+            case .video(let v): n += v.estimatedTokens + estimate(v.transcript ?? "") + 8
             }
         }
         return n
