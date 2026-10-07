@@ -34,11 +34,17 @@ final class HuggingFaceUITests: XCTestCase {
         for _ in 0..<20 {
             if present() { break }
             list.swipeUp()
-            let bottom = list.staticTexts.allElementsBoundByIndex.last?.label ?? ""
-            if bottom == lastSeen { break }     // the list did not move: we are at the end
-            lastSeen = bottom
+            // Fingerprint the WHOLE visible set, not its LAST element. `…allElementsBoundByIndex.last?.label` was a
+            // claim that the last row changes when the list moves, and on an iPad it does not: a Settings section
+            // footer stays realised below the rows, so `bottom` read "on by default" twice running and this loop
+            // concluded it had hit the end of Settings after two swipes. The section was never missing — the walk
+            // gave up. It is the same trap the squeeze guard was built around, which is why ScreenAuditUITests
+            // fingerprints the whole set; this was the last test still asking the cheap question.
+            let seen = list.staticTexts.allElementsBoundByIndex.map(\.label).joined(separator: "|")
+            if seen == lastSeen { break }       // nothing new came into view: we are at the end
+            lastSeen = seen
         }
-        XCTAssertTrue(present(), "Hugging Face is somewhere in Settings; the last row seen was \(lastSeen)")
+        XCTAssertTrue(present(), "Hugging Face is somewhere in Settings; the last rows seen were \(lastSeen.suffix(200))")
 
         // Existing is not reachable. MEASURED on an iPhone SE (375 × 667): one screen-sized swipe lands the
         // signed-out form with **Verify at y = 3** — under the navigation bar — and it stays unhittable through a
