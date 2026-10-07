@@ -6,9 +6,10 @@ import XCTest
 /// child: Deny → notes fails, the parent answers. `--design-agents finished`: the wake line + the parent's follow-up.
 /// Screenshots → LOOPL_SHOT_DIR: agents-midflight.png agents-denied.png agents-finished.png.
 final class AgentCardUITests: XCTestCase {
-    private func launch(_ extra: [String] = []) -> XCUIApplication {
+    private func launch(_ extra: [String] = [], axXL: Bool = false) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["--design-fixture", "agents"] + extra
+        if axXL { app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXL"] }
         app.launch()
         return app
     }
@@ -52,6 +53,31 @@ final class AgentCardUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'you declined it'")).firstMatch.waitForExistence(timeout: 10), "parent answers after the child settled")
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'result: Not posted'")).firstMatch.exists, "failed card folds to its last line")
         shoot(app, "agents-denied")
+    }
+
+    /// The chat must never be WIDER than the screen. At an accessibility text size the agent fixture's content ran off
+    /// BOTH edges — "Helper" read "elper", "issues" read "ssues", the tool name `http` read `ttp` — because one
+    /// over-wide child in a vertical stack widens every sibling and the viewport then centres the lot. Photographed on
+    /// an iPhone 16 Pro and an iPhone SE before this test existed; the assertion message names what stuck out.
+    func testNothingRunsOffTheEdgeAtAccessibilitySize() throws {
+        let app = launch(axXL: true)
+        XCTAssertTrue(card(app, "agent_n").waitForExistence(timeout: 15), "the fixture drew")
+        let screen = app.windows.firstMatch.frame
+        var over: [(String, CGRect, CGFloat)] = []
+        for el in app.staticTexts.allElementsBoundByIndex + app.buttons.allElementsBoundByIndex + app.otherElements.allElementsBoundByIndex {
+            let f = el.frame
+            // Skipped on purpose, both measured: an unrealised row reports an empty frame, the scroll canvas is far
+            // wider than the viewport by design, and a 2 pt decoration is not layout — `IndeterminateBar`'s accent
+            // segment SWEEPS by `.offset(x: w)` inside a `clipShape`, so its frame legitimately leaves the screen
+            // (measured [63…451] against a track at [63…362]) while nothing of it is ever drawn out there.
+            guard f.width > 1, f.height > 4, f.width < screen.width * 3 else { continue }
+            let out = max(screen.minX - f.minX, f.maxX - screen.maxX)
+            guard out > 1 else { continue }
+            over.append((el.label.isEmpty ? el.identifier : el.label, f, out))
+        }
+        let worst = over.sorted { $0.2 > $1.2 }.prefix(6)
+            .map { "\($0.0.prefix(38)) [x \(Int($0.1.minX))…\(Int($0.1.maxX))] over by \(Int($0.2))" }
+        XCTAssertTrue(over.isEmpty, "outside the screen (0…\(Int(screen.maxX))): " + worst.joined(separator: " · "))
     }
 
     func testFinishedStoryShowsWakeLine() throws {
