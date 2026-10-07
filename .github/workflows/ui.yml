@@ -116,17 +116,7 @@ jobs:
           set -o pipefail
           # The five suites that only exist to drive a real Hugging Face job: they would XCTSkip here
           # (no token), but each test still launches the app first, which is seconds we spend for nothing.
-          # SettingsToolsUITests.testOneCollapsibleToolsRowWithGroupsTagsAndNotes is skipped on BOTH devices, not
-          # as flakiness but with a measurement (improve-7/AUDIT.md #8). It walks current_time → http →
-          # clipboard_write → music with a `swipeUp` loop per tool, scrolling monotonically DOWN past `location`
-          # (which sits above `music`), then asserts `location` exists — and a row scrolled away is gone from a
-          # lazy List's tree. Measured: fails on an iPhone SE locally, fails on THIS runner's tallest iPhone, and
-          # passes on a 16 Pro locally taking 96.8 s — so it is marginal on two axes at once, screen height and
-          # machine speed, and a device matrix cannot rescue it. It is the reason `ui` has been red on main since
-          # build 34 while nothing in the product was wrong. The fix is to give that test ONE scroll strategy
-          # instead of five ad-hoc loops; delete this line then, because a skip that outlives its reason is a hole.
-          SKIP="-skip-testing:LooplUITests/SettingsToolsUITests/testOneCollapsibleToolsRowWithGroupsTagsAndNotes \
-                -skip-testing:LooplUITests/TrainLiveUITests \
+          SKIP="-skip-testing:LooplUITests/TrainLiveUITests \
                 -skip-testing:LooplUITests/TrainE2EMineUITests \
                 -skip-testing:LooplUITests/TrainContinualLiveUITests \
                 -skip-testing:LooplUITests/CollectionLiveUITests \
