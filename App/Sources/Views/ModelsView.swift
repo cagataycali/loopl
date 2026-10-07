@@ -91,7 +91,7 @@ struct ModelsView: View {
                         Label {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Search models").font(.body.weight(.medium))
-                                Text(engine.hf.isSignedIn ? "Any MLX or GGUF repo — yours too, private included" : "Any public MLX or GGUF repo — no account needed").font(.caption).foregroundStyle(.secondary)
+                                Text(engine.hf.isSignedIn ? "Any model on Hugging Face — yours too, private included" : "Any public model on Hugging Face — no account needed").font(.caption).foregroundStyle(.secondary)
                             }
                         } icon: { Image(systemName: "magnifyingglass").foregroundStyle(LooplDesign.accent) }
                         .matchedTransitionSource(id: "browse", in: zoom)

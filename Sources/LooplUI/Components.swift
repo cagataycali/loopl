@@ -764,6 +764,10 @@ public struct AgentTranscriptView<Empty: View, Banner: View>: View {
             .defaultScrollAnchor(pinned ? .bottom : nil, for: .sizeChanges)
             .defaultScrollAnchor(.bottom, for: .initialOffset)
             .scrollDismissesKeyboard(.interactively)
+            // The transcript scrolls under a translucent title bar; with the default soft edge the first lines of a long
+            // chat read straight through the title and the clock (worst on an SE in dark — IMPROVE-3 audit #4). The hard
+            // edge stops the content at the bar, so the title is always legible.
+            .modifier(HardTopEdge())
             .onScrollGeometryChange(for: JumpSample.self) { JumpSample($0) } action: { _, s in JumpLog.record(s) }
             // Only the READER can lift the pin: content growing past the fold is not "scrolling away" (that is
             // the bug the geometry-only test had — the follow un-pinned itself on the first overflowing token).
@@ -959,7 +963,7 @@ public struct ModelPickerRow: View {
     public var body: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(spec.name).font(.body.weight(loaded ? .semibold : .regular))
+                Text(spec.displayName).font(.body.weight(loaded ? .semibold : .regular))
                     .fixedSize(horizontal: false, vertical: true)
                 // ONE Text so the facts stay on one line: on an SE they shrink a little instead of wrapping "ctx / 12,288".
                 // At accessibility sizes even 0.72× lost the tail ("1.75 GB · 2B · ctx 12,2…" on an SE at AX-XL) — there the
@@ -984,10 +988,13 @@ public struct ModelPickerRow: View {
         .contentShape(Rectangle())
     }
     private var metaRow: Text {
+        // What a person decides on: size, and whether it sees pictures (IMPROVE-3 audit — "2B · ctx 12,288 · MLX" meant
+        // nothing to a first-time user; the size class is in the name, context and engine stay in the accessibility label).
         var t = meta(spec.isDownloadable ? spec.sizeLabel : "built in")
-        t = t + meta(" · \(spec.paramsB.formatted(.number.precision(.fractionLength(0...1))))B · ctx \(spec.ctxUsable8GB.formatted()) · \(spec.runtime.label)")
         if spec.supportsVision {
-            t = t + meta(" · ") + (Text(Image(systemName: "eye")) + Text(" vision")).font(.caption2.weight(.semibold)).foregroundColor(LooplDesign.accent)
+            t = t + meta(" · ") + (Text(Image(systemName: "eye")) + Text(" sees pictures")).font(.caption2.weight(.semibold)).foregroundColor(LooplDesign.accent)
+        } else {
+            t = t + meta(" · text only")
         }
         if spec.isThinking {
             t = t + meta(" · ") + (Text(Image(systemName: "brain")) + Text(" thinks")).font(.caption2.weight(.semibold)).foregroundColor(.secondary)
@@ -999,7 +1006,7 @@ public struct ModelPickerRow: View {
     }
     private var metaAccessibility: String {
         var parts = [spec.isDownloadable ? spec.sizeLabel : "built in", "\(spec.paramsB.formatted(.number.precision(.fractionLength(0...1))))B", "context \(spec.ctxUsable8GB.formatted())", spec.runtime.label]
-        if spec.supportsVision { parts.append("sees pictures") }
+        parts.append(spec.supportsVision ? "sees pictures" : "text only")
         if spec.isThinking { parts.append("thinks before answering") }
         if spec.toolsUnverified == true { parts.append("tool calls unverified for this model") }
         return parts.joined(separator: ", ")
@@ -1081,4 +1088,11 @@ enum PreviewFixtures {
         ToolRow(call: PreviewFixtures.call, result: PreviewFixtures.result)
         ToolRow(call: PreviewFixtures.call, result: ToolResult(toolUseId: "call_1", name: "calculator", status: .error, content: "error: division by zero", durationMs: 0.4))
     }.padding()
+}
+
+/// iOS/macOS 26 scroll-edge effect `.hard` under the top bar; a no-op on earlier systems (their bars are opaque enough).
+struct HardTopEdge: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, macOS 26.0, *) { content.scrollEdgeEffectStyle(.hard, for: .top) } else { content }
+    }
 }
