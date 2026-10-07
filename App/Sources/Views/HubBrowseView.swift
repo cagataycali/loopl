@@ -189,7 +189,10 @@ struct FitBadge: View {
             .padding(.horizontal, 7).padding(.vertical, 3)
             .background(color.opacity(0.15), in: Capsule())
             .foregroundStyle(color)
-            .accessibilityLabel("memory: \(fit.label)")
+            .accessibilityLabel(fitSpoken)
+    }
+    private var fitSpoken: String {
+        switch fit { case .green: "fits in memory"; case .amber: "tight on memory"; case .red: "too big for this device's memory" }
     }
     private var color: Color {
         switch fit { case .green: .green; case .amber: LooplDesign.amber; case .red: .red }
