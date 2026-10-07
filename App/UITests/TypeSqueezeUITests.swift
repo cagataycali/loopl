@@ -6,9 +6,15 @@ import XCTest
 /// the same shape — a long `Text` and a short control in one `HStack`. It is invisible at the text size a developer
 /// works at and obvious at Accessibility XL, so it needs a machine, not a reviewer.
 ///
-/// The measurement: at Accessibility XL, a label of 25 characters or more that has been given less than 45 % of the
-/// screen's width is squeezed. Nothing in the app legitimately reads that way — a genuinely narrow column holds short
-/// words (a chip, a number, a tag), and a long sentence that wraps gets the full content width.
+/// The measurement: at Accessibility XL, a label of 25 characters or more that has been given less than
+/// `min(45 % of the screen, 220 pt)` is squeezed.
+///
+/// The second half of that is the lesson of running this on an **iPad**, which `ui.yml` does not cover. A proportional
+/// rule alone is wrong on a wide screen, because text has a maximum readable measure: on an 834 pt iPad a perfectly
+/// formatted chat bubble is 324 pt (39 %), a History subtitle 263 pt and a tool row's note 357 pt — all flagged by the
+/// proportional rule, none of them a bug. The real squeezes this guard was built from sit far lower in ABSOLUTE terms:
+/// 90 pt, 132 pt, 139 pt, 150 pt, 163 pt, 175 pt. 220 pt separates the two sets cleanly and keeps the proportional
+/// rule for small screens, where 45 % of 375 pt (169 pt) is the tighter of the two.
 final class TypeSqueezeUITests: XCTestCase {
     private func launch(_ args: [String]) -> XCUIApplication {
         let app = XCUIApplication()
@@ -30,9 +36,11 @@ final class TypeSqueezeUITests: XCTestCase {
             for el in app.staticTexts.allElementsBoundByIndex {
                 let f = el.frame, label = el.label
                 guard label.count >= 25, f.width > 1, f.height > 4 else { continue }
-                // A monospaced value (a header value, a path, a sha) is not prose and may sit in a column.
-                guard !label.contains("application/"), !label.hasPrefix("/") else { continue }
-                guard f.width < w * 0.45 else { continue }
+                // A monospaced value (a header value, a path, a sha) is not prose and may sit in a column, and an
+                // availability CHIP's accessibility label is long by design while its capsule is deliberately small
+                // ("unavailable: Not on Simulator — runs on a real iPhone", measured at 135 pt on an iPad).
+                guard !label.contains("application/"), !label.hasPrefix("/"), !label.hasPrefix("unavailable:") else { continue }
+                guard f.width < min(w * 0.45, 220) else { continue }
                 squeezed[label] = "“\(label.prefix(44))” in \(Int(f.width)) pt of \(Int(w))"
             }
             let fingerprint = app.staticTexts.allElementsBoundByIndex.map { $0.label }.joined(separator: "|")
