@@ -36,7 +36,7 @@ struct SettingsView: View {
                     Toggle(isOn: $settings.offline) { Label("Offline mode", systemImage: LooplDesign.iconOffline) }
                     Picker(selection: $settings.askBefore) {
                         Text("Every request").tag(ApprovalPolicy.Mode.always)
-                        Text("Writes only").tag(ApprovalPolicy.Mode.mutating)
+                        Text("Sending or changing data").tag(ApprovalPolicy.Mode.mutating)   // not "Writes only" (IMPROVE-4 #24)
                         Text("Never").tag(ApprovalPolicy.Mode.never)
                     } label: { Label("Ask before", systemImage: "hand.raised") }
                 } header: { Text("Network") } footer: {
