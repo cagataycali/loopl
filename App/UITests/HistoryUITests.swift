@@ -20,18 +20,10 @@ final class HistoryUITests: XCTestCase {
         add(a)
     }
 
-    /// Opens History (the sheet on iPhone; already there as the sidebar on iPad) and returns the Select button.
+    /// Opens History and returns its Select button. The device-shaped part, and the 0x0 ⌘Y proxy that made all
+    /// four of these tests fail on an iPad, live in `XCUIApplication.reachHistory()` (HistoryAccess.swift).
     @discardableResult
-    private func openHistory(_ app: XCUIApplication) -> XCUIElement {
-        let select = app.buttons["history.select"]
-        if !select.waitForExistence(timeout: 3) {
-            let history = app.buttons["History"].firstMatch
-            XCTAssertTrue(history.waitForExistence(timeout: 15), "History button")
-            history.tap()
-        }
-        XCTAssertTrue(select.waitForExistence(timeout: 10), "Select button in History")
-        return select
-    }
+    private func openHistory(_ app: XCUIApplication) -> XCUIElement { app.reachHistory() }
 
     private var emptyState: XCUIElement { XCUIApplication().staticTexts["Your conversations appear here."] }
 
@@ -50,8 +42,7 @@ final class HistoryUITests: XCTestCase {
         let all = app.buttons["history.selectAll"]
         XCTAssertTrue(all.waitForExistence(timeout: 5), "Select all moved to the nav bar"); all.tap()
         XCTAssertTrue(delete.isEnabled); XCTAssertTrue(share.isEnabled)
-        XCTAssertTrue(app.buttons["Delete 3"].waitForExistence(timeout: 3), "the count is in the label")
-        XCTAssertTrue(app.navigationBars.staticTexts["3 selected"].exists)
+        app.assertSelectionCount(3)
         shot("02-selected-all")
 
         delete.tap()
@@ -73,8 +64,7 @@ final class HistoryUITests: XCTestCase {
         let again = XCUIApplication()
         again.launchArguments = ["--design-fixture", "empty"]
         again.launch()
-        let history = again.buttons["History"].firstMatch
-        if history.waitForExistence(timeout: 15) { history.tap() }
+        again.reachHistory(expectSelect: false)
         XCTAssertTrue(again.staticTexts["Your conversations appear here."].waitForExistence(timeout: 5), "still empty after relaunch")
     }
 
@@ -99,8 +89,7 @@ final class HistoryUITests: XCTestCase {
         XCTAssertTrue(row.waitForExistence(timeout: 5))
         XCTAssertTrue(row.isHittable, "the row the test ticks must be on screen: \(row.frame)")
         row.tap()
-        XCTAssertTrue(app.buttons["Delete 1"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.navigationBars.staticTexts["1 selected"].exists)
+        app.assertSelectionCount(1)
         app.buttons["history.delete"].tap()
         let confirm = app.buttons["Delete conversation"].firstMatch
         XCTAssertTrue(confirm.waitForExistence(timeout: 5))

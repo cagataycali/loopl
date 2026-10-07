@@ -120,6 +120,10 @@ struct ChatView: View {
                         Button { LooplDesign.haptic(); showHistory = true } label: { Label("History", systemImage: LooplDesign.iconHistory).labelStyle(.iconOnly) }
                             .keyboardShortcut("y", modifiers: .command)   // ⌘Y = History (Safari's chord; ⌘⇧H is the system Home on iPad)
                             .accessibilityLabel("History")
+                            // The split layout publishes the SAME ⌘Y chord from a 0x0 proxy button in RootView's
+                            // `.background` carrying the same label, so "the History button" is ambiguous by label
+                            // on an iPad. This identifier is the only unambiguous handle (see HistoryUITests).
+                            .accessibilityIdentifier("chat.history")
                             .matchedTransitionSource(id: "history", in: zoom)
                     }
                 }
