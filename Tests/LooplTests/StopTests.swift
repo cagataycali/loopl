@@ -92,7 +92,7 @@ final class StopTests: XCTestCase {
         let open = t.items.filter { if case .toolUse(_, nil) = $0.kind { return true }; return false }
         XCTAssertTrue(open.isEmpty)
         guard case .note(let n)? = t.items.last?.kind else { return XCTFail("note expected") }
-        XCTAssertEqual(n, "stopped")
+        XCTAssertEqual(n, Transcript.stoppedNote)
     }
 }
 
@@ -111,5 +111,19 @@ final class ResumeOnceTests: XCTestCase {
         w.resume(.success("fix")); w.resume(.failure(CancellationError()))
         let v = try await t.value
         XCTAssertEqual(v, "fix")
+    }
+
+    /// A turn stopped before any text: the history keeps the placeholder the API needs, the transcript shows ONE
+    /// quiet "Stopped" line — not the model "saying" Cancelled by user plus a second "cancelled" line (IMPROVE-4 #19).
+    func testCancelledBeforeTextShowsOneStoppedLine() {
+        var t = Transcript()
+        t.user("draw a chart")
+        t.apply(.startEventLoop(cycle: 1))
+        t.apply(.modelMessage(.assistant(Agent.cancelledPlaceholder)))
+        t.apply(.result(AgentResult(stopReason: .cancelled, message: .assistant(Agent.cancelledPlaceholder), metrics: EventLoopMetrics())))
+        let shown = t.items.compactMap { if case .assistant(let s) = $0.kind { return s }; return nil }
+        XCTAssertFalse(shown.contains(Agent.cancelledPlaceholder), "placeholder is not shown as the model's words: \(t.items)")
+        let notes = t.items.compactMap { if case .note(let n) = $0.kind { return n }; return nil }
+        XCTAssertEqual(notes, [Transcript.stoppedNote])
     }
 }

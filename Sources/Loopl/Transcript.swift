@@ -59,7 +59,8 @@ public struct Transcript: Sendable, Hashable {
     /// The host stopped the turn and the agent could not report it (STOP-LOCATION 2026-10-07 — the fallback behind
     /// `Agent.cancelRun()`): tool rows still open become "Tool execution cancelled", approval cards still waiting are
     /// denied as stopped, running sub-agent cards end, cursors reset, one "stopped" note. No-op when nothing runs.
-    public mutating func stopped(_ note: String = "stopped") {
+    public static let stoppedNote = "Stopped"
+    public mutating func stopped(_ note: String = Transcript.stoppedNote) {
         var touched = isRunning
         for i in items.indices {
             switch items[i].kind {
@@ -183,7 +184,11 @@ public struct Transcript: Sendable, Hashable {
         case .toolsChanged(let mounted): toolsMounted = mounted            // Phase 6: the host shows "mounted for this conversation"
         case .result(let r):
             isRunning = false; lastResult = r
-            if r.stopReason == .cancelled { items.append(.init(kind: .note("cancelled"))) }
+            if r.stopReason == .cancelled {
+                // The placeholder the history needs is not a thing the model said — one quiet line, not two.
+                if let last = items.indices.last, case .assistant(let t) = items[last].kind, t == Agent.cancelledPlaceholder { items.remove(at: last) }
+                items.append(.init(kind: .note(Self.stoppedNote)))
+            }
             return true
         case .childStarted(let info):
             // Right after the parent's `use_agent` row when it is here (several children of one turn stack in order);
