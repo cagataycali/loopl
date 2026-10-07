@@ -58,7 +58,7 @@ public struct HFDownloader: Sendable {
         public var errorDescription: String? {
             switch self {
             case .offline: "offline mode is on — downloads are refused"
-            case .http(let c, let p): "HTTP \(c) for \(p)"
+            case .http(let c, let p): HubStatus.sentence(c, path: p, downloading: true)
             case .signInRequired(let repo): "\(repo) is private or gated — sign in to Hugging Face in Settings to download it"
             case .noAccess(let repo): "your Hugging Face account can't read \(repo) — it is private or gated; check access on huggingface.co"
             case .io(let s): s
@@ -159,7 +159,7 @@ public struct HFDownloader: Sendable {
         let http = resp as? HTTPURLResponse
         let code = http?.statusCode ?? 0
         if code == 401 || code == 403 { throw denied(repo) }
-        if code == 416 { try? fm.removeItem(at: part); throw DLError.io("range mismatch for \(file.path); retry") }
+        if code == 416 { try? fm.removeItem(at: part); throw DLError.io(HubStatus.sentence(416, path: file.path, downloading: true)) }
         guard code == 200 || code == 206 else { throw DLError.http(code, file.path) }
         if code == 200, have > 0 {           // server ignored Range → start over
             try fm.removeItem(at: part)
