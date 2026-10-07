@@ -777,13 +777,22 @@ private struct WrapPills<Content: View>: View {
 }
 
 /// Minimal left-to-right flow: each subview at its ideal size, new row when the width runs out.
+/// A subview WIDER THAN THE WHOLE ROW is re-proposed at the row's width instead of being placed at its ideal size —
+/// otherwise it hangs off the edge, which is what "Recommended · fast + smart" did at Accessibility XL (measured 15 pt
+/// past the right edge of an iPhone 16 Pro). A pill given the row's width wraps to two lines inside its capsule.
 private struct FlowLayout: Layout {
     var spacing: CGFloat = 6
+    /// The size this subview gets: its ideal one, unless that is wider than a whole row.
+    private func size(_ v: LayoutSubview, within width: CGFloat) -> CGSize {
+        let ideal = v.sizeThatFits(.unspecified)
+        guard width.isFinite, ideal.width > width else { return ideal }
+        return v.sizeThatFits(ProposedViewSize(width: width, height: nil))
+    }
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let width = proposal.width ?? .infinity
         var x: CGFloat = 0, y: CGFloat = 0, rowH: CGFloat = 0, maxX: CGFloat = 0
         for v in subviews {
-            let s = v.sizeThatFits(.unspecified)
+            let s = size(v, within: width)
             if x > 0, x + s.width > width { x = 0; y += rowH + spacing; rowH = 0 }
             x += s.width + spacing; rowH = max(rowH, s.height); maxX = max(maxX, x - spacing)
         }
@@ -792,7 +801,7 @@ private struct FlowLayout: Layout {
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         var x = bounds.minX, y = bounds.minY, rowH: CGFloat = 0
         for v in subviews {
-            let s = v.sizeThatFits(.unspecified)
+            let s = size(v, within: bounds.width)
             if x > bounds.minX, x + s.width > bounds.maxX { x = bounds.minX; y += rowH + spacing; rowH = 0 }
             v.place(at: CGPoint(x: x, y: y), anchor: .topLeading, proposal: ProposedViewSize(s))
             x += s.width + spacing; rowH = max(rowH, s.height)

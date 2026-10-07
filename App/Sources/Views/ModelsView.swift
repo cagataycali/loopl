@@ -29,6 +29,7 @@ struct ModelsView: View {
     @Namespace private var zoom
     @Namespace private var loadedMark
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     /// The models that are HERE (or arriving): downloaded, downloading, paused, failed, on a drive, moving, built in, in use.
     /// The one in use sorts first. A download in flight belongs on this shelf — its progress must never hide in a folded list.
@@ -149,6 +150,12 @@ struct ModelsView: View {
             .animation(LooplDesign.Motion.faded(LooplDesign.Motion.spring, reduceMotion), value: engine.loadedModel?.id)
             .animation(LooplDesign.Motion.crossfade, value: engine.readiness.isBusy)
             .navigationTitle("Models")
+            // Opening Models asks the Hub what each downloaded model's repo points at now (one cached request per
+            // model per day) and NOTHING else happens — no download without a tap. Skipped in offline mode.
+            .task(id: settings.offline) {
+                guard !settings.offline else { return }
+                await store.checkForNewVersions(token: HFAccount.shared.provider)
+            }
             .refreshable {
                 store.refresh()
                 async let a: Void = mine.load(author: engine.hf.author, force: true)
@@ -289,6 +296,30 @@ struct ModelsView: View {
             .accessibilityIdentifier("models-row-\(spec.id)")
             .opacity(state.driveBlocked ? 0.55 : 1)
             .accessibilityHint(state.needsDrive.map { "on \($0), not connected" } ?? state.unreadableDrive.map { "on \($0), which can't be read" } ?? (isLoaded ? "in use" : "switches to this model"))
+            // The repo moved on since this copy arrived. Never automatic: a new version is a 1.75 GB download, so it
+            // is a line and a button, and the line says when the copy here arrived rather than quoting a commit.
+            if state.isDownloaded, let line = store.updateLine(spec) {
+                // At an accessibility size the sentence and the button go one above the other: sharing a row left the
+                // text ~90 pt wide on an SE and it read "Hug-ging Face has a…" — the same squeeze #194 fixed in
+                // Settings › Tools and #195 in the approval card. Caught by shooting my own change at AX-XL.
+                let layout = typeSize.isAccessibilitySize
+                    ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6))
+                    : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 6))
+                layout {
+                    // Image + Text, not a `Label`: a Label(systemImage:) keeps the glyph as its own element, so the
+                    // identifier landed on the IMAGE and a test asking for this row read back "Arrow Down Circle".
+                    Image(systemName: "arrow.down.circle").font(.caption).foregroundStyle(.secondary).accessibilityHidden(true)
+                    Text(line)
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("models-update-\(spec.id)")
+                    Spacer(minLength: 8)
+                    Button("Get it") { LooplDesign.haptic(1); store.download(spec) }
+                        .font(.caption.weight(.semibold)).disabled(settings.offline || busy || engine.isGenerating)
+                        .looplHitTarget()
+                        .accessibilityIdentifier("models-update-get-\(spec.id)")
+                        .accessibilityHint("downloads \(spec.sizeLabel) over the copy on this iPhone")
+                }
+            }
             if state.isDownloaded, store.storage.location(of: spec.id).isExternal {
                 Label("On \(store.locationName(spec))", systemImage: "externaldrive").font(.caption).foregroundStyle(.secondary)
                     .accessibilityIdentifier("models-location-\(spec.id)")

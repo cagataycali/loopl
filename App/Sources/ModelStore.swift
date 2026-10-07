@@ -97,6 +97,55 @@ public final class ModelStore {
     }()
 
     static let hubModelsFile = root.appendingPathComponent("hub-models.json")
+    static let versionsFile = root.appendingPathComponent("versions.json")
+
+    /// What each downloaded copy IS: the Hub commit it was fetched at + when. Written when a download finishes, so a
+    /// copy from before this release has no entry and is never judged (see `ModelFreshness`).
+    public private(set) var installedVersion: [String: InstalledVersion] = [:]
+    /// What the repo serves NOW, as last answered by the Hub. Filled by `checkForNewVersions()`; never persisted —
+    /// a stale "there is an update" line surviving a relaunch would outlive its own evidence.
+    public private(set) var remoteSha: [String: String] = [:]
+
+    /// The one line for a row, or nil when there is nothing honest to say.
+    public func updateLine(_ spec: ModelSpec) -> String? {
+        ModelFreshness.line(installed: installedVersion[spec.id], remote: remoteSha[spec.id])
+    }
+
+    /// Ask the Hub what each DOWNLOADED model's repo points at now, and remember it. Never downloads anything: a new
+    /// version is 1.75 GB, so it is the owner's tap. Silent on failure — not knowing is the normal case.
+    /// `HubCatalog` caches a repo for a day, so opening Models repeatedly costs one request per model per day.
+    public func checkForNewVersions(token: HFTokenProvider? = nil) async {
+        let hub = HubCatalog(token: token)
+        for spec in catalog.models where (states[spec.id]?.isDownloaded ?? false) && installedVersion[spec.id]?.sha != nil && !spec.repo.isEmpty {
+            guard let sha = try? await hub.repo(spec.repo).sha, !sha.isEmpty else { continue }
+            remoteSha[spec.id] = sha
+        }
+    }
+
+    /// Record the commit a finished download came from. Called off the download task; a failure to ask leaves `sha`
+    /// nil, which means "unknown", not "current".
+    private func noteInstalledVersion(_ spec: ModelSpec) {
+        installedVersion[spec.id] = InstalledVersion(sha: nil, at: Date())
+        persistVersions()
+        guard !spec.repo.isEmpty else { return }
+        Task { [weak self] in
+            let sha = try? await HubCatalog(token: HFAccount.shared.provider).repo(spec.repo).sha
+            await MainActor.run {
+                guard let self, let sha, !sha.isEmpty else { return }
+                self.installedVersion[spec.id] = InstalledVersion(sha: sha, at: self.installedVersion[spec.id]?.at ?? Date())
+                self.remoteSha[spec.id] = sha      // what we just fetched IS current, by definition
+                self.persistVersions()
+            }
+        }
+    }
+    private func persistVersions() {
+        if let data = try? JSONEncoder().encode(installedVersion) { try? data.write(to: Self.versionsFile, options: .atomic) }
+    }
+    /// Test/fixture seam (`--design-update <id>`): pretend the Hub serves a different commit than the copy here.
+    public func overrideVersions(installed: [String: InstalledVersion], remote: [String: String]) {
+        installedVersion.merge(installed) { _, new in new }
+        remoteSha.merge(remote) { _, new in new }
+    }
 
     public init(catalog: Catalog = .loadBundled(), storage: StorageLocations? = nil) {
         self.bundled = catalog
@@ -105,6 +154,7 @@ public final class ModelStore {
             hubModels = list.filter(\.isFromHub)
         }
         if let data = try? Data(contentsOf: Self.visionFile), let v = try? JSONDecoder().decode([String: Bool].self, from: data) { localVision = v }
+        if let data = try? Data(contentsOf: Self.versionsFile), let v = try? JSONDecoder().decode([String: InstalledVersion].self, from: data) { installedVersion = v }
         refresh()
     }
 
@@ -133,6 +183,7 @@ public final class ModelStore {
         storage.set(location: .internalStorage, for: spec.id)
         states[spec.id] = nil
         forgetLocalVision(spec.id)
+        forgetInstalledVersion(spec.id)
         refresh()
     }
 
@@ -362,7 +413,10 @@ public final class ModelStore {
         tasks[spec.id] = nil
         refresh()
         if let error { states[spec.id] = .failed(error); log.error("download failed \(spec.id, privacy: .public): \(error, privacy: .public)") }
-        else { log.info("download finished \(spec.id, privacy: .public) → \(String(describing: self.states[spec.id]), privacy: .public)") }
+        else {
+            log.info("download finished \(spec.id, privacy: .public) → \(String(describing: self.states[spec.id]), privacy: .public)")
+            if states[spec.id]?.isDownloaded == true { noteInstalledVersion(spec) }
+        }
     }
 
     public func pause(_ spec: ModelSpec) { tasks[spec.id]?.cancel() }
@@ -378,10 +432,17 @@ public final class ModelStore {
         storage.set(location: .internalStorage, for: spec.id)
         states[spec.id] = .notDownloaded
         forgetLocalVision(spec.id)
+        forgetInstalledVersion(spec.id)
         refresh()
     }
 
     /// The files are gone → the row describes the model again until the next download.
+    private func forgetInstalledVersion(_ id: String) {
+        guard installedVersion.removeValue(forKey: id) != nil else { return }
+        remoteSha.removeValue(forKey: id)
+        persistVersions()
+    }
+
     private func forgetLocalVision(_ id: String) {
         guard localVision.removeValue(forKey: id) != nil else { return }
         if let data = try? JSONEncoder().encode(localVision) { try? data.write(to: Self.visionFile, options: .atomic) }
