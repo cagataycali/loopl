@@ -185,7 +185,7 @@ struct CollectionSection<More: View>: View {
         let state = spec.flatMap { store.states[$0.id] }
         VStack(alignment: .leading, spacing: 6) {
             Button { LooplDesign.haptic(); selected = row.hit } label: {
-                CollectionRowLabel(row: row, added: isAdded(row.hit), loaded: spec.map { engine.loadedModel?.id == $0.id } ?? false, state: state)
+                CollectionRowLabel(row: row, subtitle: spec.flatMap(ModelBlurb.known) ?? row.note.map(ModelBlurb.plain), added: isAdded(row.hit), loaded: spec.map { engine.loadedModel?.id == $0.id } ?? false, state: state)
             }
             .buttonStyle(.plain)
             .matchedTransitionSource(id: "collection-\(row.id)", in: zoom)
@@ -239,6 +239,8 @@ struct CollectionSection<More: View>: View {
 /// name · curator's note · size + vision/private marks. The note is the subtitle — the collection speaks, not the file name.
 struct CollectionRowLabel: View {
     var row: HubCollectionRow
+    /// Plain words under the name (`ModelBlurb`); nil → the file name.
+    var subtitle: String?
     var added: Bool
     var loaded: Bool
     var state: ModelStore.State?
@@ -250,7 +252,7 @@ struct CollectionRowLabel: View {
                     if row.hit.isVision { (Text(Image(systemName: "eye")) + Text(" vision")).font(.caption.weight(.medium)).foregroundStyle(LooplDesign.accent).accessibilityLabel("vision") }
                     if row.hit.isPrivate { Image(systemName: "lock.fill").font(.caption2).foregroundStyle(.secondary).accessibilityLabel("private") }
                 }
-                if let note = row.note {
+                if let note = subtitle {
                     Text(note).font(.caption).foregroundStyle(.secondary).lineLimit(3).fixedSize(horizontal: false, vertical: true)
                 } else {
                     Text(row.hit.name).font(.caption).foregroundStyle(.secondary).lineLimit(1)

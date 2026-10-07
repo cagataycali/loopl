@@ -40,18 +40,7 @@ enum Onboarding {
         cards.first { $0.id == preferredId } ?? cards.first { $0.id == defaultId } ?? cards.first
     }
 
-    /// One line of plain language per pick; anything else falls back to the row's own notes.
-    static func blurb(_ spec: ModelSpec) -> String {
-        switch spec.id {
-        case "loopl-0.8b-4bit": "Smallest — quick answers and tools, sees pictures. Any recent \(LooplDesign.deviceName)."
-        case "loopl-2b-4bit": "The best balance of speed and quality on \(LooplDesign.deviceName). Photos, tools, memory."
-        case "loopl-4b-4bit": LooplDesign.deviceName == "iPhone" ? "Most capable — needs a Pro-class iPhone (8 GB of memory)." : "Most capable — needs 8 GB of memory (Pro-class \(LooplDesign.deviceName))."
-        case "qwen3-0.6b-4bit": "Fastest. Chat, tools and quick answers — runs on any recent iPhone."
-        case "qwen3.5-0.8b-4bit": "Small and sees pictures. Ask about a photo or a screenshot."
-        case "qwen3.5-2b-4bit": "Smartest of the three. Photos + tools — needs about 3 GB of memory."
-        default: spec.notes.map { String($0.prefix(90)) } ?? ""
-        }
-    }
+    /// One line of plain language per pick: `ModelBlurb.text` (shared with Models › loopl models).
     /// The badge text on the preferred card.
     static let recommendedBadge = "Recommended · fast + smart"
 
@@ -375,7 +364,7 @@ struct OnboardingView: View {
         VStack(spacing: 10) {
             ForEach(cards) { spec in
                 let fit = Onboarding.fit(spec)
-                let card = ModelCard(spec: spec, blurb: Onboarding.blurb(spec), recommended: spec.id == Onboarding.preferredId,
+                let card = ModelCard(spec: spec, blurb: ModelBlurb.text(spec), recommended: spec.id == Onboarding.preferredId,
                                      fit: fit, fitLine: Onboarding.fitLine(spec, fit: fit),
                                      selected: selection?.id == spec.id, downloaded: store.states[spec.id]?.isDownloaded == true) {
                     withAnimation(LooplDesign.Motion.reduced(LooplDesign.Motion.snappy, reduceMotion)) { chosen = spec }
