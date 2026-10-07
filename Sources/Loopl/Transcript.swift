@@ -44,6 +44,26 @@ public struct Transcript: Sendable, Hashable {
 
     public mutating func user(_ text: String, images: [ImageBlock] = []) { items.append(.init(kind: .user(text), images: images)); isRunning = true }
     public mutating func note(_ text: String) { items.append(.init(kind: .note(text))) }
+
+    /// The host stopped the turn and the agent could not report it (STOP-LOCATION 2026-10-07 — the fallback behind
+    /// `Agent.cancelRun()`): tool rows still open become "Tool execution cancelled", approval cards still waiting are
+    /// denied as stopped, running sub-agent cards end, cursors reset, one "stopped" note. No-op when nothing runs.
+    public mutating func stopped(_ note: String = "stopped") {
+        var touched = isRunning
+        for i in items.indices {
+            switch items[i].kind {
+            case .toolUse(let u, nil):
+                items[i].kind = .toolUse(u, result: .error(u, "Tool execution cancelled")); touched = true
+            case .approval(let r, nil):
+                items[i].kind = .approval(r, decision: .deny(reason: "stopped")); touched = true
+            case .agent(var run) where !run.status.isFinished:
+                run.status = .stopped; run.endedAt = Date(); run.transcript.stopped(note); items[i].kind = .agent(run); touched = true
+            default: break
+            }
+        }
+        isRunning = false; streamingIndex = nil; reasoningIndex = nil
+        if touched { items.append(.init(kind: .note(note))) }
+    }
     public mutating func clear() { items.removeAll(); metrics = Metrics(); cycle = 0; streamingIndex = nil; reasoningIndex = nil; isRunning = false; lastResult = nil }
 
     /// Fold one event. Returns true when the loop ended.

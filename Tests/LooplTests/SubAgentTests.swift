@@ -245,17 +245,17 @@ final class SubAgentTests: XCTestCase {
 
     func testModelGateIsFIFOAndExclusive() async throws {
         let gate = ModelGate()
-        await gate.acquire()
+        try await gate.acquire()
         XCTAssertTrue(gate.isBusy)
         let order = SABox<[Int]>(); order.value = []
-        let t1 = Task { await gate.acquire(); order.value!.append(1); gate.release() }
+        let t1 = Task { try await gate.acquire(); order.value!.append(1); gate.release() }
         try await Task.sleep(nanoseconds: 20_000_000)
-        let t2 = Task { await gate.acquire(); order.value!.append(2); gate.release() }
+        let t2 = Task { try await gate.acquire(); order.value!.append(2); gate.release() }
         try await Task.sleep(nanoseconds: 20_000_000)
         XCTAssertEqual(gate.waiting, 2)
         XCTAssertEqual(order.value, [])
         gate.release()
-        _ = await (t1.value, t2.value)
+        _ = try await (t1.value, t2.value)
         XCTAssertEqual(order.value, [1, 2])
         XCTAssertFalse(gate.isBusy)
     }

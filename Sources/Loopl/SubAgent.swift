@@ -130,17 +130,33 @@ extension Agent {
 public final class ModelGate: @unchecked Sendable {
     private let lock = NSLock()
     private var busy = false
-    private var waiters: [CheckedContinuation<Void, Never>] = []
     public init() {}
 
     public var isBusy: Bool { lock.lock(); defer { lock.unlock() }; return busy }
-    public var waiting: Int { lock.lock(); defer { lock.unlock() }; return waiters.count }
+    public var waiting: Int { lock.lock(); defer { lock.unlock() }; return tickets.count }
 
-    public func acquire() async {
+    /// Throws `CancellationError` when the caller is cancelled while QUEUED (the gate is then untouched — the
+    /// caller never owned it). Once ownership has passed to the caller it returns normally and the caller must release.
+    public func acquire() async throws {
         if tryAcquire() { return }
-        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
-            if !park(c) { c.resume() }      // freed between the two checks → ours now
+        let ticket = Ticket()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, any Error>) in
+                if !park(ticket, c) { c.resume() }      // freed between the two checks → ours now
+            }
+        } onCancel: {
+            withdraw(ticket)
         }
+    }
+    final class Ticket: @unchecked Sendable {}
+    private var tickets: [(Ticket, CheckedContinuation<Void, any Error>)] = []
+    /// A queued waiter cancelled before its turn: drop it and let it throw. Already handed the gate → nothing to do.
+    private func withdraw(_ t: Ticket) {
+        lock.lock()
+        guard let i = tickets.firstIndex(where: { $0.0 === t }) else { lock.unlock(); return }
+        let (_, c) = tickets.remove(at: i)
+        lock.unlock()
+        c.resume(throwing: CancellationError())
     }
     /// Take the gate when it is free (sync).
     private func tryAcquire() -> Bool {
@@ -149,16 +165,16 @@ public final class ModelGate: @unchecked Sendable {
         busy = true; return true
     }
     /// Queue a waiter; false when the gate turned out free (the caller owns it, `busy` set).
-    private func park(_ c: CheckedContinuation<Void, Never>) -> Bool {
+    private func park(_ t: Ticket, _ c: CheckedContinuation<Void, any Error>) -> Bool {
         lock.lock(); defer { lock.unlock() }
         if !busy { busy = true; return false }
-        waiters.append(c); return true
+        tickets.append((t, c)); return true
     }
 
     public func release() {
         lock.lock()
-        if waiters.isEmpty { busy = false; lock.unlock(); return }
-        let next = waiters.removeFirst()
+        if tickets.isEmpty { busy = false; lock.unlock(); return }
+        let (_, next) = tickets.removeFirst()
         lock.unlock()
         next.resume()      // ownership passes directly: `busy` stays true
     }

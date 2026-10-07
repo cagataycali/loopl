@@ -132,6 +132,10 @@ public actor Agent {
     }
     /// `.stop` mode only: tool calls that raised an interrupt instead of producing a result.
     private var interrupted = InterruptedToolUses()
+    /// The task behind the `stream()` running right now (STOP-LOCATION 2026-10-07): `cancelRun()` cancels it from
+    /// the host without tearing down the host's own iteration, so the `.toolResult("Tool execution cancelled")`
+    /// and `.result(.cancelled)` events still arrive and the UI settles on what actually happened.
+    private nonisolated let runHandle = RunHandle()
     /// When set, every model call acquires this first (one loaded model shared with sub-agents — SubAgent.swift).
     public private(set) var modelGate: ModelGate?
 
@@ -387,6 +391,7 @@ public actor Agent {
     public nonisolated func stream(_ input: Input) -> AsyncThrowingStream<AgentEvent, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
+                defer { runHandle.clearCurrent() }
                 do {
                     let result = try await self.runLoop(input) { continuation.yield($0) }
                     continuation.yield(.result(result))
@@ -395,9 +400,18 @@ public actor Agent {
                     continuation.finish(throwing: error)
                 }
             }
+            runHandle.set(task)
             continuation.onTermination = { _ in task.cancel() }
         }
     }
+
+    /// Stop the run in flight (the user's stop button): the model stream ends at its next token, a tool call that
+    /// never returns becomes an immediate "Tool execution cancelled" result (`runTool` races the tool against
+    /// cancellation), waits on approvals/interrupts answer with their timeout response, and the loop reports
+    /// `.cancelled`. Unlike cancelling the task that ITERATES `stream()`, every event still reaches the host.
+    public nonisolated func cancelRun() { runHandle.cancel() }
+    /// True while a `stream()` is in flight.
+    public nonisolated var isRunning: Bool { runHandle.isRunning }
 
     // MARK: `_run_loop`
 
@@ -530,9 +544,10 @@ public actor Agent {
                 var cancelled = false
                 // One model, many agents: take the gate for this call only (released when the block exits, any path).
                 let gate = modelGate
-                if let gate { await gate.acquire() }
-                defer { gate?.release() }
+                var holdsGate = false
+                defer { if holdsGate { gate?.release() } }
                 do {
+                    if let gate { try await gate.acquire(); holdsGate = true }   // cancel while queued → .cancelled, gate untouched
                     for try await chunk in model.stream(messages, toolSpecs: specs, systemPrompt: system) {
                         try Task.checkCancellation()
                         for e in assembler.feed(chunk) {
@@ -548,6 +563,9 @@ public actor Agent {
                 } catch is CancellationError {
                     cancelled = true
                 }
+                // An AsyncThrowingStream ends with nil (not a throw) when the awaiting task is cancelled mid-`next()`:
+                // without this the partial text would read as a finished turn and the loop would run on.
+                if Task.isCancelled { cancelled = true }
                 var stop = assembler.finish()
                 if cancelled {
                     // `process_stream` with cancel_signal set → stop_reason "cancelled".
@@ -751,10 +769,16 @@ public actor Agent {
                     // Three task-locals around the call: `use_agent` forwards its children's events through the sink into the
                     // parent's stream; interrupts; manage_messages' ToolContext (B). Keep all three (Phase 6 A/B/C/E agreed).
                     let sink = ChildEventSink(parentToolUseId: toolUse.toolUseId, yield: yield)
-                    let out = try await Agent.$childSink.withValue(sink) {
-                        try await InterruptScope.$context.withValue(context) {
-                            try await ToolContext.$current.withValue(toolContext) {
-                                try await tool.call(toolUse.input, images: Self.visibleImages(messages))
+                    let images = Self.visibleImages(messages), input = toolUse.input
+                    // Raced against cancellation (STOP-LOCATION 2026-10-07): a tool parked on a continuation that never
+                    // resumes (a permission dialog, a location fix, a child's model call…) used to pin the whole turn —
+                    // the stop button cancelled the task and nothing happened. Now stop → "Tool execution cancelled" at once.
+                    let out = try await Agent.racingCancellation {
+                        try await Agent.$childSink.withValue(sink) {
+                            try await InterruptScope.$context.withValue(context) {
+                                try await ToolContext.$current.withValue(toolContext) {
+                                    try await tool.call(input, images: images)
+                                }
                             }
                         }
                     }
@@ -771,6 +795,11 @@ public actor Agent {
                     }
                     let answer = await awaitAnswer(raised.interrupt, timeout: approvalTimeout, onTimeout: .null, yield)
                     interruptState.interrupts[raised.interrupt.id]?.response = answer
+                } catch is CancellationError {
+                    flushHistoryEdits(yield)
+                    result = ToolResult(toolUseId: toolUse.toolUseId, name: toolUse.name, status: .error,
+                                        content: "Tool execution cancelled", durationMs: Date().timeIntervalSince(t0) * 1000)
+                    break
                 } catch {
                     flushHistoryEdits(yield)
                     thrown = error
@@ -877,5 +906,54 @@ extension Agent {
         var images = messages[userIdx].images
         for m in messages[(userIdx + 1)...] { for r in m.toolResults { images += r.images } }
         return images
+    }
+}
+
+
+// MARK: - Stop (STOP-LOCATION 2026-10-07)
+
+/// The `stream()` task of the moment, reachable from outside the actor.
+final class RunHandle: @unchecked Sendable {
+    private let lock = NSLock()
+    private var task: Task<Void, Never>?
+    func set(_ t: Task<Void, Never>) { lock.lock(); task = t; lock.unlock() }
+    func cancel() { lock.lock(); let t = task; lock.unlock(); t?.cancel() }
+    func clearCurrent() { lock.lock(); task = nil; lock.unlock() }
+    var isRunning: Bool { lock.lock(); defer { lock.unlock() }; return task != nil }
+}
+
+extension Agent {
+    /// Run `body` so that cancelling the CALLER returns at once with `CancellationError`, whether or not `body`
+    /// ever observes cancellation. `body` keeps running detached until it finishes on its own (it is also sent
+    /// `cancel()`, so a cooperative one stops quickly); its late result is dropped.
+    static func racingCancellation<T: Sendable>(_ body: @Sendable @escaping () async throws -> T) async throws -> T {
+        let once = ResumeOnce<T>()
+        let worker = Task { do { once.resume(.success(try await body())) } catch { once.resume(.failure(error)) } }
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (c: CheckedContinuation<T, any Error>) in once.park(c) }
+        } onCancel: {
+            worker.cancel()
+            once.resume(.failure(CancellationError()))
+        }
+    }
+}
+
+/// One continuation, resumed at most once from any thread.
+final class ResumeOnce<T: Sendable>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<T, any Error>?
+    private var early: Result<T, any Error>?
+    func park(_ c: CheckedContinuation<T, any Error>) {
+        lock.lock()
+        if let early { lock.unlock(); c.resume(with: early); return }
+        continuation = c; lock.unlock()
+    }
+    func resume(_ r: Result<T, any Error>) {
+        lock.lock()
+        guard early == nil else { lock.unlock(); return }
+        early = r
+        let c = continuation; continuation = nil
+        lock.unlock()
+        c?.resume(with: r)
     }
 }
