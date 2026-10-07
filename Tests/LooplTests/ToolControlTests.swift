@@ -145,5 +145,9 @@ final class ToolControlTests: XCTestCase {
         XCTAssertEqual(r.content, "flashlight: off")
         XCTAssertEqual(t.items[1].controlTaps, 1)
         XCTAssertFalse(t.applyControlResult(for: "gone", fresh))
+        // A denied / failed tap never overwrites the true state the card shows (the flashlight IS still off).
+        XCTAssertFalse(t.applyControlResult(for: "f1", .error(ToolUse(toolUseId: "tap_10", name: "flashlight", input: [:]), "Tool call denied by the user.")))
+        guard case .toolUse(_, let kept?) = t.items[1].kind else { return XCTFail("row") }
+        XCTAssertEqual(kept.content, "flashlight: off"); XCTAssertEqual(t.items[1].controlTaps, 1)
     }
 }

@@ -685,9 +685,10 @@ public final class Engine {
                     switch event {
                     case .toolStarted: break                                   // not a new row: the tapped row is the row
                     case .toolResult(let r):
+                        // An error (denied, torch busy) leaves the card on its last true state; the error line says why.
                         self.transcript.applyControlResult(for: toolUseId, r)
                         self.haptics.emit(r.isError ? .error : .toolFinish)
-                        if r.isError { self.lastError = r.content }
+                        if r.isError { self.lastError = r.content.hasPrefix("Error: ") ? String(r.content.dropFirst(7)) : r.content }
                     case .approvalRequested, .approvalResolved: _ = self.transcript.apply(event)
                     default: _ = self.transcript.apply(event)
                     }

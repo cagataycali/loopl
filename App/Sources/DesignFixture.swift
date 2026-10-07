@@ -797,6 +797,7 @@ enum DesignFixture {
             result = .error(use, "Error: \(action.tool) is not part of this fixture")
         }
         engine.transcript.applyControlResult(for: toolUseId, result)
+        if result.isError { engine.lastError = result.content }
         engine.haptics.emit(result.isError ? .error : .toolFinish)
         engine.controlBusy.remove(toolUseId)
     }

@@ -51,10 +51,12 @@ public struct Transcript: Sendable, Hashable {
     /// Phase 7 (controls): the result of a control TAP on the tool row `toolUseId` (the row's original call). The row keeps
     /// its arguments and id; its result becomes the fresh one (content, control, pictures) so the card shows the truth —
     /// "flashlight: off" with a "Turn on" switch — and `controlTaps` counts it. The row is NOT duplicated: a tap is not a
-    /// model turn. Returns false when the row is gone (nothing changes).
+    /// model turn. An ERROR result (denied approval, torch busy) does not replace the row — the card keeps the last true
+    /// state and the host shows the error elsewhere. Returns false when the row is gone or the result is an error.
     @discardableResult
     public mutating func applyControlResult(for toolUseId: String, _ r: ToolResult) -> Bool {
-        guard let idx = items.lastIndex(where: { if case .toolUse(let u, _) = $0.kind { return u.toolUseId == toolUseId }; return false }),
+        guard !r.isError,
+              let idx = items.lastIndex(where: { if case .toolUse(let u, _) = $0.kind { return u.toolUseId == toolUseId }; return false }),
               case .toolUse(let u, _) = items[idx].kind else { return false }
         var fresh = r; fresh.toolUseId = toolUseId
         items[idx].kind = .toolUse(u, result: fresh)

@@ -71,7 +71,7 @@ Some results come with a **live control** right under the tool row — no need t
 | `location` | a pin on a small map; tap to open Maps |
 | `calendar_create` · `reminders_create` | **Open in Calendar** / **Open in Reminders** |
 
-Tapping one runs **the same tool** with those arguments through the normal path — if the tool asks first, you get the usual approval card — and the row updates with the fresh result (*"flashlight: off"*, the switch now says *Turn on*) plus a quiet *updated by your tap*. It is not a new message: the row keeps its original arguments and no new row appears; History saves the latest state; the model is told *the user tapped this in the app* so its next answer is right. Controls are drawn disabled while an answer is being generated or when no model is loaded — the state they show is still true. VoiceOver reads the state (*"Turn off, currently on"*).
+Tapping one runs **the same tool** with those arguments through the normal path — if the tool asks first, you get the usual approval card — and the row updates with the fresh result (*"flashlight: off"*, the switch now says *Turn on*) plus a quiet *updated by your tap*. It is not a new message: the row keeps its original arguments and no new row appears; History saves the latest state; the model is told *the user tapped this in the app* so its next answer is right. If the tap is denied or fails, the card keeps its last true state and the error line under the chat says why. Controls are drawn disabled while an answer is being generated or when no model is loaded — the state they show is still true. VoiceOver reads the state (*"Turn off, currently on"*).
 
 ## When a call fails
 
