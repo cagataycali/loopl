@@ -69,7 +69,9 @@ public struct SystemPromptTool: Tool {
     /// Written for small models (measured on loopl-2b, SystemPromptMeasurement): the trigger phrases, the exact
     /// calls, and the two negatives ("ordinary question", "one-time request") in one breath.
     public var description: String {
-        "Read or change your own system prompt — the standing instructions you follow in every conversation. When the user asks you to add, change or drop a rule that should hold from now on (\"always answer in Turkish\", \"call me Ali\", \"be brief from now on\"), call system_prompt: {\"action\": \"append\", \"text\": \"<the new rule>\"} adds it; {\"action\": \"set\", \"text\": \"<the whole new prompt>\"} replaces everything; {\"action\": \"reset\"} restores the default. {\"action\": \"get\"} shows your current instructions when the user asks what they are. The user approves every change before it applies. Do not call it for an ordinary question or a one-time request."
+        // v2 (measured on loopl-2b, SystemPromptMeasurement): v1 scored append 6/6 · reset 3/3 · negatives 6/6 but `get` 0/3 — the
+        // model RECITED its prompt from memory. v2 names that case first and says why the call matters (the exact, current text).
+        "Read or change your own system prompt — the standing instructions you follow in every conversation. When the user asks what your instructions or your system prompt are, call {\"action\": \"get\"} and quote its result — never recite from memory, only the tool has the exact current text. When the user asks you to add, change or drop a rule that should hold from now on (\"always answer in Turkish\", \"call me Ali\", \"be brief from now on\"): {\"action\": \"append\", \"text\": \"<the new rule>\"} adds it; {\"action\": \"set\", \"text\": \"<the whole new prompt>\"} replaces everything; {\"action\": \"reset\"} restores the default. The user approves every change before it applies. Do not call it for an ordinary question or a one-time request."
     }
     public var parameters: JSONValue {
         ToolSchema.object([
