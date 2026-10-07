@@ -108,6 +108,9 @@ library's own sampler (keeps ~576×320 frames and ignores the plan's edge). `vid
 | 4B Thinking | 10 s | frames | 10 | 560 | 22 | 1.9 s | 3.3 GB | **"first frame the square is up, next it's moved down → moves downward"** — motion read |
 | 4B Thinking | 10 s | url | 10 | 900 | 17 | 4.2 s | 3.3 GB | "moves vertically downward" — motion read |
 | 4B Thinking | 60 s | frames | 16 | 896 | 17 | 3.5 s | 3.4 GB | "blue squares move downward from top left, yellow upward from bottom right" |
+| 2B Instruct | loopl screen recording, 12 s portrait | frames | 12 | 504 | 17 | 2.0 s | 2.0 GB | "a calculator app with a conversation about time and a calculation" — gist only |
+| 4B Instruct | loopl screen recording, 12 s portrait | frames | 12 | 504 | 30 | 1.9 s | 3.3 GB | **reads the screen**: "asks for the time in Istanbul and 23 × 47 … 06:14 … 1081" |
+| 4B Thinking | loopl screen recording, 12 s portrait | frames | 12 | 504 | 27 | 1.8 s | 3.3 GB | same, plus "the screen transitions to the reply after processing" |
 
 Read it honestly:
 
@@ -118,8 +121,9 @@ Read it honestly:
 - **Motion is a 4B skill**: the 2B names colours and positions reliably but reads evenly spaced frames as a still; 4B Instruct reads
   motion at 16 frames, 4B Thinking at 10 — it reasons frame-to-frame ("first frame up, next frame down"). Expect the same gap on
   real footage; the frames are the same for every model, so the plan does not change the picture, the model does.
-- The clips are **synthetic** (coloured squares on a dark field). A loopl screen recording and a real camera clip are in the lane's
-  evidence; the device proof (16 Pro, camera clip with speech) is requested from the owner.
+- On a **real clip** (a 12-s screen recording of loopl answering two questions, portrait) the 4B reads the on-screen text through
+  12 frames at 448 px — the time and the product, correctly — where the 2B gives the gist. The device proof (16 Pro, a camera clip
+  with speech) is requested from the owner.
 
 ## Where it is not
 
