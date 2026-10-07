@@ -32,7 +32,7 @@ final class TrainUITests: XCTestCase {
         // one-glance form (TRAIN-SIMPLIFY): Base model · Continue a model · Epochs: Auto (recommended) · name; everything else under "Fine-tune manually"
         XCTAssertTrue(find(app, "train-continue", scroll: 1).exists, "'Continue a model' picker missing (Mine bases)")
         let epochs = find(app, "train-epochs", scroll: 1)
-        XCTAssertTrue(epochs.exists && epochs.label.contains("Auto (recommended)"), "Epochs row: \(epochs.label)")
+        XCTAssertTrue(epochs.exists && epochs.label.contains("Auto (recommended)"), "Passes row: \(epochs.label)")
         XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "train-stitch").firstMatch.exists, "the Stitch picker is gone — the script decides")
         XCTAssertFalse(app.sliders.firstMatch.exists, "no 'Stop after' slider — the cost guard is automatic")
         XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "train-epochs-picker").firstMatch.exists, "the 1–4 picker is folded until 'Fine-tune manually' opens")

@@ -275,13 +275,15 @@ public struct TrainingPlan: Hashable, Sendable, Codable {
         }
         let passes: String
         switch epochs {
-        case .auto: passes = "in up to \(plannedEpochs) pass\(plannedEpochs == 1 ? "" : "es"), keeping the one that scores best on held-out chats"
+        case .auto: passes = "in up to \(plannedEpochs) pass\(plannedEpochs == 1 ? "" : "es"), keeping the one that scores best"
         case .fixed(let n): passes = "in \(n) pass\(n == 1 ? "" : "es")"
         }
-        let how = method == .full ? "Every weight is updated" : "A small LoRA adapter is trained and merged in"
+        // Plain words (IMPROVE-3 audit): "LoRA adapter … merged" said nothing to a first-time user; the method still shows
+        // under "Fine-tune manually". Full fine-tuning is the one choice worth a sentence of its own.
+        let how = method == .full ? "Every weight is updated" : "It runs"
         let article = flavor.label.first.map { "AEFHILMNORSX".contains($0) ? "an" : "a" } ?? "a"   // "an A10G", "an H200", "a T4"
         let formats = skipMLX ? "." : (skipGGUF ? ", ready for your iPhone." : ", ready for your iPhone and as GGUF.")
-        return "\(start) and \(what) \(passes). \(how) on \(article) \(flavor.label) at Hugging Face; the result is saved privately as \(outputRepo(user: user))\(formats)"
+        return "\(start) and \(what) \(passes). \(how) on \(article) \(flavor.label) at Hugging Face, in your account; the result is saved privately as \(outputRepo(user: user))\(formats)"
     }
 }
 
@@ -390,9 +392,10 @@ public struct TrainingStage: Hashable, Sendable, Identifiable {
     public var index: Int { Self.order.firstIndex(of: name) ?? Self.order.count }
     public var label: String {
         switch name {
-        case "discover": "Reading conversations"; case "render": "Rendering turns"; case "train": "Training"; case "merge": "Merging weights"
-        case "eval": "Scoring"; case "push": "Uploading"; case "mlx": "Converting for iPhone (MLX 4-bit)"; case "gguf": "Converting GGUF"
-        case "done": "Done"; case "error": "Failed"; case "download": "Downloading merged model"
+        // Stage names a person can follow (IMPROVE-3 audit): no "rendering", "merging weights", "MLX 4-bit", "GGUF".
+        case "discover": "Reading conversations"; case "render": "Preparing"; case "train": "Training"; case "merge": "Finishing the model"
+        case "eval": "Checking"; case "push": "Uploading"; case "mlx": "Making the iPhone version"; case "gguf": "Making the Mac and PC version"
+        case "done": "Done"; case "error": "Failed"; case "download": "Downloading the model"
         default: name.capitalized
         }
     }
