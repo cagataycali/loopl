@@ -65,7 +65,12 @@ public enum TokenizerFiles {
 
     /// The copy shown when a load fails on the tokenizer: what is wrong and the one action that fixes it.
     public static func repairMessage(for modelName: String) -> String {
-        "\(modelName)'s tokenizer files are out of date — tap Repair to refresh them from Hugging Face (a few KB; the weights stay)."
+        // IMPROVE-9: said "tokenizer files are out of date … (a few KB; the weights stay)". This is the message
+        // shown to someone whose model will not start, with a Repair button under it — the one moment they most
+        // need to understand what is being offered. "Tokenizer" and "weights" are the vocabulary of the people
+        // who package models, not of the person holding the phone, and "a few KB" is the reassurance that stops
+        // them fearing another multi-gigabyte download, so it has to be readable.
+        "\(modelName) can't start: some of its small setup files are out of date. Tap Repair to fetch fresh ones from Hugging Face — a few kilobytes, and the model itself stays on your device."
     }
 
     /// Git's blob hash — `sha1("blob <size>\0" + bytes)` — which is the `oid` the Hub tree API reports for every

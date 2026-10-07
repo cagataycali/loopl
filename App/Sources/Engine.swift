@@ -504,7 +504,11 @@ public final class Engine {
                     let changed = try await store.repairFiles(spec)
                     if !changed.isEmpty { await load(spec, repaired: true); return }
                     lastError = nil
-                    readiness = .failed(spec, "\(spec.displayName) can't load: \(error.localizedDescription). Its files match Hugging Face, so the repo itself needs fixing.")
+                    // IMPROVE-9: said "Its files match Hugging Face, so the repo itself needs fixing." — which asks
+                    // the reader to go and fix a repository they do not own. This branch is the dead end: loopl has
+                    // already refetched the small files and they came back identical, so nothing on this device can
+                    // change the outcome. Say that it is not their fault, and give them the move that is theirs.
+                    readiness = .failed(spec, "\(spec.displayName) can't start, and nothing here will fix it: loopl fetched fresh files from Hugging Face and they came back identical, so the problem is in how the model was published rather than on your device. Try another model — you can delete this one under Models to get the space back. (\(error.localizedDescription))")
                 } catch let repairError {
                     readiness = .failed(spec, TokenizerFiles.repairMessage(for: spec.displayName) + " Repair failed: \(repairError.localizedDescription)")
                 }
