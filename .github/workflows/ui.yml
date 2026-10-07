@@ -46,15 +46,15 @@ jobs:
             extra_skip: ""
           - device: iPhone SE (3rd generation)
             type: com.apple.CoreSimulator.SimDeviceType.iPhone-SE-3rd-generation
-            # Two tests that fail ONLY here and are not yet fixed, skipped so this leg can start gating today
-            # instead of being born red. Both are tests, not product bugs, and both have a measurement on file
-            # (improve-7/AUDIT.md #7-#8): SettingsTools cannot reach `tool.location.default` in a list of 24 tools,
-            # and TrainUITests cannot find `train-manual` — on an SE the manual knobs come up ALREADY OPEN with a
-            # dimming overlay present, which is a different bug from scrolling and needs its own look. Delete these
-            # two lines the moment they are fixed; a skip that outlives its reason is just a hole.
+            # ONE test still fails only here, skipped so this leg can start gating today rather than being born
+            # red. It is a test, not a product bug, and it has a measurement on file (improve-7/AUDIT.md #8):
+            # `testOneCollapsibleToolsRowWithGroupsTagsAndNotes` walks current_time → http → clipboard_write →
+            # music with a `swipeUp` loop per tool, which scrolls monotonically DOWN past `location` (it sits above
+            # `music` in the list) and then asserts `location` exists — and a row scrolled away is gone from a lazy
+            # List's tree. Fixing it means giving that test one scroll strategy instead of five ad-hoc loops, which
+            # is a job of its own. Delete this line the moment it is fixed: a skip that outlives its reason is a hole.
             extra_skip: >-
               -skip-testing:LooplUITests/SettingsToolsUITests/testOneCollapsibleToolsRowWithGroupsTagsAndNotes
-              -skip-testing:LooplUITests/TrainUITests/testFormConfirmsThroughApprovalCardAndEstimateIsVisible
     steps:
       - uses: actions/checkout@v4
       - name: Select Xcode 26

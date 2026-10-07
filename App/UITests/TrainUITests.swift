@@ -23,13 +23,28 @@ final class TrainUITests: XCTestCase {
     private func find(_ app: XCUIApplication, _ id: String, scroll: Int = 4, timeout: TimeInterval = 10) -> XCUIElement {
         let q = app.descendants(matching: .any).matching(identifier: id).firstMatch
         if q.waitForExistence(timeout: timeout) { return q }
+        let limit = scroll == 0 ? 0 : max(scroll, 8)
         var lastSeen = ""
-        for _ in 0..<(scroll == 0 ? 0 : max(scroll, 8)) {
+        for _ in 0..<limit {
             app.swipeUp()
             if q.waitForExistence(timeout: 2) { return q }
             let bottom = app.staticTexts.allElementsBoundByIndex.last?.label ?? ""
             if bottom == lastSeen { break }
             lastSeen = bottom
+        }
+        // Then UPWARD, because scrolling one way only made some elements unreachable by construction. Measured on
+        // an iPhone SE: expanding the "More options" DisclosureGroup pushes its own label off the TOP of a short
+        // screen, so the second tap on `train-manual` could never find it — at the failure `train-epochs-note`,
+        // `train-flavor` and `train-method` were all present while `train-base` and `train-name`, which sit ABOVE
+        // the label, were not. The viewport had moved below the thing we were looking for, and `find` only ever
+        // swiped further down. On a 16 Pro the label stays on screen, which is why this passed everywhere anyone
+        // looked.
+        for _ in 0..<limit {
+            app.swipeDown()
+            if q.waitForExistence(timeout: 2) { return q }
+            let top = app.staticTexts.allElementsBoundByIndex.first?.label ?? ""
+            if top == lastSeen { break }
+            lastSeen = top
         }
         return q
     }
