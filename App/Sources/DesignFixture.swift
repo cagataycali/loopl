@@ -889,6 +889,14 @@ enum DesignFixture {
         Task { @MainActor in
             let total = max(spec.sizeBytes, 1)
             if let f = onboardingFrozenAt { engine.readiness = .downloading(spec, done: Int64(Double(total) * f), total: total); return }
+            // `--design-onboarding-fail`: the download lands, the load does not — the screen a user sees when a model
+            // cannot start (IMPROVE-4 audit #3).
+            if flag("--design-onboarding-fail") {
+                engine.readiness = .downloading(spec, done: total, total: total)
+                try? await Task.sleep(for: .milliseconds(600))
+                engine.readiness = .failed(spec, "\(spec.name) needs 4.1 GB of free memory; this iPhone has 3.2 GB right now.")
+                return
+            }
             for step in 1...12 {
                 engine.readiness = .downloading(spec, done: total * Int64(step) / 12, total: total)
                 try? await Task.sleep(for: .milliseconds(250))

@@ -565,9 +565,11 @@ public struct ToolRow: View {
             PulsingMark().frame(width: badge - 2, height: badge - 2).transition(.opacity)
         }
     }
+    /// What VoiceOver says for the row: the plain label the eye sees ("Look at picture, running"), never the id.
     private var a11y: String {
-        if let r = result { return "tool \(call.name) \(r.isError ? "failed" : "finished")" }
-        return "tool \(call.name) running"
+        let label = ToolLabel.display(call.name)
+        if let r = result { return "\(label), \(r.isError ? "failed" : "finished")" }
+        return "\(label), running"
     }
     private func duration(_ ms: Double) -> String { ms < 1 ? "<1 ms" : ms < 1000 ? "\(Int(ms.rounded())) ms" : String(format: "%.1f s", ms / 1000) }
 }

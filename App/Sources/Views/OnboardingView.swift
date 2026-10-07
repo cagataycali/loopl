@@ -197,7 +197,14 @@ struct OnboardingView: View {
     @State private var morphFromCard = false
     private var hero: some View {
         Group {
-            if started { LooplProgressMark(progress: fraction) }
+            if started, case .failed = engine.readiness {
+                // A frozen ring reads as "still working" (IMPROVE-4 audit #3) — say stopped.
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 56, weight: .medium)).foregroundStyle(.orange)
+                    .frame(width: 128, height: 128)
+                    .transition(.opacity)
+            }
+            else if started { LooplProgressMark(progress: fraction) }
             else if stage == .intro { LooplMarkDrawing(progress: introProgress) }
             else { LooplMark() }
         }
@@ -311,15 +318,15 @@ struct OnboardingView: View {
     private var pickAndDownload: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 22) {
+                VStack(spacing: started ? 22 : 16) {
                     header
                     if started { progress.transition(.opacity) }
                     else if needsSignIn { signInStep.transition(.opacity) }
                     else { picker.transition(reduceMotion ? .opacity : .scale(scale: 0.92, anchor: .top).combined(with: .opacity)) }
                 }
                 .padding(.horizontal, LooplDesign.gutter)
-                .padding(.top, 8)
-                .padding(.bottom, 24)
+                .padding(.top, started ? 8 : 0)
+                .padding(.bottom, 16)
                 .frame(maxWidth: 560)
                 .frame(maxWidth: .infinity)
                 // While downloading there is little to show — centre it instead of leaving the lower half blank.
@@ -343,9 +350,18 @@ struct OnboardingView: View {
         }
     }
 
+    /// An SE-class screen (667 pt) cannot show three cards, the network line and the Apple Intelligence card under
+    /// the hero mark; the mark gives way there so the fourth choice at least peeks above the Download bar.
+    private var shortScreen: Bool {
+        #if os(iOS)
+        return UIScreen.main.bounds.height < 700
+        #else
+        return false
+        #endif
+    }
     private var header: some View {
         VStack(spacing: 10) {
-            markSlot(started ? 128 : 56, source: (stage == .pick || stage == .download) && !morphFromCard)
+            markSlot(started ? 128 : (shortScreen && !needsSignIn ? 0 : 56), source: (stage == .pick || stage == .download) && !morphFromCard)
                 .accessibilityIdentifier("onboarding-mark")
                 .accessibilityElement()
                 .accessibilityLabel(started ? "Download progress" : "loopl")
@@ -353,9 +369,13 @@ struct OnboardingView: View {
             Text(started ? title : needsSignIn ? "One more step" : "Pick your first model")
                 .font(.system(.title, design: .rounded, weight: .semibold)).multilineTextAlignment(.center)
                 .contentTransition(.opacity)
-            Label("Runs on this \(LooplDesign.deviceName). Nothing you type leaves the device.", systemImage: "lock.fill")
-                .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
-                .labelStyle(.titleAndIcon)
+            // The story page just said it; on the pick page the line costs the room the Apple Intelligence card needs
+            // to be on screen without scrolling (IMPROVE-4 audit #1). It is back while downloading.
+            if started || needsSignIn {
+                Label("Runs on this \(LooplDesign.deviceName). Nothing you type leaves the device.", systemImage: "lock.fill")
+                    .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    .labelStyle(.titleAndIcon)
+            }
         }
         .frame(maxWidth: .infinity)
     }
@@ -378,9 +398,9 @@ struct OnboardingView: View {
                     card
                 }
             }
-            networkLine.padding(.top, 4)
+            networkLine
             if let fm = appleFM {
-                appleCard(fm).padding(.top, 6)
+                appleCard(fm)
             }
             Text("You can add, move or delete models any time in Models.")
                 .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
@@ -400,11 +420,9 @@ struct OnboardingView: View {
                 VStack(alignment: .leading, spacing: 5) {
                     Text(ready ? "Use Apple Intelligence" : "Apple Intelligence").font(.headline)
                     if ready { WrapPills { Pill("no download", tint: .green); Pill("private", tint: .secondary); Pill("offline", tint: .secondary) } }
-                    Text(ready ? "Already on this \(LooplDesign.deviceName) — nothing to download. Private, instant, works offline."
-                               : "Not available here: \(why).")
+                    Text(ready ? "Already on this \(LooplDesign.deviceName) — nothing to download. Text only, no photos; switch any time in Models."
+                               : "Not available here: \(why). Pick a loopl model above instead.")
                         .font(.subheadline).foregroundStyle(ready ? .primary : .secondary).fixedSize(horizontal: false, vertical: true)
-                    Text(ready ? "Text only, 4k context — no photos. You can switch any time in Models." : "Pick a loopl model above instead.")
-                        .font(.footnote).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
                 if ready { Image(systemName: "chevron.forward").font(.subheadline.weight(.semibold)).foregroundStyle(.tertiary).padding(.top, 3) }
@@ -479,10 +497,14 @@ struct OnboardingView: View {
             Text(detail).font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
                 .contentTransition(.numericText())
                 .accessibilityIdentifier("onboarding-progress")
-            if case .failed(_, let msg) = engine.readiness {
-                Text(msg).font(.footnote).foregroundStyle(.red).multilineTextAlignment(.center).padding(.top, 4)
+            if case .failed(let spec, let msg) = engine.readiness {
+                Text("\((spec ?? selection)?.name ?? "The model") couldn't start on this \(LooplDesign.deviceName).")
+                    .font(.subheadline.weight(.medium)).multilineTextAlignment(.center).padding(.top, 4)
+                    .accessibilityIdentifier("onboarding-failed")
+                Text(msg).font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            if !hfSignedIn, !hfDismissed, !isReady {
+            if !hfSignedIn, !hfDismissed, !isReady, !isFailed {
                 hfLine.padding(.top, 28).transition(.opacity)
             }
         }
@@ -526,12 +548,24 @@ struct OnboardingView: View {
                 .disabled(selection == nil || (!net.online && !selectionDownloaded))
                 .accessibilityIdentifier("onboarding-continue")
             } else if case .failed = engine.readiness {
-                Button("Choose again") { withAnimation(stageMotion) { started = false } }
-                    .buttonStyle(.bordered).controlSize(.large)
+                Button { start(engine.readiness.spec ?? selection, force: true) } label: {
+                    Text("Try again").font(.headline).frame(maxWidth: .infinity).padding(.vertical, 6)
+                }
+                .buttonStyle(.borderedProminent).controlSize(.large)
+                .accessibilityIdentifier("onboarding-retry")
+                Button("Choose another model") { withAnimation(stageMotion) { started = false } }
+                    .buttonStyle(.borderless).controlSize(.regular)
+                    .accessibilityIdentifier("onboarding-choose-again")
             } else if !isReady {
                 Button("Keep downloading in the background") { onFinish() }
                     .buttonStyle(.bordered).controlSize(.large)
                     .accessibilityIdentifier("onboarding-background")
+                // A wrong tap is not a 1.75 GB commitment (audit #10): the download pauses and Models keeps the part.
+                if case .downloading(let spec, _, _) = engine.readiness {
+                    Button("Choose a different model") { store.pause(spec); withAnimation(stageMotion) { started = false } }
+                        .buttonStyle(.borderless).controlSize(.regular)
+                        .accessibilityIdentifier("onboarding-choose-again")
+                }
             }
         }
         .padding(.horizontal, LooplDesign.gutter).padding(.vertical, 10)
@@ -549,9 +583,12 @@ struct OnboardingView: View {
     }
 
     private var isReady: Bool { if case .ready = engine.readiness { return started }; return false }
+    private var isFailed: Bool { if case .failed = engine.readiness { return true }; return false }
+    /// Every byte is here but the store has not said `.downloaded` yet (verifying, moving): the title must not say "Downloading".
+    private var bytesComplete: Bool { if case .downloading(_, let d, let t) = engine.readiness { return t > 0 && d >= t }; return false }
     private var fraction: Double? {
         switch engine.readiness {
-        case .downloading(_, let done, let total): total > 0 ? Double(done) / Double(total) * 0.92 : nil
+        case .downloading(_, let done, let total): bytesComplete ? nil : (total > 0 ? Double(done) / Double(total) * 0.92 : nil)
         case .loading(_, let p): 0.92 + 0.08 * p
         case .ready: 1
         default: nil
@@ -559,7 +596,7 @@ struct OnboardingView: View {
     }
     private var title: String {
         switch engine.readiness {
-        case .downloading: "Downloading"
+        case .downloading: bytesComplete ? "Getting ready" : "Downloading"
         case .loading, .repairing: "Getting ready"
         case .ready: "Ready"
         case .failed: "That didn't work"
@@ -568,7 +605,7 @@ struct OnboardingView: View {
     }
     private var detail: String {
         switch engine.readiness {
-        case .downloading(_, let done, let total): "\(ByteSize.label(done)) of \(ByteSize.label(total))"
+        case .downloading(_, let done, let total): bytesComplete ? "Checking the files" : "\(ByteSize.label(done)) of \(ByteSize.label(total))"
         case .loading(_, let p): "Loading into memory · \(Int(p * 100)) %"
         case .repairing: "Fixing model files"
         case .ready: "Say hi."
