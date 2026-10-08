@@ -36,7 +36,14 @@ final class ContactsPhotosToolsTests: XCTestCase {
         XCTAssertEqual(three.images.count, 3, "capped at the fixture's 3 (max 4)")
         XCTAssertEqual(photos.requests.map(\.0), [1, PhotosRecentTool.maxCount])
         let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"
-        let today = try await PhotosRecentTool().callOutput(["date": .string(f.string(from: Date())), "count": .number(4)])
+        // Ask for the day the FIXTURE used, not for "today". `FixturePhotosSource` takes its photos
+        // 1-3 HOURS ago, so between 00:00 and 03:00 in the runner's zone those are YESTERDAY and
+        // filtering by "today" correctly returns nothing — the old assertion was a wall-clock
+        // coincidence, not a behaviour. It went red on CI (UTC) at 00:08Z and 00:18Z on #206 and #208
+        // while passing locally at 20:18 UTC-4, which is what a date-dependent test looks like: a
+        // product that works and a suite that disagrees for three hours a day.
+        let fixtureDay = photos.items.first?.taken ?? Date()
+        let today = try await PhotosRecentTool().callOutput(["date": .string(f.string(from: fixtureDay)), "count": .number(4)])
         XCTAssertFalse(today.images.isEmpty); XCTAssertTrue(today.text.contains(" from "), today.text)
         let none = try await PhotosRecentTool().callOutput(["date": .string("2001-01-01")])
         XCTAssertTrue(none.images.isEmpty); XCTAssertTrue(none.text.hasPrefix("photos: none from"), none.text)
