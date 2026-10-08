@@ -46,7 +46,14 @@ struct HubBrowseView: View {
                 .listRowInsets(EdgeInsets(top: 4, leading: LooplDesign.gutter, bottom: 4, trailing: LooplDesign.gutter))
                 .accessibilityIdentifier("hub-kind")
             } footer: {
-                Text(kind == .mlx ? "mlx-community conversions — fastest on this iPhone (Metal)." : "Any GGUF repo, via llama.cpp. Pick the quant in the details.")
+                // IMPROVE-9: said "mlx-community conversions — fastest on this iPhone (Metal)." /  "Any GGUF repo,
+                // via llama.cpp. Pick the quant in the details." The format NAMES stay — they are the picker's own
+                // labels and someone choosing between them needs them. What was missing is what the choice MEANS:
+                // "conversions", "Metal", "repo" and "the quant" are four words that explain nothing to the person
+                // deciding, and the GGUF sentence sent them to a screen without saying what they would choose there.
+                Text(kind == .mlx
+                     ? "Models converted by the mlx-community team — the fastest option on this iPhone."
+                     : "Any GGUF model, run by llama.cpp. Open one to choose a size: smaller is faster, larger answers better.")
             }
 
             if let repo = typedRepoId {
@@ -88,7 +95,14 @@ struct HubBrowseView: View {
                 } header: {
                     Text(query.isEmpty ? "Most downloaded · \(kind.label)" : "\(hits.count) results · \(kind.label)")
                 } footer: {
-                    Text("Sorted by downloads. Chat and instruct checkpoints only; gated repos are hidden. Sizes for MLX are estimated until you open the details.")
+                    // IMPROVE-9: said "Chat and instruct checkpoints only; gated repos are hidden. Sizes for MLX
+                    // are estimated until you open the details." Two problems. "Checkpoint", "instruct", "gated"
+                    // and "repo" are the packager's words. And the first clause was simply NOT TRUE: the filter is
+                    // `Hit.isTextGeneration`, which drops speech, transcription, embedding and rerank models (and
+                    // allows vision ones on MLX) — a plain base model passes it fine. This footer is the only place
+                    // that explains why a model someone expects is missing, so being unreadable AND wrong here
+                    // makes the search look broken.
+                    Text("Most downloaded first. Models for speech, transcription and search are left out, and so are models that need the owner's permission on Hugging Face. Sizes here are an estimate until you open a model.")
                 }
             }
         }
@@ -328,7 +342,13 @@ struct HubRepoSheet: View {
                                     withAnimation(LooplDesign.Motion.faded(LooplDesign.Motion.spring, reduceMotion)) { showAllFiles.toggle() }
                                 }.font(.footnote)
                             }
-                        } header: { Text("Files") } footer: { Text("Weights, tokenizer and configs are downloaded; README and git files are not.") }
+                        } header: { Text("Files") } footer: {
+                            // IMPROVE-9: said "Weights, tokenizer and configs are downloaded; README and git
+                            // files are not." Same shape as #205's fixes — it names the parts of a model
+                            // package rather than telling the reader the thing they care about, which is that
+                            // the download skips what it does not need.
+                            Text("Only the files needed to run the model are downloaded — not its readme or page history.")
+                        }
                     }
                     Section {
                         Link(destination: URL(string: "https://huggingface.co/\(repo.id)")!) { Label("Open on Hugging Face", systemImage: "safari") }

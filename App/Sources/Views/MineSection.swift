@@ -57,7 +57,10 @@ struct MineSection: View {
                     Button("Try again") { Task { await mine.load(author: author, force: true) } }.font(.footnote.weight(.semibold))
                 } else if mine.hits.isEmpty {
                     Label {
-                        Text("No MLX or GGUF repos under @\(author) yet").font(.footnote).foregroundStyle(.secondary)
+                        // IMPROVE-9: said "No MLX or GGUF repos under @author yet". The reader is looking at
+                        // an empty list and needs to know WHY their other models are not here — that loopl only
+                        // lists the ones it can actually run — not the names of two runtimes.
+                        Text("No models loopl can run under @\(author) yet").font(.footnote).foregroundStyle(.secondary)
                     } icon: { Image(systemName: "tray").foregroundStyle(.secondary) }
                     .accessibilityIdentifier("mine-empty")
                 } else {

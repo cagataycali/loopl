@@ -100,7 +100,14 @@ final class HuggingFaceUITests: XCTestCase {
         if signedIn {
             // whoami + /api/models?author= on the network: give the rows time, then expect at least one repo or the empty row.
             let anyHit = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'mine-hit-'")).firstMatch
-            let empty = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'No MLX or GGUF repos'")).firstMatch
+            // IMPROVE-9: this matched the empty state BY LABEL ("No MLX or GGUF repos…"), which #207 rewords.
+            // Precisely what that would have cost, because overclaiming it is easy: this suite is NOT skipped
+            // in ui.yml, but the assertion sits inside `if signedIn`, so with no Hugging Face token in CI it is
+            // never evaluated. It would have become a LATENT failure — invisible until the first signed-in run,
+            // which is the same shape as the ⌘Y probe #204 found. The view has carried
+            // `.accessibilityIdentifier("mine-empty")` all along.
+            // FIND A ROW BY IDENTIFIER, NEVER BY LABEL (IMPROVE-6 #180/#183).
+            let empty = app.descendants(matching: .any)["mine-empty"].firstMatch
             XCTAssertTrue(anyHit.waitForExistence(timeout: 30) || empty.exists, "neither a repo row nor the empty state")
             if anyHit.exists { XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "private")).firstMatch.exists, "the owner's account has private repos — badge missing") }
         }

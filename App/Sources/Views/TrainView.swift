@@ -395,10 +395,18 @@ struct TrainView: View {
             } else if let e = out.mlxError {
                 Label("iPhone conversion failed: \(e.prefix(160))", systemImage: LooplDesign.iconWarning).font(.footnote).foregroundStyle(.orange)
             }
-            if let e = out.ggufError { Text("GGUF: \(e.prefix(120))").font(.caption).foregroundStyle(.secondary) }
+            // IMPROVE-9: read "GGUF: <raw error>". The line above it already says "iPhone conversion
+            // failed: …", and this screen's own estimate calls the two outputs "the iPhone version" and
+            // "the Mac and PC version" — so name it the same way instead of by its file format.
+            if let e = out.ggufError {
+                Text("Mac and PC version failed: \(e.prefix(120))").font(.caption).foregroundStyle(.secondary)
+            }
             if let e = addError { Text(e).font(.footnote).foregroundStyle(.orange) }
         } header: { Text("Result") } footer: {
-            Text("Private repos in your account: \(out.merged ?? "") (weights), \(out.mlx ?? "–") (iPhone), \(out.gguf ?? "–") (GGUF). They also appear under Models › Mine.")
+            // IMPROVE-9: said "Private repos in your account: X (weights), Y (iPhone), Z (GGUF)" — three
+            // of the packager's words in the one sentence that tells someone where their own trained model
+            // went. The names are what they are; the labels now say what each file is for.
+            Text("Saved privately to your Hugging Face account: \(out.merged ?? "") (the trained model), \(out.mlx ?? "–") (the iPhone version), \(out.gguf ?? "–") (the Mac and PC version). They also appear under Models › Mine.")
         }
     }
 

@@ -504,15 +504,31 @@ public final class Engine {
                     let changed = try await store.repairFiles(spec)
                     if !changed.isEmpty { await load(spec, repaired: true); return }
                     lastError = nil
-                    readiness = .failed(spec, "\(spec.displayName) can't load: \(error.localizedDescription). Its files match Hugging Face, so the repo itself needs fixing.")
+                    // IMPROVE-9: said "Its files match Hugging Face, so the repo itself needs fixing." — which asks
+                    // the reader to go and fix a repository they do not own. This branch is the dead end: loopl has
+                    // already refetched the small files and they came back identical, so nothing on this device can
+                    // change the outcome. Say that it is not their fault, and give them the move that is theirs.
+                    readiness = .failed(spec, TokenizerFiles.cannotBeFixedMessage(for: spec.displayName)
+                                        + " (\(error.localizedDescription))")
                 } catch let repairError {
-                    readiness = .failed(spec, TokenizerFiles.repairMessage(for: spec.displayName) + " Repair failed: \(repairError.localizedDescription)")
+                    // The fetch itself failed (network, Hub, disk) — that IS worth retrying, and "Try again" is a
+                    // real button. The old copy said "tap Repair ... Repair failed: ...", naming a control that
+                    // does not exist and contradicting itself in the same breath.
+                    readiness = .failed(spec, TokenizerFiles.fetchFailedMessage(for: spec.displayName)
+                                        + " (\(repairError.localizedDescription))")
                 }
                 haptics.emit(.error)
                 return
             }
             if TokenizerFiles.isTokenizerError(error), spec.isDownloadable, spec.runtime == .mlx {
-                readiness = .failed(spec, TokenizerFiles.repairMessage(for: spec.displayName) + " (\(error.localizedDescription))")
+                // We are here because the automatic repair above did NOT run, and that happens for two quite
+                // different reasons which the old single message got wrong both ways: either we are offline (loopl
+                // can fix this, just not now) or `repaired` is already true (the files were refreshed and the model
+                // still will not load, so nothing here will fix it). Say which.
+                let offline = settings.offline || NetworkPolicy.isOffline
+                readiness = .failed(spec, (offline ? TokenizerFiles.needsInternetMessage(for: spec.displayName)
+                                                   : TokenizerFiles.cannotBeFixedMessage(for: spec.displayName))
+                                    + " (\(error.localizedDescription))")
                 lastError = nil; haptics.emit(.error); return
             }
             // A drive pulled mid-load reads as a missing file: say which drive, not "No such file".
