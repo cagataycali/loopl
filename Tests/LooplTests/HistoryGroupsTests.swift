@@ -31,8 +31,15 @@ final class HistoryGroupsTests: XCTestCase {
 
     func testGroupsKeepOrderAndSurviveEmptyInput() {
         XCTAssertTrue(HistoryGroups.group([]).isEmpty)
-        let now = Date()
-        let g = HistoryGroups.group([thread("x", ago: 10, now: now), thread("y", ago: 20, now: now)], now: now)
+        // Pinned rather than `Date()`. Two threads 10 and 20 seconds old are "Today" at every hour
+        // except the first twenty seconds of a local day, where they belong to yesterday and this
+        // asserts the wrong count — the same shape as the photos fixture that could not go green
+        // between 00:00Z and 00:59Z (#209), just 20 seconds wide instead of an hour. I am not
+        // claiming it has ever fired; the test above this one already pins its clock, so the fix
+        // is to be consistent rather than to wait for the 0.02%.
+        var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "Europe/Istanbul")!
+        let now = cal.date(from: DateComponents(year: 2026, month: 10, day: 20, hour: 15))!
+        let g = HistoryGroups.group([thread("x", ago: 10, now: now), thread("y", ago: 20, now: now)], now: now, calendar: cal)
         XCTAssertEqual(g.count, 1); XCTAssertEqual(g[0].label, "Today"); XCTAssertEqual(g[0].conversations.map(\.title), ["x", "y"])
     }
 
