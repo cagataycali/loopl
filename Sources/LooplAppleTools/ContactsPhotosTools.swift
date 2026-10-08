@@ -141,12 +141,19 @@ public protocol PhotosSource: Sendable {
 public final class FixturePhotosSource: PhotosSource, @unchecked Sendable {
     public var items: [PhotoItem]
     public private(set) var requests: [(Int, Date?)] = []
-    public init(_ items: [PhotoItem]? = nil) {
+    /// `now` is the clock this fixture is built against; tests pin it to reach a particular hour.
+    public init(_ items: [PhotoItem]? = nil, now: Date = Date()) {
         if let items { self.items = items; return }
+        // Three photos, newest first, all inside the SAME LOCAL DAY as `now` — spread across the part
+        // of that day which has already happened, so they are never in the future either.
+        // They used to be `now - 1h/-2h/-3h`, which made this a different fixture depending on the
+        // time of day: before 01:00 all three fell on YESTERDAY, so "photos from today" correctly
+        // returned nothing and every test assuming otherwise failed for one hour in every twenty-four.
+        let elapsedToday = max(0, now.timeIntervalSince(Calendar.current.startOfDay(for: now)))
         var made: [PhotoItem] = []
         for i in 0..<3 {
             if let cg = ImageCodec.testImage(width: 320, height: 200), let b = try? ImageCodec.jpeg(cg, alt: "fixture photo \(i + 1)") {
-                made.append(PhotoItem(image: b, taken: Date().addingTimeInterval(TimeInterval(-3600 * (i + 1)))))
+                made.append(PhotoItem(image: b, taken: now.addingTimeInterval(-elapsedToday * Double(i + 1) / 4)))
             }
         }
         self.items = made

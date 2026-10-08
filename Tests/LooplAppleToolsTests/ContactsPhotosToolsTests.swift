@@ -43,6 +43,30 @@ final class ContactsPhotosToolsTests: XCTestCase {
         XCTAssertThrowsError(try PhotosRecentTool.parse(["date": .string("yesterday")]))
     }
 
+    /// The CI red that held #206: `testPhotosRecentAttachesImages` asks the tool for photos dated
+    /// TODAY, while the fixture made its three photos at `now - 1h/2h/3h`. Run before 01:00 and all
+    /// three land on YESTERDAY, so the day truthfully has no photos and the assertion fails — a
+    /// one-hour window in every twenty-four, on a UTC runner. It failed at 00:00:57Z.
+    /// Pins the PROMISE, not an hour: a fixture's photos lie inside its own anchor's local day, and
+    /// none of them is in the future.
+    func testFixturePhotosAlwaysLieInsideTheirOwnDayIncludingAtMidnight() async throws {
+        let cal = Calendar.current
+        let midnight = cal.startOfDay(for: Date())
+        for anchor in [midnight, midnight.addingTimeInterval(57), midnight.addingTimeInterval(12 * 3600)] {
+            let src = FixturePhotosSource(now: anchor)
+            XCTAssertEqual(src.items.count, 3, "anchor \(anchor)")
+            for p in src.items {
+                let taken = try XCTUnwrap(p.taken)
+                XCTAssertTrue(cal.isDate(taken, inSameDayAs: anchor), "photo taken \(taken) is outside the day of \(anchor)")
+                XCTAssertLessThanOrEqual(taken, anchor, "a fixture photo must not have been taken in the future")
+            }
+            let takens = src.items.compactMap(\.taken)
+            XCTAssertEqual(takens, takens.sorted(by: >), "newest first")
+            let onItsOwnDay = try await src.recent(count: 4, on: anchor)
+            XCTAssertFalse(onItsOwnDay.isEmpty, "asking the fixture for its own day must return photos (anchor \(anchor))")
+        }
+    }
+
     func testPhotosCallThroughAnyToolKeepsImages() async throws {
         // The dispatch bug TOOLS-E2E found: through `any Tool`, images must still arrive.
         let t: any Tool = PhotosRecentTool()
