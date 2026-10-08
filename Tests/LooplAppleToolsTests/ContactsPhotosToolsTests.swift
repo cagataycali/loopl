@@ -43,6 +43,33 @@ final class ContactsPhotosToolsTests: XCTestCase {
         XCTAssertThrowsError(try PhotosRecentTool.parse(["date": .string("yesterday")]))
     }
 
+    /// The fixture's photos must be "today" at EVERY hour, not at most hours.
+    ///
+    /// `testPhotosRecentAttachesImages` asks for today's photos and requires one, and the fixture used to take
+    /// them "an hour ago" — so between 00:00 and 00:59 all three were yesterday and that test failed. It is a
+    /// clock, not a flake, which is the worst kind: it passes 23 hours a day, so it reads as noise and gets
+    /// re-run until it goes away. (It failed twice in a row at 00:00:57Z and 00:08:38Z on 8 October, on two
+    /// branches whose diffs could not touch it.)
+    ///
+    /// Asserting "the photos are today" here would reproduce the same bug in the guard — true at 14:00 either
+    /// way. So pin the ANCHOR instead: every fixture photo sits a fixed distance from the START OF TODAY, which
+    /// is a statement about the fixture rather than about when the suite happens to run.
+    func testFixturePhotosAreAnchoredToTodayAtAnyHour() {
+        let start = Calendar.current.startOfDay(for: Date())
+        XCTAssertEqual(photos.items.count, 3)
+        for item in photos.items {
+            guard let taken = item.taken else { return XCTFail("a fixture photo must carry a date") }
+            XCTAssertTrue(Calendar.current.isDate(taken, inSameDayAs: Date()), "fixture photo \(taken) is not today")
+            // Pin it to NOON, within minutes. A looser band ("more than an hour into the day, less than 23")
+            // is NOT a guard: I wrote that first and it passed against the broken fixture at 20:22, because
+            // `Date() - 1h` is 19.4 h into the day and sits comfortably inside the band. Only the exact anchor
+            // distinguishes "midday today" from "an hour before whenever the suite ran".
+            let hoursIn = taken.timeIntervalSince(start) / 3600
+            XCTAssertEqual(hoursIn, 12, accuracy: 0.1,
+                           "a fixture photo must be anchored to midday today, not to the time the suite ran: \(hoursIn) h in")
+        }
+    }
+
     func testPhotosCallThroughAnyToolKeepsImages() async throws {
         // The dispatch bug TOOLS-E2E found: through `any Tool`, images must still arrive.
         let t: any Tool = PhotosRecentTool()

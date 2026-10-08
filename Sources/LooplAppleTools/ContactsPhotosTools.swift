@@ -144,9 +144,18 @@ public final class FixturePhotosSource: PhotosSource, @unchecked Sendable {
     public init(_ items: [PhotoItem]? = nil) {
         if let items { self.items = items; return }
         var made: [PhotoItem] = []
+        // Anchored to NOON TODAY, newest first — deliberately not "an hour ago".
+        //
+        // These three were `Date() - 1h/2h/3h`, and `photos_recent(date: today)` is a documented part of the tool,
+        // so the test for it asks for today's photos and requires at least one. Between 00:00 and 00:59 on the
+        // machine running it, "an hour ago" is YESTERDAY: all three fall outside today and the test fails. It is
+        // not flaky, it is a clock — it failed twice in a row at 00:00:57Z and 00:08:38Z on 8 October and passes
+        // every other hour of the day, which is exactly the failure that gets re-run until it goes away.
+        // Noon is far from both midnights, so these are "today" wherever and whenever this runs.
+        let noon = Calendar.current.startOfDay(for: Date()).addingTimeInterval(12 * 3600)
         for i in 0..<3 {
             if let cg = ImageCodec.testImage(width: 320, height: 200), let b = try? ImageCodec.jpeg(cg, alt: "fixture photo \(i + 1)") {
-                made.append(PhotoItem(image: b, taken: Date().addingTimeInterval(TimeInterval(-3600 * (i + 1)))))
+                made.append(PhotoItem(image: b, taken: noon.addingTimeInterval(TimeInterval(-60 * (i + 1)))))
             }
         }
         self.items = made
