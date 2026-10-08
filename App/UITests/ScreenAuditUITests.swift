@@ -14,12 +14,19 @@ import XCTest
 /// **same launch recipe on the same screens** and were kept apart only because their pull requests could not be
 /// stacked. Merging them is not tidiness:
 ///
-/// - **It costs runner time rather than saving it, and that was measured only after the claim was written.**
-///   This file replaces 15 tests taking 198.0 s with 9 taking 484.7 s on an iPhone 16 Pro — **2.45x slower**,
-///   about +9.6 min of macOS runner per push across `ui.yml`'s two legs. The first version of this comment
-///   said the 9-instead-of-15 launches were "the expensive part"; nobody had timed it, and it is false — the
-///   WALK is the cost (settings/tools alone is 142.0 s, models 98.1 s). The minutes buy the coverage below,
-///   and they were approved deliberately rather than by accident.
+/// - **It costs runner time rather than saving it, and the number has been wrong twice — so here is the
+///   measured one.** This file replaces **15 tests taking 198.0 s with 9 taking 269.9 s** on an iPhone 16 Pro:
+///   **+36 %**, about +2.4 min of macOS runner per push across `ui.yml`'s two legs.
+///   The history is worth keeping, because both earlier claims were honest and both were false.
+///   The first version of this comment said the 9-instead-of-15 **launches** were "the expensive part": nobody
+///   had timed it, and the WALK is the cost (settings/tools alone was 142.0 s). The correction that replaced it
+///   measured **484.7 s / 2.45× slower** — true of the version it was written against, and already stale,
+///   because that figure came from a snapshot taken mid-verification and the three fixes below landed after it:
+///   one enumeration of the texts per step shared with the fingerprint; the five-class sweep once per screen
+///   instead of per step (`otherElements.allElementsBoundByIndex` on a long list took settings/tools from
+///   27 s to 141 s by itself); and the return walk bounded to 3 steps, a second full pass having found nothing
+///   on any of the nine screens. 484.7 → 269.9 s. The minutes buy the coverage below, and they were approved
+///   deliberately rather than by accident.
 /// - **It gives the overflow question the walk it never had.** `OverflowAuditUITests` measured ONE viewport, so
 ///   on a long screen it only ever audited the top of it, while the squeeze suite already knew the bug lives
 ///   below the fold (at Accessibility XL a Settings row is ~190 pt, so the first "Asks before …" note is the
