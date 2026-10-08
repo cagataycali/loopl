@@ -19,7 +19,7 @@ public struct VibrateTool: AppleTool {
         "pattern": ["type": "string", "enum": .array(VibrateTool.patterns.map(JSONValue.string)), "description": "Which pattern to play"],
         "intensity": ToolSchema.number("Strength 0–1 (default 1)"),
     ], required: ["pattern"])
-    public static let onDeviceCopy = "Makes this iPhone buzz, in one of a few patterns. Nothing else happens."
+    public static let onDeviceCopy = "Buzzes in one of a few patterns. Nothing else happens."
     public static let patterns = ["tap", "double", "success", "warning", "error", "heartbeat", "long"]
 
     public struct Request: Sendable, Hashable {

@@ -14,7 +14,7 @@ public struct DescribeImageTool: AppleTool {
         "image_index": ToolSchema.number("Which attached picture: 0 = most recent (default)"),
         "max_labels": ToolSchema.number("How many labels to return (default 8)"),
     ])
-    public static let onDeviceCopy = "Names what is in a picture — scenes, objects, faces, QR codes — using your iPhone itself. Works offline."
+    public static let onDeviceCopy = "Names what is in a picture — scenes, objects, faces, QR codes. Works offline."
     public static let minConfidence: Float = 0.25
     public static func availability() -> ToolAvailability {
         #if canImport(Vision) && canImport(ImageIO)

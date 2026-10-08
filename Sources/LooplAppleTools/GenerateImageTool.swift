@@ -16,7 +16,7 @@ public struct GenerateImageTool: AppleTool {
         "prompt": ToolSchema.string("What to draw — concrete visual concepts work best, e.g. 'a black smart ring on a slate tile'"),
         "style": ["type": "string", "enum": ["animation", "illustration", "sketch"], "description": "Rendering style (default animation)"],
     ], required: ["prompt"])
-    public static let onDeviceCopy = "Draws with the Image Playground model on your iPhone. Nothing leaves the device."
+    public static let onDeviceCopy = "Draws with Apple's Image Playground model. Nothing leaves the device."
     public static let styles = ["animation", "illustration", "sketch"]
 
     public static func availability() -> ToolAvailability {

@@ -19,7 +19,7 @@ public struct TranscribeTool: AppleTool {
         "path": ToolSchema.string("Absolute path (or file:// URL) of an audio file: m4a, caf, wav, mp3"),
         "language": ToolSchema.string("BCP-47 locale like en-US (default: device locale)"),
     ], required: ["path"])
-    public static let onDeviceCopy = "Turns a recording into text, on this iPhone. Works offline."
+    public static let onDeviceCopy = "Turns a recording into text. Works offline."
     public static func availability() -> ToolAvailability {
         #if canImport(Speech)
         if #available(iOS 26, macOS 26, *) { return .ok }

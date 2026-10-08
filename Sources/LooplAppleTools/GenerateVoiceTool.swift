@@ -19,7 +19,7 @@ public struct GenerateVoiceTool: AppleTool {
         "rate": ToolSchema.number("Speech rate 0.0–1.0 (default 0.5)"),
         "save": ToolSchema.boolean("Also write a .caf audio file and return its path (default false)"),
     ], required: ["text"])
-    public static let onDeviceCopy = "Speaks with the voices already on your iPhone, including Personal Voice if you allow it. Works offline."
+    public static let onDeviceCopy = "Speaks with the voices you already have, including Personal Voice if you allow it. Works offline."
     public static let maxChars = 1000
 
     public static func availability() -> ToolAvailability {
