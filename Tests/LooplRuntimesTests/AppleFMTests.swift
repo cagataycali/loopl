@@ -1,0 +1,362 @@
+import XCTest
+import Synchronization
+@testable import Loopl
+@testable import LooplRuntimes
+
+/// Pins the P0 the owner found on his iPhone: with Apple Intelligence, one
+/// question that needs one tool ran `current_time` TWICE and answered twice.
+///
+/// The replies scripted here are not invented — they are what the real
+/// FoundationModels model produced on macOS 26.4.1 (2026-10-06) when it was
+/// given loopl's prompts: a fenced call first, then, when the tool exchange was
+/// fed back as `<tool_call>` / `<tool_response>` markup, *the identical call
+/// again* (3 runs out of 3), and a plain-text answer once the round was
+/// rendered as "tools have already been run for you".
+final class AppleFMTests: XCTestCase {
+
+    // MARK: - scripted session seam
+
+    /// Replays canned responses in order, one per generation, recording the
+    /// instructions + prompt it was handed.
+    final class ScriptedFMFactory: AppleFMSessionFactory, Sendable {
+        private struct State { var replies: [String]; var prompts: [(instructions: String?, prompt: String)] = [] }
+        private let state: Mutex<State>
+        let availability = RuntimeAvailability.ok
+
+        init(_ replies: [String]) { state = Mutex(State(replies: replies)) }
+
+        func makeSession(instructions: String?, temperature: Double, maxTokens: Int?) throws -> any AppleFMSession {
+            let (reply, index) = state.withLock { s -> (String, Int) in
+                let r = s.replies.isEmpty ? "" : s.replies.removeFirst()
+                s.prompts.append((instructions, ""))
+                return (r, s.prompts.count - 1)
+            }
+            return ScriptedFMSession(reply: reply) { [self] p in record(index, p) }
+        }
+
+        private func record(_ i: Int, _ prompt: String) { state.withLock { $0.prompts[i].prompt = prompt } }
+
+        var promptCount: Int { state.withLock { $0.prompts.count } }
+        func prompt(_ i: Int) -> (instructions: String?, prompt: String) { state.withLock { $0.prompts[i] } }
+    }
+
+    struct ScriptedFMSession: AppleFMSession {
+        let reply: String
+        let record: @Sendable (String) -> Void
+        /// Yields cumulative snapshots, as `LanguageModelSession.streamResponse` does.
+        /// A reply written as "a\u{0}b\u{0}c" is replayed as those literal snapshots —
+        /// which is how a *non-monotonic* revision (snapshot n+1 is not a prefix extension
+        /// of snapshot n) gets into a test.
+        func snapshots(prompt: String) -> AsyncThrowingStream<String, Error> {
+            record(prompt)
+            let reply = self.reply
+            return AsyncThrowingStream { continuation in
+                if reply.contains("\u{0}") {
+                    for snap in reply.components(separatedBy: "\u{0}") { continuation.yield(snap) }
+                } else {
+                    var sofar = ""
+                    for chunk in reply.chunked(8) { sofar += chunk; continuation.yield(sofar) }
+                }
+                continuation.finish()
+            }
+        }
+    }
+
+    /// Counts its invocations — the whole point of the test.
+    final class CountingTool: Tool {
+        let name = "current_time"
+        let description = "Current date and time, optionally in a given IANA timezone."
+        let parameters = ToolSchema.object(["timezone": ToolSchema.string("IANA timezone, e.g. Europe/Istanbul")])
+        private let counter = Mutex(0)
+        var calls: Int { counter.withLock { $0 } }
+        func call(_ args: [String: JSONValue]) async throws -> String {
+            counter.withLock { $0 += 1 }
+            return #"{"iso":"2026-10-06T03:29:02+03:00","timezone":"Europe/Istanbul","pretty":"6 October 2026 at 03:29"}"#
+        }
+    }
+
+    static let fencedCall = """
+    ```json
+    {"name": "current_time", "arguments": {"timezone": "Europe/Istanbul"}}
+    ```
+    """
+    static let answer = "It is 6 October 2026 at 03:29 in Istanbul."
+
+    private func makeAgent(_ replies: [String], tool: CountingTool) -> (Agent, ScriptedFMFactory) {
+        let factory = ScriptedFMFactory(replies)
+        let model = AppleFoundationModel(sessionFactory: factory)
+        return (Agent(model: model, tools: [tool], systemPrompt: "Be brief.", retryStrategy: nil), factory)
+    }
+
+    // MARK: - the regression
+
+    /// The exact shape of the original bug: FM echoes the call back after the result.
+    /// The cure is the prompt (`AppleFMPrompt` renders results as plain text FM cannot
+    /// mistake for its own markup — see `AppleFMPromptTests`), NOT a guard: when a
+    /// scripted model insists on the echo, the loop runs the tool again, shows one answer,
+    /// and ends the turn — no heuristic, no endless loop.
+    func testEchoedCallIsRunAgainAndTheTurnStillEndsWithOneAnswer() async throws {
+        let tool = CountingTool()
+        // 1) fenced call  2) the SAME call again  3) the answer
+        let (agent, factory) = makeAgent([Self.fencedCall, Self.fencedCall, Self.answer], tool: tool)
+
+        let result = try await agent("what time is it in Istanbul?")
+
+        XCTAssertEqual(tool.calls, 2, "no repeat guard: the echoed call runs")
+        XCTAssertEqual(result.stopReason, .endTurn)
+        XCTAssertEqual(result.text, Self.answer)
+
+        let messages = await agent.messages
+        let answers = messages.filter { $0.role == .assistant && !$0.text.isEmpty }
+        XCTAssertEqual(answers.count, 1, "exactly one assistant answer, not two")
+        XCTAssertEqual(messages.filter { $0.role == .assistant && $0.hasToolUse }.count, 2)
+        let toolCallCount = await agent.eventLoopMetrics.toolCallCount
+        XCTAssertEqual(toolCallCount, 2)
+        XCTAssertEqual(factory.promptCount, 3, "asked once per cycle, then the answer")
+    }
+
+    /// FM answers *and* repeats the call in the same turn. With no repeat guard the
+    /// loop runs the call again (the model asked for it); the prose that came with the
+    /// call is held, so the user still sees exactly one answer — the one that follows
+    /// the second result.
+    func testAnswerPlusRepeatedCallRunsTheToolAgainAndAnswersOnce() async throws {
+        let tool = CountingTool()
+        let (agent, _) = makeAgent([Self.fencedCall, Self.answer + "\n" + Self.fencedCall, Self.answer], tool: tool)
+
+        let result = try await agent("what time is it in Istanbul?")
+
+        XCTAssertEqual(tool.calls, 2, "no repeat guard: a call the model issues is a call that runs")
+        XCTAssertEqual(result.stopReason, .endTurn)
+        XCTAssertTrue(result.text.contains("03:29"), "got: \(result.text)")
+        let answers = (await agent.messages).filter { $0.role == .assistant && !$0.text.isEmpty }
+        XCTAssertEqual(answers.count, 1)
+    }
+
+    /// A *different* call after a result is legitimate multi-step work and must
+    /// still go through.
+    func testDifferentCallAfterResultStillRuns() async throws {
+        let time = CountingTool()
+        let calcCalls = LockedCount()
+        let calculator = ClosureTool(name: "calculator", description: "Evaluates arithmetic.",
+                                     parameters: ToolSchema.object(["expression": ToolSchema.string("e.g. 23*47")], required: ["expression"])) { _ in
+            calcCalls.bump(); return "1081"
+        }
+        let factory = ScriptedFMFactory([
+            Self.fencedCall,
+            "```json\n{\"name\": \"calculator\", \"arguments\": {\"expression\": \"23*47\"}}\n```",
+            "It is 03:29 in Istanbul and 23*47 = 1081.",
+        ])
+        let agent = Agent(model: AppleFoundationModel(sessionFactory: factory), tools: [time, calculator], retryStrategy: nil)
+
+        let result = try await agent("time in Istanbul, and 23*47?")
+
+        XCTAssertEqual(time.calls, 1)
+        XCTAssertEqual(calcCalls.value, 1)
+        XCTAssertEqual(result.stopReason, .endTurn)
+        XCTAssertTrue(result.text.contains("1081"))
+    }
+
+    /// Two calls in one turn (FM emits two fences) still run concurrently, once each.
+    func testTwoFencedCallsInOneTurnRunOnceEach() async throws {
+        let time = CountingTool()
+        let calcCalls = LockedCount()
+        let calculator = ClosureTool(name: "calculator", description: "Evaluates arithmetic.",
+                                     parameters: ToolSchema.object(["expression": ToolSchema.string("e.g. 23*47")], required: ["expression"])) { _ in
+            calcCalls.bump(); return "1081"
+        }
+        let two = Self.fencedCall + "\n\n```json\n{\"name\": \"calculator\", \"arguments\": {\"expression\": \"23*47\"}}\n```"
+        let factory = ScriptedFMFactory([two, "It is 03:29 in Istanbul and 23*47 = 1081."])
+        let agent = Agent(model: AppleFoundationModel(sessionFactory: factory), tools: [time, calculator], retryStrategy: nil)
+
+        let result = try await agent("time in Istanbul, and 23*47?")
+
+        XCTAssertEqual(time.calls, 1)
+        XCTAssertEqual(calcCalls.value, 1)
+        XCTAssertEqual(result.stopReason, .endTurn)
+        XCTAssertEqual(factory.promptCount, 2)
+    }
+
+    /// A model that repeats the same call three times gets three honest results and
+    /// then answers; nothing in the runtime or the loop cuts it short.
+    func testRepeatedCallsAreAllExecutedUntilTheModelAnswers() async throws {
+        let tool = CountingTool()
+        let (agent, factory) = makeAgent([Self.fencedCall, Self.fencedCall, Self.fencedCall, Self.answer], tool: tool)
+
+        let result = try await agent("what time is it in Istanbul?")
+
+        XCTAssertEqual(tool.calls, 3)
+        XCTAssertEqual(result.stopReason, .endTurn)
+        XCTAssertTrue(result.text.contains("03:29"), "got: \(result.text)")
+        XCTAssertEqual(factory.promptCount, 4)
+    }
+
+    // MARK: - owner-required fixes (OWNER UPDATE 00:18Z)
+
+    /// (a) Prose that comes with a tool call must never be streamed as an answer: the tool
+    /// result does not exist yet, and the real answer arrives one cycle later. It is kept as
+    /// reasoning so nothing is lost and nothing is shown twice.
+    func testProseThatComesWithAToolCallIsHeldAsReasoningNotAnAnswer() async throws {
+        let tool = CountingTool()
+        let prose = "Let me check the clock for you."
+        let (agent, _) = makeAgent([prose + "\n" + Self.fencedCall, Self.answer], tool: tool)
+
+        let result = try await agent("what time is it in Istanbul?")
+
+        XCTAssertEqual(tool.calls, 1)
+        XCTAssertEqual(result.stopReason, .endTurn)
+        XCTAssertEqual(result.text, Self.answer)
+        let messages = await agent.messages
+        let toolTurn = try XCTUnwrap(messages.first { $0.role == .assistant && $0.hasToolUse })
+        XCTAssertEqual(toolTurn.text, "", "the prose must not be a text block in the tool turn")
+        XCTAssertTrue(toolTurn.reasoning.contains("check the clock"), "…it must survive as reasoning")
+        let answers = messages.filter { $0.role == .assistant && !$0.text.isEmpty }
+        XCTAssertEqual(answers.count, 1, "one answer only: \(answers.map(\.text))")
+    }
+
+    /// Prose with NO tool call is the answer and stays text.
+    func testProseWithoutAToolCallIsTheAnswer() async throws {
+        let tool = CountingTool()
+        let (agent, _) = makeAgent([Self.answer], tool: tool)
+        let result = try await agent("hello?")
+        XCTAssertEqual(tool.calls, 0)
+        XCTAssertEqual(result.text, Self.answer)
+        XCTAssertEqual(result.stopReason, .endTurn)
+    }
+
+    /// (c) The snapshot bug: `LanguageModelSession` may hand back a snapshot that does NOT
+    /// extend the previous one (the model revises). The old code skipped such a snapshot and
+    /// lost the text. Replace semantics: the newest snapshot is the answer.
+    func testNonPrefixSnapshotRevisionLosesNoText() async throws {
+        let tool = CountingTool()
+        // three literal snapshots; the 2nd and 3rd are NOT extensions of their predecessor
+        let script = "It is 3 AM\u{0}It is 03:29 in Istanbul\u{0}It is 6 October 2026 at 03:29 in Istanbul."
+        let (agent, _) = makeAgent([script], tool: tool)
+
+        let result = try await agent("what time is it in Istanbul?")
+
+        XCTAssertEqual(result.text, "It is 6 October 2026 at 03:29 in Istanbul.")
+        XCTAssertEqual(result.stopReason, .endTurn)
+    }
+
+    /// A revision that ends in a tool call must still be parsed as that call (nothing dropped).
+    func testNonPrefixSnapshotEndingInAToolCallStillCallsTheTool() async throws {
+        let tool = CountingTool()
+        let script = "I cannot tell the time.\u{0}" + Self.fencedCall
+        let (agent, _) = makeAgent([script, Self.answer], tool: tool)
+
+        let result = try await agent("what time is it in Istanbul?")
+
+        XCTAssertEqual(tool.calls, 1)
+        XCTAssertEqual(result.text, Self.answer)
+    }
+
+    /// (b) The answer-mode prompt restates the USER's question — not the assistant's own prose,
+    /// which is what a naive "last line of the transcript" rule picks up.
+    func testAnswerModeQuestionComesFromTheUserNotTheAssistantProse() {
+        let use = ToolUse(toolUseId: "t1", name: "current_time", input: [:])
+        let messages: [Message] = [
+            .user("what time is it in Istanbul?"),
+            Message(role: .assistant, content: [.text("Let me check the clock for you."), .toolUse(use)]),
+            .toolResults([ToolResult(toolUseId: "t1", name: "current_time", content: "03:29")]),
+        ]
+        let built = AppleFMPrompt.build(messages: messages, toolSpecs: [CountingTool().toolSpec], systemPrompt: nil)
+        XCTAssertEqual(built.mode, .answer)
+        XCTAssertTrue(built.prompt.contains("The user asked: what time is it in Istanbul?"), built.prompt)
+    }
+
+    // MARK: - the prompt rendering that caused it
+
+    /// The answer turn must not carry tool markup (that is what FM mimicked) and
+    /// must say the tools already ran.
+    func testAnswerModePromptCarriesNoToolMarkup() {
+        let use = ToolUse(toolUseId: "tooluse_ab12cd34", name: "current_time", input: ["timezone": "Europe/Istanbul"])
+        let messages: [Message] = [
+            .user("what time is it in Istanbul?"),
+            .assistant(text: "", toolUses: [use]),
+            .toolResults([ToolResult(toolUseId: use.toolUseId, name: use.name, content: #"{"pretty":"6 October 2026 at 03:29"}"#)]),
+        ]
+        let built = AppleFMPrompt.build(messages: messages, toolSpecs: [CountingTool().toolSpec], systemPrompt: nil)
+
+        XCTAssertEqual(built.mode, .answer)
+        XCTAssertFalse(built.prompt.contains("<tool_call>"))
+        XCTAssertFalse(built.prompt.contains("<tool_response"))
+        XCTAssertTrue(built.prompt.contains("already been run"))
+        XCTAssertTrue(built.prompt.contains("what time is it in Istanbul?"))
+        XCTAssertTrue(built.prompt.contains("6 October 2026 at 03:29"))
+        XCTAssertTrue(built.instructions.contains("never ask for that tool again"))
+        // Raw JSON schemas in `instructions` make FM fail with tokengeneration Code=10.
+        XCTAssertFalse(built.instructions.contains("\"type\": \"function\""))
+        XCTAssertFalse(built.instructions.contains("\"type\":\"function\""))
+    }
+
+    func testCallModePromptIsTheBareQuestion() {
+        let built = AppleFMPrompt.build(messages: [.user("what time is it in Istanbul?")],
+                                        toolSpecs: [CountingTool().toolSpec], systemPrompt: "Be brief.")
+        XCTAssertEqual(built.mode, .call)
+        XCTAssertEqual(built.prompt, "what time is it in Istanbul?")
+        XCTAssertTrue(built.instructions.hasPrefix("Be brief."))
+        XCTAssertTrue(built.instructions.contains("- current_time — Current date and time, optionally in a given IANA timezone. Arguments: timezone (string, optional)."), built.instructions)
+    }
+
+    func testToolDocsAreCompactAndOrderRequiredFirst() {
+        let spec = ToolSpec(name: "http", description: "Makes a request.",
+                            inputSchema: ToolSchema.object(["url": ToolSchema.string("the URL"),
+                                                            "method": ToolSchema.string("GET/POST")],
+                                                           required: ["url"]))
+        XCTAssertEqual(AppleFMPrompt.toolDocs([spec]), "- http — Makes a request. Arguments: url (string), method (string, optional).")
+        XCTAssertFalse(AppleFMPrompt.toolDocs([spec]).contains("http("), "no signature shape — FM mimics it as a pseudo-call")
+    }
+
+    // MARK: - the real model, when this machine has one
+
+    /// End-to-end against the REAL Apple Intelligence model: one question, one
+    /// tool, one execution, one answer. Skipped wherever Apple Intelligence is
+    /// not available (CI, the simulator, an ineligible Mac) — which is exactly
+    /// why the scripted seam above exists.
+    func testLiveFoundationModelsRunsTheToolOnceAndAnswers() async throws {
+        let availability = AppleFoundationModel.availability()
+        try XCTSkipUnless(availability.available, "Apple Intelligence unavailable: \(availability.reason)")
+
+        let tool = CountingTool()
+        let agent = Agent(model: AppleFoundationModel(), tools: [tool],
+                          systemPrompt: "Be brief.", retryStrategy: nil)
+        let result = try await agent("what time is it in Istanbul?")
+
+        XCTAssertEqual(tool.calls, 1, "the real model made the tool run \(tool.calls)x")
+        XCTAssertEqual(result.stopReason, .endTurn)
+        let answers = (await agent.messages).filter { $0.role == .assistant && !$0.text.isEmpty }
+        XCTAssertEqual(answers.count, 1, "answers: \(answers.map(\.text))")
+        XCTAssertFalse(result.text.contains("\"name\""), "the answer must not be JSON: \(result.text)")
+        XCTAssertTrue(result.text.contains("03:29") || result.text.lowercased().contains("october"),
+                      "answer should use the tool result: \(result.text)")
+    }
+
+    /// The gate keeps every parsed call — it has no veto.
+    func testGateKeepsEveryCall() {
+        var gate = ToolCallStreamGate(family: .generic)
+        _ = gate.feed(Self.fencedCall)
+        let events = gate.finish()
+        XCTAssertTrue(events.contains { if case .messageStop(.toolUse) = $0 { return true }; return false })
+    }
+}
+
+/// A thread-safe counter for closure tools.
+final class LockedCount: Sendable {
+    private let n = Mutex(0)
+    func bump() { n.withLock { $0 += 1 } }
+    var value: Int { n.withLock { $0 } }
+}
+
+extension String {
+    /// Split into fixed-size pieces, to simulate streaming.
+    func chunked(_ size: Int) -> [String] {
+        var out: [String] = []
+        var i = startIndex
+        while i < endIndex {
+            let j = index(i, offsetBy: size, limitedBy: endIndex) ?? endIndex
+            out.append(String(self[i..<j]))
+            i = j
+        }
+        return out
+    }
+}

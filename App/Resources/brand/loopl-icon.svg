@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="flame" x1="0" y1="1024" x2="1024" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FF7A22"/><stop offset="1" stop-color="#FFC244"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.62" cy="0.3" r="0.75">
+      <stop offset="0" stop-color="#FF7A22" stop-opacity="0.22"/><stop offset="1" stop-color="#FF7A22" stop-opacity="0"/>
+    </radialGradient>
+  </defs><rect width="1024" height="1024" fill="#0E0E11"/><rect width="1024" height="1024" fill="url(#glow)"/>
+  <path d="M 731.886 660.045 A 249.037 249.037 0 1 1 636.518 327.457" fill="none" stroke="url(#flame)" stroke-width="89.498" stroke-linecap="round"/>
+  <g transform="rotate(-6 636.518 268.389) translate(538.071 120.718) scale(196.895 295.342)">
+    <path d="M 0.66 0 C 0.86 0.22 1 0.44 1 0.64 C 1 0.86 0.78 1 0.5 1 C 0.22 1 0 0.86 0 0.64 C 0 0.34 0.42 0.3 0.66 0 Z" fill="url(#flame)"/>
+  </g>
+</svg>

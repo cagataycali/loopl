@@ -1,0 +1,127 @@
+name: docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "Sources/**"
+      - "Package.swift"
+      - "mkdocs.yml"
+      - "requirements-docs.txt"
+      - ".github/workflows/docs.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  # NOT cancel-in-progress. MEASURED 2026-10-07: with `true`, two merges ~20 minutes apart produced a docs run
+  # (`6435a2e3`) whose `swift` and `build` jobs both SUCCEEDED, with no annotations, while the **`deploy` job never
+  # ran at all** — the run reports `failure` with every job it contains green, because the job that would have
+  # failed is simply absent. The green run before it (`8630c28c`) had four jobs; the red one had three. The site
+  # also kept serving the older build, so the symptom is invisible on the page itself.
+  #
+  # That is the worst shape a guard can have: a REAL docs failure (a broken link under `--strict`, a documented
+  # symbol that no longer exists) looks exactly the same as this. GitHub Pages deployments serialise on the
+  # `github-pages` environment anyway, so cancelling buys nothing: the only thing `true` can do here is discard a
+  # deployment. Runs queue instead — docs runs are ~5 minutes and only fire on docs/Sources/mkdocs changes.
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15        # a hung step must not hold the `pages` group: queued runs wait behind it (see below)
+    needs: swift
+    if: ${{ always() }}      # a failing Swift job must not block the site; /api/ is simply absent then
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-docs.txt
+      - name: Native libs for social cards (cairo, freetype)
+        # MEASURED 2026-10-07 18:13-18:54Z: this step sat in_progress for 41 minutes (apt mirror), with every later
+        # step pending. Since the deploy now QUEUES rather than cancelling (the fix above), one hung apt call holds
+        # every following docs run hostage, so it gets its own ceiling and fails loudly instead.
+        timeout-minutes: 5
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libcairo2-dev libfreetype6-dev libffi-dev libjpeg-dev libpng-dev libz-dev > /dev/null
+      - run: pip install -r requirements-docs.txt
+      - name: Regenerate models table from the bundled catalog
+        run: python3 docs/gen_models.py
+      - name: Changelog fragments splice the way the site expects
+        run: python3 docs/hooks/changelog_fragments.py --selftest
+      - run: mkdocs build --strict
+      - name: Every documented type exists in Sources/
+        run: ./docs/check_symbols.sh
+      - name: Merge the DocC API reference into site/api (if the Swift job produced one)
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: docc
+          path: .
+      - name: What landed under /api
+        run: '[ -f docc-api.tgz ] && tar -C site -xzf docc-api.tgz && ls site/api || echo "api: none (Swift job red)"' 
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  # macOS: (1) every ```swift block tagged `// snippet: compile` typechecks against the package (docs/check_snippets.sh);
+  # (2) DocC API reference for Loopl + LooplRuntimes (docs/build_docc.sh) → artifact `docc`, merged into the site by `build`.
+  swift:
+    runs-on: macos-26   # mlx-swift 0.32.3 needs Swift tools 6.3 → Xcode 26.x (same runner as ci.yml)
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select the newest Xcode 26
+        run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)"
+          xcodebuild -version && swift --version
+      - uses: actions/cache@v4
+        with:
+          path: |
+            .build
+            ~/Library/Caches/org.swift.swiftpm
+          key: snippets-spm-${{ runner.os }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
+          restore-keys: snippets-spm-${{ runner.os }}-
+      - name: Snippets typecheck
+        run: ./docs/check_snippets.sh
+      - name: DocC API reference
+        run: ./docs/build_docc.sh docc-site && tar -C docc-site -czf docc-api.tgz api   # tar: DocC paths contain ':' which upload-artifact rejects
+      - uses: actions/upload-artifact@v4
+        with:
+          name: docc
+          path: docc-api.tgz
+          retention-days: 7
+
+  deploy:
+    needs: build
+    if: ${{ always() && needs.build.result == 'success' }}   # success() alone would also require the optional Swift job
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
+  # Optional mirror to Cloudflare Pages (project "loopl"). Runs only when the
+  # repository secret CLOUDFLARE_API_TOKEN exists (Pages:Edit on the account).
+  cloudflare:
+    needs: build
+    if: ${{ vars.CLOUDFLARE_PAGES == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-docs.txt && python3 docs/gen_models.py && LOOPL_SOCIAL_CARDS=false mkdocs build --strict
+      - run: npx -y wrangler pages deploy site --project-name loopl --branch main
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

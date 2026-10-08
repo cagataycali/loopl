@@ -1,0 +1,180 @@
+# Lives in App/ so the xcodeproj is NOT in the Swift package root (Xcode then
+# confuses the package's targets with the app's). Generate with `xcodegen -s App/project.yml`.
+name: LooplApp
+options:
+  bundleIdPrefix: technology.tiny
+  deploymentTarget:
+    iOS: '18.0'
+  xcodeVersion: '26.4'
+settings:
+  base:
+    DEVELOPMENT_TEAM: K6B7JDYLLL
+    SWIFT_VERSION: '6.0'
+    CODE_SIGN_STYLE: Automatic
+    CURRENT_PROJECT_VERSION: 40
+    MARKETING_VERSION: 0.1.0
+    SWIFT_STRICT_CONCURRENCY: complete
+    # MLX + safetensors want the big address space; Metal only exists on device.
+    IPHONEOS_DEPLOYMENT_TARGET: '18.0'
+packages:
+  # The SDK lives in this repo's Package.swift (products Loopl / LooplRuntimes /
+  # LooplUI). MLX + swift-transformers are its dependencies, not the app's.
+  Loopl:
+    path: ..
+targets:
+  # Target/module LooplApp, product loopl.app — never `loopl`: case-insensitive
+  # disks make loopl.build / loopl.swiftmodule collide with the package's Loopl.
+  LooplApp:
+    type: application
+    platform: iOS
+    sources:
+    - Sources
+    - Assets.xcassets
+    # NOT a folder reference: a top-level "Resources" dir inside an iOS .app
+    # makes the installer fail with "Missing bundle ID" (it reads as a macOS bundle).
+    - path: Resources
+      buildPhase: resources
+    dependencies:
+    - package: Loopl
+      product: Loopl
+    - package: Loopl
+      product: LooplRuntimes
+    - package: Loopl
+      product: LooplUI
+    - package: Loopl
+      product: LooplAppleTools
+    info:
+      path: Info.plist
+      properties:
+        CFBundleDisplayName: loopl
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        ITSAppUsesNonExemptEncryption: false
+        # ProMotion: without this iOS caps the app at 60 Hz; with it the display can run 120 Hz.
+        CADisableMinimumFrameDurationOnPhone: true
+        UILaunchScreen:
+          UIImageName: LaunchMark
+          UIImageRespectsSafeAreaInsets: true
+        UISupportedInterfaceOrientations:
+        - UIInterfaceOrientationPortrait
+        UISupportedInterfaceOrientations~ipad:
+        - UIInterfaceOrientationPortrait
+        - UIInterfaceOrientationPortraitUpsideDown
+        - UIInterfaceOrientationLandscapeLeft
+        - UIInterfaceOrientationLandscapeRight
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: false
+        # Vision models: attach a photo or take one. Both stay on the device (the model runs here).
+        NSCameraUsageDescription: Take a photo to show the model. It never leaves this device.
+        NSPhotoLibraryAddUsageDescription: Save pictures the model produced to your library.
+        # Composer audio input: a recording the model can `transcribe` on the device. The file stays with the thread.
+        NSMicrophoneUsageDescription: Record a message for the model to transcribe. Audio never leaves this device.
+        # calendar_events / calendar_create / reminders_due / reminders_create tools (off by default; asked just in time).
+        NSCalendarsFullAccessUsageDescription: Let the model read your calendar and add events you approve. Nothing leaves this device.
+        NSRemindersFullAccessUsageDescription: Let the model read your reminders and add ones you approve. Nothing leaves this device.
+        # location tool (off by default): city-level by default, exact only when the model asks and you allow it.
+        NSLocationWhenInUseUsageDescription: Tell the model where you are when it asks — your city by default, exact position only when you allow it. Nothing leaves this device.
+        # contacts_search (off by default): read-only name lookup. photos_recent (off by default): Selected Photos is enough.
+        NSContactsUsageDescription: Let the model look up a name in your contacts when you ask. Nothing is changed or sent anywhere.
+        NSPhotoLibraryUsageDescription: Let the model see your newest photos when you ask — Selected Photos is enough. Nothing leaves this device.
+        # music tool (on by default): play/pause/skip/volume need no permission; now_playing reads the title through the Media Library.
+        NSAppleMusicUsageDescription: Tell the model which song is playing when you ask. Nothing leaves this device.
+        # open_app tool: schemes canOpenURL may answer for (UIApplication.open reports truthfully for any scheme).
+        LSApplicationQueriesSchemes:
+        - shortcuts
+        - maps
+        - tel
+        - sms
+        - mailto
+        - music
+        - tinyapp
+        - x-callback-url
+        - facetime
+        - comgooglemaps
+        - spotify
+    entitlements:
+      path: loopl.entitlements
+      properties:
+        # MLX maps whole safetensors files; iOS caps a plain app well below
+        # 8 GB. The increased-memory-limit entitlement raises the jetsam ceiling
+        # on A17 Pro+/M-series (Apple: "com.apple.developer.kernel.increased-memory-limit").
+        com.apple.developer.kernel.increased-memory-limit: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: technology.tiny.loopl
+        # The app module must not be `loopl`: on a case-insensitive disk its
+        # loopl.swiftmodule collides with the SDK's Loopl.swiftmodule.
+        PRODUCT_NAME: loopl
+        PRODUCT_MODULE_NAME: LooplApp
+        TARGETED_DEVICE_FAMILY: '1,2'
+        SWIFT_OBJC_INTEROP_MODE: objc
+        ENABLE_USER_SCRIPT_SANDBOXING: false
+  # The SDK tests, hosted by the app so `xcodebuild test` on a simulator runs them
+  # (same files as the SwiftPM test target; swift test runs them on the Mac).
+  LooplTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+    - path: ../Tests/LooplTests
+      excludes: [Fixtures]
+    - path: ../Tests/LooplAppleToolsTests
+    # Hub fixtures as a folder reference → LooplTests.xctest/hub/<name>.json (tests also try "Fixtures/hub" for SwiftPM).
+    - path: ../Tests/LooplTests/Fixtures/hub
+      type: folder
+      buildPhase: resources
+    dependencies:
+    - target: LooplApp
+    - package: Loopl
+      product: Loopl
+    - package: Loopl
+      product: LooplAppleTools
+    info:
+      path: Tests-Info.plist
+      properties: {}
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: technology.tiny.loopl.tests
+        GENERATE_INFOPLIST_FILE: true
+        # xcodegen derives TEST_HOST from the target name (LooplApp.app); the product is loopl.app.
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/loopl.app/loopl
+        BUNDLE_LOADER: $(TEST_HOST)
+  # UI-geometry guard scrolls each pane to the end and asserts
+  # the last row clears the floating tab bar. Its OWN scheme (looplUITests) so the
+  # `loopl` scheme's unit-test gate stays fast and unchanged.
+  LooplUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+    - UITests
+    dependencies:
+    - target: LooplApp
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: technology.tiny.loopl.uitests
+        GENERATE_INFOPLIST_FILE: true
+        TEST_TARGET_NAME: LooplApp
+schemes:
+  loopl:
+    build:
+      targets:
+        LooplApp: all
+        LooplTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+      - LooplTests
+    archive:
+      config: Release
+  looplUITests:
+    build:
+      targets:
+        LooplApp: all
+        LooplUITests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+      - LooplUITests

@@ -1,0 +1,146 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://huggingface.co/datasets/cagataydev/loopl-train/resolve/main/schema/conversation.schema.json",
+  "title": "loopl-train conversation record",
+  "description": "One line of a loopl-train jsonl shard. Mirrors src/loopl_train/common.py::Record and the structural rules in validate.check. Produced by the loopl-train pipeline (families a–h) AND by the loopl iOS app's 'Share to Hugging Face' export (family u, gen.generator = loopl-app/<version>). Both repos test against this file: loopl-train tests/test_schema.py, loopl Tests/LooplTests/ConversationExportTests.swift. Version 1.0.0.",
+  "type": "object",
+  "required": ["id", "family", "messages"],
+  "additionalProperties": true,
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "<family>-<10 hex> for generated rows; the app uses u-<10 hex of sha256(thread id)>.",
+      "pattern": "^[a-z]-[0-9a-f]{6,}$"
+    },
+    "family": {
+      "type": "string",
+      "description": "a strands-knowledge · b strands-code · c agent-trajectory · d owner-projects · e robots · f loopl-self · g identity-honesty · h vision · u conversations shared from the loopl app",
+      "enum": ["a", "b", "c", "d", "e", "f", "g", "h", "u"]
+    },
+    "split": { "type": "string", "enum": ["train", "eval"], "default": "train" },
+    "messages": {
+      "type": "array",
+      "description": "HF chat format as consumed by Qwen3.5's template. messages[0] is the loopl system turn (data/system/loopl.md, verbatim); the last message is a plain assistant answer (no tool_calls); every tool_call id has exactly one tool message with that tool_call_id after it.",
+      "minItems": 3,
+      "items": { "$ref": "#/$defs/message" }
+    },
+    "tools": {
+      "type": "array",
+      "description": "OpenAI function specs the model was OFFERED in this conversation (families c and u). Each assistant tool_call must name one of them.",
+      "items": { "$ref": "#/$defs/tool" }
+    },
+    "source": {
+      "type": "array",
+      "description": "Repository references that ground the sample. Empty for trajectories (c) and app conversations (u).",
+      "items": {
+        "type": "object",
+        "required": ["repo", "path"],
+        "properties": {
+          "repo": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$" },
+          "path": { "type": "string" },
+          "lines": { "type": ["string", "null"] },
+          "sha": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "images": {
+      "type": "array",
+      "description": "Image files referenced by {\"type\":\"image\"} parts, in order, as paths RELATIVE TO THE DATASET REPO ROOT (images/<sha256-prefix>.<png|jpg>). Count must equal the number of image parts in messages.",
+      "items": { "type": "string", "pattern": "^images/[0-9a-f]{10,64}\\.(png|jpg|jpeg|webp)$" }
+    },
+    "critic": {
+      "type": ["object", "null"],
+      "description": "Second-agent review for generated rows (score 1–5; only ≥ 4 are kept by the pipeline). Absent for app-shared rows — the person sharing is the reviewer.",
+      "properties": { "score": { "type": "integer", "minimum": 1, "maximum": 5 }, "notes": { "type": "string" } }
+    },
+    "gen": {
+      "type": "object",
+      "description": "Provenance. Pipeline rows: model, ts, generator, system_version, … App rows: generator 'loopl-app/<app version>', model = ModelSpec.id that produced the assistant turns, ts (ISO-8601), system_version (the loopl.md version embedded), platform, thread (opaque id), redaction flags.",
+      "properties": {
+        "model": { "type": "string" },
+        "ts": { "type": "string" },
+        "generator": { "type": "string" },
+        "system_version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
+        "platform": { "type": "string" },
+        "thread": { "type": "string" },
+        "redaction": {
+          "type": "object",
+          "properties": {
+            "strip_images": { "type": "boolean" },
+            "strip_tool_results": { "type": "boolean" },
+            "anonymise_urls": { "type": "boolean" }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "message": {
+      "type": "object",
+      "required": ["role"],
+      "properties": {
+        "role": { "type": "string", "enum": ["system", "user", "assistant", "tool"] },
+        "content": {
+          "description": "A string, or (user turns of vision rows) a list of parts: {\"type\":\"image\"} then {\"type\":\"text\",\"text\":…}.",
+          "oneOf": [
+            { "type": "string" },
+            {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "required": ["type"],
+                "properties": {
+                  "type": { "type": "string", "enum": ["image", "text"] },
+                  "text": { "type": "string" }
+                }
+              }
+            }
+          ]
+        },
+        "tool_calls": {
+          "type": "array",
+          "description": "Assistant only. arguments is an OBJECT (Qwen's template tojson()s it), never a string.",
+          "items": {
+            "type": "object",
+            "required": ["id", "function"],
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "type": { "type": "string", "const": "function" },
+              "function": {
+                "type": "object",
+                "required": ["name", "arguments"],
+                "properties": {
+                  "name": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_-]{0,63}$" },
+                  "arguments": { "type": "object" }
+                }
+              }
+            }
+          }
+        },
+        "tool_call_id": { "type": "string", "description": "tool role only — the id of the assistant tool_call this result answers." }
+      },
+      "allOf": [
+        { "if": { "properties": { "role": { "const": "tool" } } }, "then": { "required": ["tool_call_id", "content"], "properties": { "content": { "type": "string" } } } },
+        { "if": { "properties": { "role": { "const": "system" } } }, "then": { "required": ["content"], "properties": { "content": { "type": "string", "minLength": 1 } } } },
+        { "if": { "properties": { "role": { "enum": ["system", "user", "tool"] } } }, "then": { "not": { "required": ["tool_calls"] } } }
+      ]
+    },
+    "tool": {
+      "type": "object",
+      "required": ["type", "function"],
+      "properties": {
+        "type": { "type": "string", "const": "function" },
+        "function": {
+          "type": "object",
+          "required": ["name", "parameters"],
+          "properties": {
+            "name": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_-]{0,63}$" },
+            "description": { "type": "string" },
+            "parameters": { "type": "object", "properties": { "type": { "const": "object" }, "properties": { "type": "object" }, "required": { "type": "array", "items": { "type": "string" } } } }
+          }
+        }
+      }
+    }
+  }
+}

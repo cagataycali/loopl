@@ -1,0 +1,1365 @@
+import Foundation
+import AVFoundation
+import CoreImage
+import LooplUI
+import Loopl
+import LooplAppleTools
+
+/// `--design-fixture [scene]` (DEBUG only): fills the chat with a fixed
+/// transcript so screenshots and design work need no model. Scenes:
+/// `empty` · `streaming` (default) · `tool` · `offline` · `downloading` · `clipboard` (read row + COPY card) · `agenda` (calendar row + reminder ADD card) · `location` (coarse fix → http weather) · `music` (next + volume rows) · `approval` (a POST waiting
+/// for the human; tapping Approve/Deny scripts the follow-up) · `live` (a scripted
+/// replay streamed over ~8 s — text chunks, two tool calls, final answer — for motion
+/// captures; `--design-loop` repeats it). Never a runtime —
+/// the SDK's FakeModel stays in Tests/.
+enum DesignFixture {
+    static var requested: Bool {
+        #if DEBUG
+        return CommandLine.arguments.contains("--design-fixture")
+        #else
+        return false
+        #endif
+    }
+    static var scene: String {
+        guard let i = CommandLine.arguments.firstIndex(of: "--design-fixture"), i + 1 < CommandLine.arguments.count,
+              !CommandLine.arguments[i + 1].hasPrefix("-") else { return "streaming" }
+        return CommandLine.arguments[i + 1]
+    }
+
+    /// The `tool` scene opens its tool rows so a screenshot shows the args/result card.
+    static var expandTools: Bool { requested && scene == "tool" }
+
+    /// Screenshot-only switches (App Store / landing captures; all DEBUG, all no-ops in Release):
+    /// `--design-editing` opens the last user row of the `edit` scene in the in-place editor ·
+    /// `--design-share select|review` opens History in selection mode (all threads ticked) and, for `review`,
+    /// the Share-to-Hugging-Face sheet on its review step · `--design-settings storage` pushes Settings › Storage ·
+    /// `--design-mine` signs the session in as @cagataydev (no network) and fills Models › Mine with the loopl v1 repos ·
+    /// onboarding: `--design-apple-fm` shows the Apple Intelligence card as available (the sim has no Apple Intelligence),
+    /// `--design-ram-gb 6` makes the fit badges judge a 6 GB phone, `--design-gated` forces the Hugging Face sign-in step.
+    /// `--design-focus-composer` raises the keyboard on the chat (composer seam shots).
+    static func flag(_ name: String) -> Bool { requested && CommandLine.arguments.contains(name) }
+    static func value(_ name: String) -> String? {
+        guard requested, let i = CommandLine.arguments.firstIndex(of: name), i + 1 < CommandLine.arguments.count,
+              !CommandLine.arguments[i + 1].hasPrefix("-") else { return nil }
+        return CommandLine.arguments[i + 1]
+    }
+    static var editing: Bool { flag("--design-editing") && scene == "edit" }
+    static var share: String? { value("--design-share") }
+    /// `--design-history-delete select|confirm`: History in selection mode with the Delete bar; `confirm` raises the dialog.
+    static var historyDelete: String? { value("--design-history-delete") }
+    static var settingsPane: String? { value("--design-settings") }
+    static var mine: Bool { flag("--design-mine") }
+    /// `--design-focus-composer`: focuses the Message field on appear so a screenshot shows the composer with the
+    /// keyboard up (the seam the owner looked at when he asked for the field's fill to go).
+    static var focusComposer: Bool { flag("--design-focus-composer") }
+    /// `--design-models shelf|empty`: Models › "On this iPhone" with weights that are not on the simulator — `shelf` = loopl 2B in use,
+    /// Qwen3 0.6B downloaded, loopl 0.8B 40 % downloaded (one glyph per row); `empty` = nothing here, no model loaded (the calm empty state).
+    static var models: String? { value("--design-models") }
+    /// `--design-update <catalog id>`: pretend this model's copy arrived 9 days ago at one commit and the repo serves
+    /// another, so the "Hugging Face has a newer version" row can be shot and tested without a network.
+    static var updateAvailable: String? { value("--design-update") }
+    /// `--design-mounted "http,-calculator"`: the agent mounted `http` and unmounted `calculator` for this conversation —
+    /// Settings › Tools shows the *mounted / unmounted for this conversation* tags and the one-line note. `-name` = unmount.
+    static var mounted: String? { value("--design-mounted") }
+
+    /// `--design-mine`: the Hub rows of cagataydev/loopl-* as `/api/models?author=` returned them on 2026-10-06 (no network).
+    static var mineHits: [HubCatalog.Hit] {
+        let json = """
+        [{"id":"cagataydev/loopl-4b-4bit","kind":"mlx","downloads":12,"likes":3,"gated":false,"pipeline":"image-text-to-text","modelType":"qwen3_5","bits":4,"sizeBytes":3034299183,"paramsB":4.0,"lastModified":"2026-10-06T12:40:00.000Z","isPrivate":true,"files":["config.json","model.safetensors","preprocessor_config.json","tokenizer.json"]},
+         {"id":"cagataydev/loopl-2b-4bit","kind":"mlx","downloads":9,"likes":2,"gated":false,"pipeline":"image-text-to-text","modelType":"qwen3_5","bits":4,"sizeBytes":1722271227,"paramsB":2.0,"lastModified":"2026-10-06T12:31:00.000Z","isPrivate":true,"files":["config.json","model.safetensors","preprocessor_config.json","tokenizer.json"]},
+         {"id":"cagataydev/loopl-0.8b-4bit","kind":"mlx","downloads":21,"likes":4,"gated":false,"pipeline":"image-text-to-text","modelType":"qwen3_5","bits":4,"sizeBytes":625228929,"paramsB":0.8,"lastModified":"2026-10-06T12:24:00.000Z","isPrivate":true,"files":["config.json","model.safetensors","preprocessor_config.json","tokenizer.json"]},
+         {"id":"cagataydev/loopl-app-smoke-4bit","kind":"mlx","downloads":2,"likes":0,"gated":false,"pipeline":"text-generation","modelType":"qwen3_5","bits":4,"sizeBytes":444091186,"paramsB":0.8,"lastModified":"2026-10-06T05:10:00.000Z","isPrivate":true,"files":["config.json","model.safetensors","tokenizer.json"]}]
+        """
+        return (try? JSONDecoder().decode([HubCatalog.Hit].self, from: Data(json.utf8))) ?? []
+    }
+
+    /// `--design-train form|running|done|failed` opens Models › Train your own on a pre-baked session (no network, no token).
+    static var trainScene: String? {
+        #if DEBUG
+        guard let i = CommandLine.arguments.firstIndex(of: "--design-train"), i + 1 < CommandLine.arguments.count,
+              !CommandLine.arguments[i + 1].hasPrefix("-") else { return nil }
+        return CommandLine.arguments[i + 1]
+        #else
+        return nil
+        #endif
+    }
+
+    /// Verbatim `[loopl]` lines of the first real app-path job (6ac4711f, a10g-small, 476 s).
+    static let trainLog: [String] = [
+        #"[loopl] stage=discover t=1s {"revision": "d91e2b68", "read": 191, "invalid": 0, "duplicates": 0, "denylisted": 0, "pii_scrubbed": 0, "train": 174, "eval": 17, "source": "cagataydev/loopl-app-smoke-data@d91e2b68"}"#,
+        "[loopl] stage=render t=1s",
+        #"[loopl] plan {"round": 2, "base": "cagataydev/loopl-app-sim", "root": "Qwen/Qwen3.5-0.8B", "lineage": ["Qwen/Qwen3.5-0.8B", "cagataydev/loopl-app-sim"], "size": "0.8b", "epochs": {"mode": "auto", "max": 3.0, "heuristic": "3–4", "conversations": 191, "early_stop": true}, "replay": true, "replay_from": null, "stitch": {"mode": "day", "groups": 9, "stitched": 9, "threads_in": 61, "dropped_for_budget": 0, "unkeyed": 12, "budget_tokens": 4096}, "lora": {"r": 32, "alpha": 64}}"#,
+        #"[loopl] stage=train t=24s {"method": "lora", "steps": 24, "rows": 200, "epochs": 3.0, "epochs_mode": "auto", "round": 2}"#,
+        "  4%|▍         | 1/24 [00:55<21:27, 56.00s/it]",
+        "{'loss': 2.4321, 'grad_norm': 1.1, 'learning_rate': 9.6e-05, 'epoch': 0.08}",
+        " 58%|█████▊    | 14/24 [02:41<01:07,  6.75s/it]",
+        "{'loss': 2.2134, 'grad_norm': 0.9, 'learning_rate': 4.2e-05, 'epoch': 1.17}",
+        "[loopl] epoch=1 eval_loss=2.2410 best=2.2410",
+    ]
+    static let trainLogDone: [String] = trainLog + [
+        "[loopl] epoch=2 eval_loss=2.1477 best=2.1477",
+        "[loopl] epoch=3 eval_loss=2.1702 best=2.1477",
+        "[loopl] stage=merge t=317s",
+        #"[loopl] stage=eval t=321s {"probes": 17}"#,
+        #"[loopl] stage=push t=420s {"repo": "cagataydev/loopl-app-smoke"}"#,
+        #"[loopl] stage=mlx t=428s {"repo": "cagataydev/loopl-app-smoke-4bit"}"#,
+        #"[loopl] stage=gguf t=446s {"repo": "cagataydev/loopl-app-smoke-GGUF"}"#,
+        #"[loopl] done {"out": {"merged": "cagataydev/loopl-app-smoke", "mlx": "cagataydev/loopl-app-smoke-4bit", "gguf": "cagataydev/loopl-app-smoke-GGUF", "gguf_file": "loopl-app-smoke-Q4_K_M.gguf"}, "round": 2, "lineage": ["Qwen/Qwen3.5-0.8B", "cagataydev/loopl-app-sim"], "base": "cagataydev/loopl-app-sim", "epochs_trained": 3.0, "best_epoch": 2, "eval_history": [{"epoch": 1.0, "eval_loss": 2.241}, {"epoch": 2.0, "eval_loss": 2.1477}, {"epoch": 3.0, "eval_loss": 2.1702}], "stitched": 9, "eval_loss_base": 2.3794, "eval_loss_tuned": 2.1477, "tool_name_match": "7/9", "wall_s": 476, "script": "1.2.0"}"#,
+    ]
+
+    @MainActor static func trainSession() -> TrainingSession? {
+        guard let scene = trainScene, scene != "form" else { return nil }
+        // round 2 of loopl-app-sim: the fixture mirrors a continual job (tuned base, epochs auto, stitched by day)
+        let tuned = TrainingTunedBase(repo: "cagataydev/loopl-app-sim-4bit", bf16Repo: "cagataydev/loopl-app-sim", round: 1, size: .b0_8)
+        let plan = TrainingPlan(dataset: "cagataydev/loopl-app-conversations", conversations: 191, withTools: 64, base: .b0_8, tunedBase: tuned,
+                                epochs: .auto, outputName: "loopl-app-smoke")
+        switch scene {
+        case "done": return TrainingSession.preview(plan: plan, user: "cagataydev", logLines: trainLogDone, finished: true, startedAt: Date().addingTimeInterval(-476))
+        case "failed": return TrainingSession.preview(plan: plan, user: "cagataydev", logLines: trainLog + ["torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 1.2 GiB."], failed: "torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 1.2 GiB.")
+        default: return TrainingSession.preview(plan: plan, user: "cagataydev", logLines: trainLog)
+        }
+    }
+
+    /// `--design-answering` (DEBUG): marks the fixture's transcript as still running, so a scene can be
+    /// "a model is loaded AND it is mid-answer" — the state the delete-while-answering flow needs and that no
+    /// fixture could reach, because a scene either scripts a finished conversation or replays a live one. Same
+    /// shape of seam as `designVision` (#184): a hole in what could be tested at all, not a test-only behaviour.
+    static var answering: Bool {
+        #if DEBUG
+        return requested && CommandLine.arguments.contains("--design-answering")
+        #else
+        return false
+        #endif
+    }
+
+    /// `--design-tab chat|models|settings` picks the pane the fixture opens on.
+    static var initialPane: RootView.Pane {
+        #if DEBUG
+        guard let i = CommandLine.arguments.firstIndex(of: "--design-tab"), i + 1 < CommandLine.arguments.count else { return .chat }
+        switch CommandLine.arguments[i + 1] { case "models": return .models; case "settings": return .settings; default: return .chat }
+        #else
+        return .chat
+        #endif
+    }
+
+    @MainActor static func apply(to engine: Engine, settings: AppSettings) {
+        // `loopl`: a loopl model is loaded (its identity is in the weights, nothing in Settings). The row says vision (v1 mlx_vlm export) but the
+        // files on this phone are the OLD text-only download (the owner's 07:5xZ situation): config.json without vision_config wins,
+        // so the composer has no photo button. `--design-local-vision` keeps the files = row (button shown).
+        let specId = switch scene { case "vision": "qwen3.5-0.8b-4bit"; case "video": "qwen3-vl-2b-instruct-4bit"; case "loopl": "loopl-0.8b-4bit"; default: models == "shelf" ? "loopl-2b-4bit" : "qwen3-0.6b-4bit" }
+        if scene == "loopl", !CommandLine.arguments.contains("--design-local-vision") { engine.store.overrideLocalVision(specId, false) }
+        let spec = engine.store.catalog.models.first { $0.id == specId } ?? engine.store.catalog.models.first!
+        engine.readiness = models == "empty" ? .idle : .ready(spec)
+        #if DEBUG
+        // The composer asks the LOADED model whether it can see pictures, and a fixture loads nothing (MLX cannot
+        // run on a simulator), so the attach menu was absent in exactly the scenes that are about pictures.
+        if scene == "vision" || scene == "video" || spec.supportsVision { engine.designVision = true }
+        #endif
+        #if DEBUG
+        if let mounted {
+            let names = mounted.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+            let registry = engine.registry
+            Task {
+                try? await Task.sleep(nanoseconds: 300_000_000)      // after the Engine registered the on-device tools
+                _ = await registry.mount(names.filter { !$0.hasPrefix("-") })
+                _ = await registry.unmount(names.filter { $0.hasPrefix("-") }.map { String($0.dropFirst()) })
+            }
+        }
+        if mine { engine.hf.designIdentity(name: "cagataydev", fullname: "Cagatay Cali") }
+        if models == "shelf" {
+            engine.store.overrideState("loopl-2b-4bit", .downloaded(bytes: 1_722_271_227))
+            engine.store.overrideState("qwen3-0.6b-4bit", .downloaded(bytes: 403_000_000))
+            engine.store.overrideState("loopl-0.8b-4bit", .downloading(done: 250_000_000, total: 625_228_929, filesDone: 2, files: 6))
+            engine.store.refresh()
+        }
+        if let id = updateAvailable {
+            engine.store.overrideVersions(installed: [id: InstalledVersion(sha: "0d1f2e3a4b5c", at: Date().addingTimeInterval(-9 * 86_400))],
+                                          remote: [id: "47d27b4415f8"])
+        }
+        #endif
+        settings.showPerformance = CommandLine.arguments.contains("--design-perf")
+        settings.offline = scene == "offline"
+        var t = Transcript()
+        switch scene {
+        case "empty", "offline":
+            break
+        case "onboarding":
+            // First-run flow over an empty, model-less chat. `--design-onboarding-at <0…1>` freezes the ring mid-download;
+            // `--design-mine` = signed in to Hugging Face (so a gated pick downloads straight away).
+            engine.readiness = .idle
+            if let i = CommandLine.arguments.firstIndex(of: "--design-onboarding-at"), i + 1 < CommandLine.arguments.count,
+               let f = Double(CommandLine.arguments[i + 1]) {
+                onboardingFrozenAt = f
+            }
+        case "downloading":
+            engine.readiness = .downloading(spec, done: 162_000_000, total: spec.sizeBytes)
+        case "nomodel":
+            // The chat with no model running (a failed load, a skipped onboarding): the empty state must lead somewhere.
+            engine.readiness = .failed(spec, "\(spec.displayName) needs 4.1 GB of free memory; this iPhone has 3.2 GB right now.")
+        case "downloadfailed":
+            // A REAL Hugging Face 429, as injected by improve-6/tools/hubproxy.py and measured on an iPhone 16 Pro:
+            // the banner's sentence came from the downloader and named no model. Shape pinned by
+            // DownloadFailureSubjectTests + InsetsUITests' touch-target check.
+            engine.readiness = .failed(spec, Engine.downloadFailed(spec, HubStatus.sentence(429, path: "model.safetensors", downloading: true)))
+        case "live":
+            engine.transcript = t
+            replay = Task { await replayLive(engine, loop: CommandLine.arguments.contains("--design-loop")) }
+            return
+        case "jump":
+            // Streaming-jitter repro: a long Markdown answer in token-sized chunks (~40/s, like Qwen3.5-0.8B on a 16 Pro)
+            // that overflows the viewport, so scroll-follow + per-chunk layout are both exercised.
+            engine.transcript = t
+            Task { await replayJump(engine) }
+            return
+        case "history":
+            // Share to Hugging Face: three archived conversations (one with tool calls, one plain, one whose
+            // only tool row never finished — the review sheet shows that one as skipped). Chat stays empty.
+            // `--design-signed-out` forgets the Hugging Face token first (the sheet's token step is reachable
+            // only when there is none; a previous fixture run may have stored one).
+            if CommandLine.arguments.contains("--design-signed-out") { try? HFAccount.shared.clear() }
+            seedHistory(engine, spec: spec)
+            if !engine.transcript.items.isEmpty { return }   // --design-history-images opened a thread: keep it
+        case "answeredby":
+            // #21 "answered by X": a thread saved under ANOTHER model, written to the archive and reopened through
+            // the real decoder — so the chat title carries the subtitle without any test-only state.
+            let other = engine.store.catalog.models.first { $0.id != spec.id && $0.name != spec.name }?.name ?? "Qwen3.5 2B (4-bit)"
+            let saved = SavedConversation(id: UUID(uuidString: "8A6C0A1E-0021-4D8B-9B3C-5E0D2F7A2100")!,
+                                          title: "Explain what an agent loop is, in three short points",
+                                          updated: Date().addingTimeInterval(-3 * 3600), modelName: other,
+                                          items: [.user("Explain what an agent loop is, in three short points"),
+                                                  .assistant("1. **Ask** — the model reads the conversation and either answers or asks for a tool.\n2. **Act** — the app runs the tool and appends the result.\n3. **Repeat** — until the model answers plainly.")],
+                                          modelId: other, tools: [CurrentTimeTool().toolSpec])
+            // seedHistory FIRST: it now clears the archive (see its comment), which would otherwise delete the
+            // thread this scene is about.
+            seedHistory(engine, spec: spec)
+            engine.archive.upsert(saved)
+            if let reread = engine.archive.conversations.first(where: { $0.id == saved.id }) { engine.open(reread) }
+            return
+        case "ask":
+            // ask_user: `--design-ask confirm|select|multiselect|input|buttons|form|message` (default select) shows the
+            // native card waiting for the human; `--design-ask-state answered|cancelled|timeout` shows it settled (+ the model's
+            // follow-up). Answering a pending card scripts the follow-up (`DesignFixture.answer`), like the approval scene.
+            seedAsk(&t, type: value("--design-ask") ?? "select", state: value("--design-ask-state"))
+        case "approval":
+            t.user("Post a note to my notes API saying the build is green.")
+            t.apply(.startEventLoop(cycle: 1))
+            t.apply(.text("I'll post it now."))
+            let use = approvalUse
+            t.apply(.modelMessage(.assistant(text: "I'll post it now.", toolUses: [use])))
+            t.apply(.approvalRequested(HttpTool().requiresApproval(for: use.input)!.with(id: use.toolUseId)))
+        case "apple":
+            // On-device Apple tools: generate_voice runs FOR REAL through the tool;
+            // generate_image runs for real where ImagePlayground is available (device with
+            // Apple Intelligence) and otherwise shows the flat ImageCodec fixture, labelled as such.
+            engine.transcript = t
+            Task { await replayApple(engine) }
+            return
+        case "tool":
+            t.user("What time is it in Istanbul, and what is 23 × 47?")
+            t.apply(.startEventLoop(cycle: 1))
+            // `--design-reasoning`: a thinking block before the answer (Qwen3 `<think>`, FM held prose) → the folded ReasoningRow.
+            if CommandLine.arguments.contains("--design-reasoning") {
+                t.apply(.reasoning("The user asks two things. The time needs the current_time tool with Europe/Istanbul; the product is arithmetic, so calculator with 23*47. I can issue both calls at once and then answer in one sentence."))
+            }
+            t.apply(.text("Let me check both."))
+            let c1 = ToolUse(toolUseId: "tooluse_1", name: "current_time", input: ["timezone": .string("Europe/Istanbul")])
+            let c2 = ToolUse(toolUseId: "tooluse_2", name: "calculator", input: ["expression": .string("23*47")])
+            t.apply(.modelMessage(.assistant(text: "Let me check both.", toolUses: [c1, c2])))
+            t.apply(.toolStarted(c1)); t.apply(.toolResult(ToolResult(toolUseId: "tooluse_1", name: "current_time", content: "2026-10-05T06:14:09+03:00 (Europe/Istanbul, Sunday)", durationMs: 2.1)))
+            t.apply(.toolStarted(c2)); t.apply(.toolResult(ToolResult(toolUseId: "tooluse_2", name: "calculator", content: "23*47 = 1081", durationMs: 0.4)))
+            t.apply(.startEventLoop(cycle: 2))
+            t.apply(.text("It's **06:14** on Sunday morning in Istanbul, and 23 × 47 = **1081**."))
+            t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("It's **06:14** on Sunday morning in Istanbul, and 23 × 47 = **1081**."), metrics: EventLoopMetrics())))
+        case "sysprompt":
+            // P6-F system_prompt: the user asks for a standing rule; the model calls system_prompt append and the turn stops
+            // at the approval card with the old → new preview. `--design-sysprompt approved` settles the card: tool row,
+            // ONE quiet marker, and Settings shows "changed by the agent" + Revert (see `applySystemPromptFixture`).
+            t.user("From now on always answer in Turkish, even when I write in English.")
+            t.apply(.startEventLoop(cycle: 1))
+            let sp = ToolUse(toolUseId: "tooluse_sp1", name: "system_prompt", input: ["action": .string("append"), "text": .string("Always answer in Turkish, even when the user writes in English.")])
+            t.apply(.modelMessage(.assistant(text: "", toolUses: [sp])))
+            let store = InMemorySystemPromptStore(prompt: AppSettings.defaultSystemPrompt)
+            t.apply(.approvalRequested(SystemPromptTool(store: store).requiresApproval(for: sp.input)!.with(id: sp.toolUseId)))
+            if value("--design-sysprompt") == "approved" {
+                let change = SystemPromptChange(action: .append, before: AppSettings.defaultSystemPrompt, after: AppSettings.defaultSystemPrompt + "\n\nAlways answer in Turkish, even when the user writes in English.", at: Date().addingTimeInterval(-90))
+                t.apply(.approvalResolved(id: sp.toolUseId, .approve))
+                t.apply(.toolStarted(sp))
+                t.apply(.systemPromptChanged(change))
+                t.apply(.toolResult(ToolResult(toolUseId: sp.toolUseId, name: "system_prompt", content: "System prompt extended (731 → 798 chars). It applies from your next step and to every new conversation; the user can revert it in Settings › System prompt.", durationMs: 0.4)))
+                t.apply(.startEventLoop(cycle: 2)); t.apply(.text("Tamam — bundan sonra İngilizce yazsanız bile her zaman Türkçe cevap vereceğim."))
+                t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("Tamam."), metrics: EventLoopMetrics())))
+                if case .agent = settings.systemPromptOrigin {} else { settings.applyAgentChange(change) }
+            }
+        case "compacted":
+            // P6-B manage_messages: a long chat where the model tidies its own context mid-turn. The transcript keeps every
+            // earlier row (the user's record) and shows ONE quiet marker; the tool row above it carries the tool's own words.
+            t.user("What time is it in Istanbul?")
+            t.apply(.startEventLoop(cycle: 1))
+            let k1 = ToolUse(toolUseId: "tooluse_c1", name: "current_time", input: ["timezone": .string("Europe/Istanbul")])
+            t.apply(.modelMessage(.assistant(text: "", toolUses: [k1])))
+            t.apply(.toolStarted(k1)); t.apply(.toolResult(ToolResult(toolUseId: "tooluse_c1", name: "current_time", content: "Tuesday, 7 October 2026 00:14:09 GMT+3 (Europe/Istanbul)", durationMs: 1.8)))
+            t.apply(.startEventLoop(cycle: 2)); t.apply(.text("It's just past midnight in Istanbul — **00:14** on Tuesday."))
+            t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("It's just past midnight in Istanbul — 00:14 on Tuesday."), metrics: EventLoopMetrics())))
+            t.user("And 23 × 47, then 2^10?")
+            t.apply(.startEventLoop(cycle: 1))
+            let k2 = ToolUse(toolUseId: "tooluse_c2", name: "calculator", input: ["expression": .string("23*47")])
+            let k3 = ToolUse(toolUseId: "tooluse_c3", name: "calculator", input: ["expression": .string("2^10")])
+            t.apply(.modelMessage(.assistant(text: "", toolUses: [k2, k3])))
+            t.apply(.toolStarted(k2)); t.apply(.toolResult(ToolResult(toolUseId: "tooluse_c2", name: "calculator", content: "23*47 = 1081", durationMs: 0.3)))
+            t.apply(.toolStarted(k3)); t.apply(.toolResult(ToolResult(toolUseId: "tooluse_c3", name: "calculator", content: "2^10 = 1024", durationMs: 0.2)))
+            t.apply(.startEventLoop(cycle: 2)); t.apply(.text("**1081** and **1024**."))
+            t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("1081 and 1024."), metrics: EventLoopMetrics())))
+            t.user("The context is getting long — tidy it up, then tell me what you kept.")
+            t.apply(.startEventLoop(cycle: 1))
+            let k4 = ToolUse(toolUseId: "tooluse_c4", name: "manage_messages", input: ["action": .string("compact"), "keep_last": .number(0)])
+            t.apply(.modelMessage(.assistant(text: "", toolUses: [k4])))
+            t.apply(.toolStarted(k4))
+            t.apply(.historyEdited(HistoryEdit(action: .compact, turnsAffected: 2, toolBlocksRemoved: 6, messagesBefore: 10, messagesAfter: 6)))
+            t.apply(.toolResult(ToolResult(toolUseId: "tooluse_c4", name: "manage_messages", content: "Compacted 2 turn(s), removed 6 tool blocks (their text stays). Messages: 8 → 4 + active turn", durationMs: 0.6)))
+            t.apply(.startEventLoop(cycle: 2))
+            t.apply(.text("Done — I dropped the three old tool calls and their results from my working context and kept every message's text: your two questions and my two answers (00:14 in Istanbul; 1081 and 1024). Your chat history above is unchanged."))
+            t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("Done."), metrics: EventLoopMetrics())))
+        case "contacts":
+            // TOOLS-EXPAND: contacts_search chained into open_app (sms:) — the open_app card is the HITL step.
+            ContactsStore.use(FixtureContactsSource())
+            t.user("Text Alice that I'm running 10 minutes late.")
+            t.apply(.startEventLoop(cycle: 1))
+            let cs = ToolUse(toolUseId: "tooluse_ct1", name: "contacts_search", input: ["name": .string("Alice")])
+            t.apply(.modelMessage(.assistant(text: "", toolUses: [cs])))
+            t.apply(.toolStarted(cs)); t.apply(.toolResult(ToolResult(toolUseId: "tooluse_ct1", name: "contacts_search", content: "contacts: 1 match for \"Alice\"\n- Alice Park · phone +1 (201) 555-0142 · email alice.park@example.org", durationMs: 18)))
+            t.apply(.startEventLoop(cycle: 2))
+            t.apply(.text("Found Alice Park. Opening Messages with the text."))
+            let oa = ToolUse(toolUseId: "tooluse_ct2", name: "open_app", input: ["url": .string("sms:+12015550142&body=Running%2010%20minutes%20late"), "fallback_url": .string("sms:+12015550142")])
+            t.apply(.modelMessage(.assistant(text: "Found Alice Park. Opening Messages with the text.", toolUses: [oa])))
+            if let req = OpenAppTool().requiresApproval(for: oa.input) { t.apply(.approvalRequested(req.with(id: oa.toolUseId))) }
+        case "music":
+            // TOOLS-EXPAND: the music row — one tool, no card; the result names the song and the volume.
+            MusicStore.use(FixtureMusicSource())
+            t.user("Skip this one and turn it down a bit.")
+            t.apply(.startEventLoop(cycle: 1))
+            let m1 = ToolUse(toolUseId: "tooluse_mu1", name: "music", input: ["action": .string("next")])
+            let m2 = ToolUse(toolUseId: "tooluse_mu2", name: "music", input: ["action": .string("volume"), "level": .number(30)])
+            t.apply(.modelMessage(.assistant(text: "", toolUses: [m1, m2])))
+            t.apply(.toolStarted(m1)); t.apply(.toolResult(ToolResult(toolUseId: "tooluse_mu1", name: "music", content: "music: skipped to the next song\nnow playing: So What — Miles Davis (Kind of Blue)\nvolume: 40%", durationMs: 96)))
+            t.apply(.toolStarted(m2)); t.apply(.toolResult(ToolResult(toolUseId: "tooluse_mu2", name: "music", content: "music: volume set to 30%\nnow playing: So What — Miles Davis (Kind of Blue)", durationMs: 140)))
+            t.apply(.startEventLoop(cycle: 2))
+            t.apply(.text("Skipped to **So What** (Miles Davis) and set the volume to **30 %**."))
+            t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("Skipped to **So What** (Miles Davis) and set the volume to **30 %**."), metrics: EventLoopMetrics())))
+        case "controls":
+            // Controls: tool results that carry a live control — flashlight "Turn off", "Vibrate again", the music
+            // mini player, the location pin, "Open in Calendar". `--design-controls flashlight|vibrate|music|location|agenda`
+            // shows one row; default all five. Flashlight + music run their REAL tool code on tap through the seams.
+            let torch = FixtureTorch(on: true); TorchStore.use(torch)
+            MusicStore.use(FixtureMusicSource())
+            LocationStore.use(FixtureLocationSource())
+            let only = value("--design-controls")
+            func wants(_ n: String) -> Bool { only == nil || only == n }
+            t.user("Flashlight on, buzz me, skip this song, where am I, and remind me to call Deniz at 6.")
+            t.apply(.startEventLoop(cycle: 1))
+            var uses: [ToolUse] = []
+            if wants("flashlight") { uses.append(ToolUse(toolUseId: "tooluse_ct1", name: "flashlight", input: ["state": .string("on")])) }
+            if wants("vibrate") { uses.append(ToolUse(toolUseId: "tooluse_ct2", name: "vibrate", input: ["pattern": .string("double")])) }
+            if wants("music") { uses.append(ToolUse(toolUseId: "tooluse_ct3", name: "music", input: ["action": .string("next")])) }
+            if wants("location") { uses.append(ToolUse(toolUseId: "tooluse_ct4", name: "location", input: [:])) }
+            if wants("agenda") { uses.append(ToolUse(toolUseId: "tooluse_ct5", name: "reminders_create", input: ["title": .string("Call Deniz"), "due": .string("2026-10-07 18:00")])) }
+            t.apply(.modelMessage(.assistant(text: "", toolUses: uses)))
+            for u in uses {
+                t.apply(.toolStarted(u))
+                let r: ToolResult = switch u.name {
+                case "flashlight": ToolResult(toolUseId: u.toolUseId, name: u.name, content: FlashlightTool.render(on: true, level: 1), durationMs: 18, control: FlashlightTool.control(on: true, level: 1))
+                case "vibrate": ToolResult(toolUseId: u.toolUseId, name: u.name, content: "vibrated: double (intensity 1.00)", durationMs: 262, control: VibrateTool.control(.init(pattern: "double", intensity: 1)))
+                case "music":
+                    ToolResult(toolUseId: u.toolUseId, name: u.name, content: "music: skipped to the next song\nnow playing: So What — Miles Davis (Kind of Blue)\nvolume: 40%", durationMs: 96,
+                               control: MusicTool.control(NowPlaying(state: .playing, title: "So What", artist: "Miles Davis", album: "Kind of Blue", volume: 40)))
+                case "location":
+                    ToolResult(toolUseId: u.toolUseId, name: u.name, content: "location: Hoboken, New Jersey, United States\ncoordinates: 40.74, -74.03 (about 1 km)\ntime zone: America/New_York", durationMs: 412,
+                               control: LocationTool.control(FixtureLocationSource().place, precise: false))
+                default:
+                    ToolResult(toolUseId: u.toolUseId, name: u.name, content: "reminders: added\n2026-10-07 18:00 · Call Deniz (Reminders)", durationMs: 210,
+                               control: RemindersCreateTool.control(AgendaItem(title: "Call Deniz", start: Date(timeIntervalSince1970: 1_791_914_400))))
+                }
+                t.apply(.toolResult(r))
+            }
+            t.apply(.startEventLoop(cycle: 2))
+            let line = only == nil ? "Flashlight's on, buzzed, skipped to **So What**, you're in **Hoboken**, and the reminder is set for **6 pm**." : "Done."
+            t.apply(.text(line))
+            t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant(line), metrics: EventLoopMetrics())))
+        case "location":
+            // TOOLS-EXPAND: the location row (coarse) chained into http for the weather — the reason the tool exists.
+            LocationStore.use(FixtureLocationSource())
+            t.user("What's the weather like where I am?")
+            t.apply(.startEventLoop(cycle: 1))
+            let lc = ToolUse(toolUseId: "tooluse_lo1", name: "location", input: [:])
+            t.apply(.modelMessage(.assistant(text: "", toolUses: [lc])))
+            t.apply(.toolStarted(lc)); t.apply(.toolResult(ToolResult(toolUseId: "tooluse_lo1", name: "location", content: "location: Hoboken, New Jersey, United States\ncoordinates: 40.74, -74.03 (about 1 km)\ntime zone: America/New_York", durationMs: 412)))
+            t.apply(.startEventLoop(cycle: 2))
+            let hc = ToolUse(toolUseId: "tooluse_lo2", name: "http", input: ["url": .string("https://api.open-meteo.com/v1/forecast?latitude=40.74&longitude=-74.03&current=temperature_2m,weather_code")])
+            t.apply(.modelMessage(.assistant(text: "", toolUses: [hc])))
+            t.apply(.toolStarted(hc)); t.apply(.toolResult(ToolResult(toolUseId: "tooluse_lo2", name: "http", content: "{\"status\":200,\"body\":{\"current\":{\"temperature_2m\":17.4,\"weather_code\":2}}}", durationMs: 380)))
+            t.apply(.startEventLoop(cycle: 3))
+            t.apply(.text("You're in **Hoboken** — it's **17 °C** and partly cloudy right now."))
+            t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("You're in **Hoboken** — it's **17 °C** and partly cloudy right now."), metrics: EventLoopMetrics())))
+        case "agenda":
+            // TOOLS-EXPAND: calendar_events row from the fixture store, then reminders_create stopping at its ADD card.
+            let cal = Calendar.current, day0 = cal.startOfDay(for: Date())
+            func at(_ d: Int, _ h: Int, _ m: Int = 0) -> Date { cal.date(byAdding: .minute, value: h * 60 + m, to: cal.date(byAdding: .day, value: d, to: day0)!)! }
+            let store = FixtureEventSource(events: [AgendaItem(title: "Standup", start: at(0, 9, 30), end: at(0, 9, 45), calendar: "Work"),
+                                                    AgendaItem(title: "Dentist", start: at(0, 15), end: at(0, 16), calendar: "Home", location: "Hoboken")],
+                                           reminders: [AgendaItem(title: "Buy edamame", start: at(0, 18), calendar: "Reminders")])
+            AgendaStore.use(store)
+            t.user("What's on today, and remind me to call the dentist back tomorrow at 9.")
+            t.apply(.startEventLoop(cycle: 1))
+            let ce = ToolUse(toolUseId: "tooluse_ag1", name: "calendar_events", input: ["days": .number(1)])
+            t.apply(.modelMessage(.assistant(text: "", toolUses: [ce])))
+            t.apply(.toolStarted(ce))
+            let f = DateFormatter(); f.dateFormat = "EEE d MMM"; let today = f.string(from: day0)
+            t.apply(.toolResult(ToolResult(toolUseId: "tooluse_ag1", name: "calendar_events", content: "calendar: 2 events \(today) – \(today)\n- \(today) 09:30–09:45: Standup [Work]\n- \(today) 15:00–16:00: Dentist @ Hoboken [Home]", durationMs: 4.2)))
+            t.apply(.startEventLoop(cycle: 2))
+            t.apply(.text("Two things today — **Standup** at 09:30 and the **Dentist** in Hoboken at 15:00. Adding the reminder now."))
+            let g = DateFormatter(); g.dateFormat = "yyyy-MM-dd"
+            let rc = ToolUse(toolUseId: "tooluse_ag2", name: "reminders_create", input: ["title": .string("Call the dentist back"), "due": .string(g.string(from: at(1, 0)) + " 09:00")])
+            t.apply(.modelMessage(.assistant(text: "Two things today — **Standup** at 09:30 and the **Dentist** in Hoboken at 15:00. Adding the reminder now.", toolUses: [rc])))
+            t.apply(.approvalRequested(RemindersCreateTool().requiresApproval(for: rc.input)!.with(id: rc.toolUseId)))
+        case "clipboard":
+            // TOOLS-EXPAND: the clipboard tool both ways — a read row (what the user copied), then a write that
+            // stops at the COPY approval card quoting the text. `--design-clipboard-approved` settles the card.
+            t.user("What did I copy? Then copy a Turkish version of it for me.")
+            t.apply(.startEventLoop(cycle: 1))
+            let r = ToolUse(toolUseId: "tooluse_cb1", name: "clipboard_read", input: [:])
+            t.apply(.modelMessage(.assistant(text: "", toolUses: [r])))
+            t.apply(.toolStarted(r)); t.apply(.toolResult(ToolResult(toolUseId: "tooluse_cb1", name: "clipboard_read", content: "clipboard: text (14 characters)\nSee you at six", durationMs: 0.6)))
+            t.apply(.startEventLoop(cycle: 2))
+            t.apply(.text("You copied *See you at six*. Copying the Turkish now."))
+            let w = ToolUse(toolUseId: "tooluse_cb2", name: "clipboard_write", input: ["text": .string("Altıda görüşürüz")])
+            t.apply(.modelMessage(.assistant(text: "You copied *See you at six*. Copying the Turkish now.", toolUses: [w])))
+            if CommandLine.arguments.contains("--design-clipboard-approved") {
+                t.apply(.toolStarted(w)); t.apply(.toolResult(ToolResult(toolUseId: "tooluse_cb2", name: "clipboard_write", content: "clipboard: replaced with 16 characters", durationMs: 0.4)))
+                t.apply(.startEventLoop(cycle: 3))
+                t.apply(.text("Done — **Altıda görüşürüz** is on your clipboard."))
+                t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("Done — **Altıda görüşürüz** is on your clipboard."), metrics: EventLoopMetrics())))
+            } else {
+                t.apply(.approvalRequested(ClipboardWriteTool().requiresApproval(for: w.input)!.with(id: w.toolUseId)))
+            }
+        case "edit":
+            // Hold-to-edit a settled two-turn thread; holding "And in Tokyo?" → Edit /
+            // Copy / Delete from here, holding an answer → Copy / Retry. Save & regenerate and Retry are
+            // scripted (`regenerate`) because the fixture has no model behind it.
+            t.user("What time is it in Istanbul?")
+            t.apply(.startEventLoop(cycle: 1))
+            let c = ToolUse(toolUseId: "tooluse_e1", name: "current_time", input: ["timezone": .string("Europe/Istanbul")])
+            t.apply(.modelMessage(.assistant(text: "", toolUses: [c])))
+            t.apply(.toolStarted(c)); t.apply(.toolResult(ToolResult(toolUseId: "tooluse_e1", name: "current_time", content: "2026-10-06T06:14:09+03:00 (Europe/Istanbul, Tuesday)", durationMs: 1.8)))
+            t.apply(.startEventLoop(cycle: 2))
+            t.apply(.text("It's **06:14** on Tuesday morning in Istanbul."))
+            t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("It's **06:14** on Tuesday morning in Istanbul."), metrics: EventLoopMetrics())))
+            t.user("And in Tokyo?")
+            t.apply(.startEventLoop(cycle: 1))
+            t.apply(.text("Tokyo is six hours ahead of Istanbul, so it's **12:14** there."))
+            t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("Tokyo is six hours ahead of Istanbul, so it's **12:14** there."), metrics: EventLoopMetrics())))
+        case "loopl":
+            // The answer loopl-train bakes into the weights (identity family); the app sends only the user's system prompt.
+            // No attach button because the local config.json (fixture override) has no vision tower.
+            t.user("Who built you?")
+            t.apply(.startEventLoop(cycle: 1))
+            t.apply(.text("Cagatay Cali (@cagataycali). I'm a post-trained Qwen3.5 model, built on loopl, and I'm running on this device — not ChatGPT, Claude, Gemini or Siri."))
+            t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("Cagatay Cali (@cagataycali). I'm a post-trained Qwen3.5 model, built on loopl, and I'm running on this device — not ChatGPT, Claude, Gemini or Siri."), metrics: EventLoopMetrics())))
+        case "vision":
+            // The exact exchange the macOS proof produced with Qwen3.5-0.8B-4bit on Tests/…/Fixtures/vision-test.png.
+            let png = Bundle.main.url(forResource: "vision-test", withExtension: "png").flatMap { try? Data(contentsOf: $0) } ?? Data()
+            let img = ImageBlock(data: png, mime: "image/png", width: 640, height: 400, alt: "test card: red circle, blue square, LOOPL 42")
+            t.user("What do you see? Then multiply the number by 3.", images: [img])
+            t.apply(.startEventLoop(cycle: 1))
+            t.apply(.text("A red circle and a blue square on a paper background, with **LOOPL 42** written underneath."))
+            let c = ToolUse(toolUseId: "tooluse_v1", name: "calculator", input: ["expression": .string("42 * 3")])
+            t.apply(.modelMessage(.assistant(text: "A red circle and a blue square on a paper background, with **LOOPL 42** written underneath.", toolUses: [c])))
+            t.apply(.toolStarted(c)); t.apply(.toolResult(ToolResult(toolUseId: "tooluse_v1", name: "calculator", content: "42 * 3 = 126", durationMs: 0.3)))
+            t.apply(.startEventLoop(cycle: 2))
+            t.apply(.text("42 × 3 = **126**."))
+            t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("42 × 3 = **126**."), metrics: EventLoopMetrics())))
+        case "audio":
+            // A recording the user made in the composer travels as one marker line in the text (shown as a chip);
+            // the model reads the path and calls `transcribe` on it. The file is a real AAC take written by
+            // `GenerateVoiceTool`-style synthesis so the chip's play button works in captures.
+            let dir = AudioAttachment.directory(for: engine.currentId)
+            let url = dir.appendingPathComponent("8F2A1B.m4a")
+            let marker = AudioAttachmentMarker(path: url.path, duration: 4.6)
+            t.user("What did I just say? Answer in one line.\n" + marker.line)
+            t.apply(.startEventLoop(cycle: 1))
+            t.apply(.text("Let me listen to the recording."))
+            let c = ToolUse(toolUseId: "tooluse_t1", name: "transcribe", input: ["path": .string(url.path)])
+            t.apply(.modelMessage(.assistant(text: "Let me listen to the recording.", toolUses: [c])))
+            t.apply(.toolStarted(c))
+            t.apply(.toolResult(ToolResult(toolUseId: "tooluse_t1", name: "transcribe", content: "transcript of 8F2A1B.m4a (4.6 s audio, en-US, 1.1 s):\nhello from loopl, this is a recording", durationMs: 1120)))
+            t.apply(.startEventLoop(cycle: 2))
+            t.apply(.text("You said: **\"hello from loopl, this is a recording.\"**"))
+            t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("You said: **\"hello from loopl, this is a recording.\"**"), metrics: EventLoopMetrics())))
+            engine.transcript = t
+            Task { await writeFixtureRecording(to: url) }
+            return
+        case "video":
+            // the user attached a clip. The exact exchange the macOS proof produced with Qwen3-VL-2B-Instruct-4bit
+            // on video-test.mp4 (synthetic: a red and a blue square drifting on a dark background, 10 s, a sine tone).
+            // The clip is copied into the thread's attachments folder so the poster, the chip and a reopen all work.
+            let dir = AudioAttachment.directory(for: engine.currentId)
+            let url = dir.appendingPathComponent("C1A2B3.mp4")
+            if !FileManager.default.fileExists(atPath: url.path), let src = Bundle.main.url(forResource: "video-test", withExtension: "mp4") {
+                try? FileManager.default.copyItem(at: src, to: url)
+            }
+            var block = VideoBlock(path: url.path, mime: "video/mp4", duration: 10, width: 640, height: 360,
+                                   framePlan: VideoFramePlan(maxFrames: 16, fps: 1, maxEdge: 448), transcript: nil)
+            block.thumbnail = fixtureVideoPoster(url)
+            t.user("What happens in this video?", videos: [block])
+            t.apply(.startEventLoop(cycle: 1))
+            t.apply(.text("A small, light blue square appears on a dark background, initially positioned in the lower-left area of the screen. The blue square then begins to grow in size and gradually expands outward, becoming larger and more prominent."))
+            t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("A small, light blue square appears on a dark background, initially positioned in the lower-left area of the screen. The blue square then begins to grow in size and gradually expands outward, becoming larger and more prominent."), metrics: EventLoopMetrics())))
+            engine.transcript = t
+            return
+        case "render":
+            // `render_ui`: `--design-render chart|map|diagram|table|keyvalue|list|progress|misc|unknown` = one card per kind;
+            // default = the mixed card (title + markdown + chart + keyvalue) the owner asked for ("maps, graphs, diagrams").
+            renderScene(&t, kind: value("--design-render") ?? "mixed")
+        case "long":
+            // a long thread — `--design-long-turns N` (default 60) user/answer pairs, a tool row every 6th,
+            // a picture every 10th, a note every 15th — for scroll/reopen/memory audits of the transcript at scale.
+            let turns = Int(value("--design-long-turns") ?? "") ?? 60
+            let png = Bundle.main.url(forResource: "vision-test", withExtension: "png").flatMap { try? Data(contentsOf: $0) } ?? Data()
+            let img = ImageBlock(data: png, mime: "image/png", width: 640, height: 400, alt: "test card")
+            let prompts = ["What time is it in Istanbul?", "Summarise what we said so far in one line.", "What is \(turns) × 17?",
+                           "Write two sentences about the sea.", "Translate 'good morning' to Turkish.", "What's in this picture?"]
+            for i in 1...turns {
+                let q = prompts[i % prompts.count]
+                t.user(i % 10 == 0 ? "What's in this picture?" : "\(i). \(q)", images: i % 10 == 0 ? [img] : [])
+                t.apply(.startEventLoop(cycle: i))
+                if i % 6 == 0 {
+                    let use = ToolUse(toolUseId: "tooluse_long_\(i)", name: i % 12 == 0 ? "calculator" : "current_time",
+                                      input: i % 12 == 0 ? ["expression": .string("\(turns)*17")] : ["timezone": .string("Europe/Istanbul")])
+                    t.apply(.modelMessage(.assistant(text: "", toolUses: [use])))
+                    t.apply(.toolResult(ToolResult(toolUseId: use.toolUseId, name: use.name, status: .success,
+                                                   content: i % 12 == 0 ? "\(turns)*17 = \(turns * 17)" : "2026-10-07T09:\(String(format: "%02d", i % 60)):00+03:00 (Europe/Istanbul, Tuesday)", durationMs: 2)))
+                }
+                t.apply(.text(i % 10 == 0 ? "A red circle and a blue square with **LOOPL 42** underneath."
+                              : "Answer \(i): " + String(repeating: "the sea is wide and the wind is steady. ", count: 1 + i % 4)))
+                if i % 15 == 0 { t.apply(.historyEdited(HistoryEdit(action: .compact, turnsAffected: 8, toolBlocksRemoved: 2, messagesBefore: 2 * i, messagesAfter: 2 * i - 8))) }
+                t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("…"), metrics: EventLoopMetrics())))
+            }
+            var m = Metrics(); m.contextUsed = 6_900; m.contextMax = 8_192; m.tokensPerSecond = 38
+            t.apply(.metrics(m))
+        case "markdown":
+            // Everything the block renderer knows: heading, table, quote, rule, lists, code — the shapes small models emit.
+            t.user("Compare the three runtimes in a table, then quote the one-line rule.")
+            t.apply(.startEventLoop(cycle: 1))
+            t.apply(.text("""
+            ## Runtimes
+
+            | Runtime | Formats | Best for |
+            |---|---|---|
+            | **MLX** | 4-bit safetensors | iPhone 15 Pro and newer — Metal |
+            | **llama.cpp** | GGUF Q4_K_M | older devices, more quants |
+            | **Apple Intelligence** | built in | nothing to download |
+
+            > One rule: the model decides, the app runs the tool, the result goes back as a message.
+
+            ---
+
+            - Context and output length follow the model's recommended maximum.
+            - Tool results are rendered as rows you can open.
+            """))
+            t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("…"), metrics: EventLoopMetrics())))
+        case "agents":
+            // sub-agents cards. Default = mid-flight: `weather` done · `notes` waiting for an approval ·
+            // `issues` started with wait:false (its row returned, the child runs on → background chip).
+            // `--design-agents finished` = everything settled: notes denied → failed, issues done + the wake line + the
+            // parent's second answer. `--design-agents live` streams the whole story over ~14 s (motion captures).
+            if value("--design-agents") == "live" {
+                engine.transcript = t
+                replay = Task { await replayAgents(engine, loop: CommandLine.arguments.contains("--design-loop")) }
+                return
+            }
+            seedAgents(&t, finished: value("--design-agents") == "finished")
+        default: // streaming
+            t.user("Explain what an agent loop is, in three short points, with a Swift example.")
+            t.apply(.startEventLoop(cycle: 1))
+            t.apply(.text("""
+            An agent loop is the smallest program that lets a language model *act*:
+
+            1. **Ask** — the model reads the conversation and either answers or asks for a tool.
+            2. **Act** — the app runs the tool and appends the result as a new message.
+            3. **Repeat** — the model reads the result and continues, until it answers plainly.
+
+            ```swift
+            let agent = Agent(model: model, tools: [Clock(), Calculator()])
+            for try await event in agent.stream("what time is it in Istanbul?") {
+                if case .text(let delta) = event { print(delta, terminator: "") }
+            }
+            ```
+
+            loopl never caps the number of rounds — the only limit is the model's context window, which it
+            """))
+            var m = Metrics(); m.ttftMs = 212; m.tokensPerSecond = 41.7; m.promptTokens = 318; m.generatedTokens = 156; m.contextUsed = 474; m.contextMax = 8192
+            t.apply(.metrics(m))
+        }
+        if answering { t.isRunning = true }      // --design-answering: the turn is still in flight
+        engine.transcript = t
+    }
+
+    // MARK: ask scene
+
+    static let askUseId = "tooluse_ask_1"
+    /// The question each type asks in the scene — one realistic story per type, all answerable.
+    static func askRequest(_ type: String) -> (user: String, lead: String, request: AskUserRequest, followUp: (AskUserAnswer) -> String) {
+        switch type {
+        case "confirm":
+            return ("Clear all my reminders for today.", "That removes 4 reminders — let me check first.",
+                    AskUserRequest(type: .confirm, text: "Delete all 4 reminders due today? This cannot be undone.", title: "Delete reminders"),
+                    { a in if case .answered(.bool(true)) = a { return "Done — the 4 reminders are gone." }; return "Okay, I left them as they were." })
+        case "multiselect":
+            return ("Order my usual pizza.", "Which toppings this time?",
+                    AskUserRequest(type: .multiselect, text: "Pick the toppings for a large pizza.", title: "Toppings",
+                                   options: ["Mozzarella", "Mushrooms", "Olives", "Basil", "Pepperoni", "Hot honey"].map { .init(value: $0) }),
+                    { a in "Ordered a large with \(a.summary(for: AskUserRequest(type: .multiselect, text: ""))) — about 35 minutes." })
+        case "input":
+            return ("Rename this conversation.", "What should it be called?",
+                    AskUserRequest(type: .input, text: "New name for this conversation", title: "Rename", default: "Pizza night planning"),
+                    { a in "Renamed it to **\(a.summary(for: AskUserRequest(type: .input, text: "")))**." })
+        case "buttons":
+            return ("Set a timer.", "How long?",
+                    AskUserRequest(type: .buttons, text: "How long should the timer run?", title: "Timer",
+                                   options: ["5 min", "10 min", "25 min", "1 hour"].map { .init(value: $0) }, default: "25 min"),
+                    { a in "Timer set for \(a.summary(for: AskUserRequest(type: .buttons, text: "")))." })
+        case "form":
+            return ("Sign me in to the office Wi-Fi.", "I need the network details.",
+                    AskUserRequest(type: .form, text: "Enter the Wi-Fi details. The password stays on this device.", title: "Wi-Fi",
+                                   fields: [.init(name: "ssid", label: "Network", type: .text, default: "loopl-office", required: true),
+                                            .init(name: "password", label: "Password", type: .password, required: true),
+                                            .init(name: "devices", label: "Devices to connect", type: .number, default: "1"),
+                                            .init(name: "remember", label: "Remember this network", type: .toggle, default: "true")]),
+                    { _ in "Connected to **loopl-office** — the password is saved on this device only." })
+        case "message":
+            return ("Update all my models.", "Before I start:",
+                    AskUserRequest(type: .message, text: "Updating 3 models downloads about 2.4 GB over Wi-Fi and takes around 6 minutes. You can keep chatting meanwhile.", title: "Heads-up"),
+                    { _ in "Starting the update — I'll say when each model is ready." })
+        default:
+            return ("Book me a table tonight.", "Which place?",
+                    AskUserRequest(type: .select, text: "Where should I book for tonight at 20:00, for two?", title: "Pick a restaurant",
+                                   options: [.init(value: "Antica Pesa", label: "Antica Pesa · Italian"), .init(value: "Oda", label: "Oda · Turkish"),
+                                             .init(value: "Blue Ribbon", label: "Blue Ribbon · Sushi")]),
+                    { a in "Booked **\(a.summary(for: AskUserRequest(type: .select, text: "")))** tonight at 20:00 for two. The confirmation is in your calendar." })
+        }
+    }
+    static func seedAsk(_ t: inout Transcript, type: String, state: String?) {
+        let story = askRequest(type)
+        t.user(story.user)
+        t.apply(.startEventLoop(cycle: 1))
+        t.apply(.text(story.lead))
+        let use = ToolUse(toolUseId: askUseId, name: AskUserTool.toolName, input: story.request.toolArgs)
+        t.apply(.modelMessage(.assistant(text: story.lead, toolUses: [use])))
+        t.apply(.toolStarted(use))
+        t.apply(.interruptRaised(Interrupt(id: AskUserTool.interruptId(toolUseId: askUseId), name: AskUserTool.interruptName, reason: story.request.interruptReason)))
+        guard let state else { return }
+        let answer: AskUserAnswer = switch state {
+        case "cancelled": .cancelled
+        case "timeout": .timedOut
+        default: sampleAnswer(story.request)
+        }
+        t.apply(.interruptResolved(id: AskUserTool.interruptId(toolUseId: askUseId), response: answer.interruptResponse))
+        t.apply(.toolResult(ToolResult(toolUseId: askUseId, name: AskUserTool.toolName, content: answer.toolResult.compact, durationMs: 4_200)))
+        t.apply(.startEventLoop(cycle: 2))
+        let reply = switch answer {
+        case .answered: story.followUp(answer.masked(for: story.request))
+        case .cancelled: "Okay — I stopped there. Ask again whenever you like."
+        case .timedOut: "I didn't get an answer, so I left it. Ask again whenever you like."
+        }
+        t.apply(.text(reply))
+        t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant(reply), metrics: EventLoopMetrics())))
+    }
+    static func sampleAnswer(_ r: AskUserRequest) -> AskUserAnswer {
+        switch r.type {
+        case .confirm: .answered(.bool(true))
+        case .select, .buttons: .answered(.string(r.default ?? r.options.first?.value ?? ""))
+        case .multiselect: .answered(.array(r.options.prefix(3).map { .string($0.value) }))
+        case .input: .answered(.string(r.default ?? "Pizza night planning"))
+        case .form: .answered(.object(["ssid": "loopl-office", "password": "hunter2-not-shown", "devices": 1, "remember": true]))
+        case .message: .answered(.string("acknowledged"))
+        }
+    }
+    /// A pending ask card answered in the fixture (no model): settle the card, then script the follow-up.
+    @MainActor static func answer(_ engine: Engine, _ toolUseId: String, _ answer: AskUserAnswer) async {
+        func sleep(_ s: Double) async { try? await Task.sleep(for: .seconds(s)) }
+        guard let idx = engine.transcript.items.firstIndex(where: { if case .ask(let id, _, nil) = $0.kind { return id == toolUseId }; return false }),
+              case .ask(_, let request, _) = engine.transcript.items[idx].kind else { return }
+        let story = askRequest(value("--design-ask") ?? "select")
+        _ = engine.transcript.apply(.interruptResolved(id: AskUserTool.interruptId(toolUseId: toolUseId), response: answer.interruptResponse))
+        _ = engine.transcript.apply(.toolResult(ToolResult(toolUseId: toolUseId, name: AskUserTool.toolName, content: answer.toolResult.compact, durationMs: 4_200)))
+        engine.haptics.emit(.toolFinish)
+        await sleep(0.5)
+        _ = engine.transcript.apply(.startEventLoop(cycle: 2))
+        await sleep(0.3)
+        let reply = switch answer {
+        case .answered: story.followUp(answer.masked(for: request))
+        case .cancelled: "Okay — I stopped there. Ask again whenever you like."
+        case .timedOut: "I didn't get an answer, so I left it. Ask again whenever you like."
+        }
+        for w in reply.split(separator: " ") { _ = engine.transcript.apply(.text(String(w) + " ")); await sleep(0.04) }
+        _ = engine.transcript.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant(reply), metrics: EventLoopMetrics())))
+    }
+
+    // MARK: agents scene
+
+    static let agentsPrompt = "Check the weather in Hoboken and post a note about it, in parallel — and start a summary of the repo's newest issues in the background."
+    static func agentUse(_ id: String, name: String, prompt: String, task: String, tools: [String], wait: Bool = true) -> ToolUse {
+        ToolUse(toolUseId: id, name: "use_agent", input: ["action": .string("run"), "name": .string(name), "system_prompt": .string(prompt), "input": .string(task),
+                                                          "tools": .array(tools.map { .string($0) }), "wait": .bool(wait)])
+    }
+    static func agentInfo(_ id: String, _ use: ToolUse, startedAt: Date) -> SubAgentInfo {
+        let i = use.input
+        return SubAgentInfo(id: id, parentToolUseId: use.toolUseId, name: i["name"]?.stringValue ?? "agent", systemPrompt: i["system_prompt"]?.stringValue ?? "",
+                            input: i["input"]?.stringValue ?? "", tools: i["tools"]?.arrayValue?.compactMap(\.stringValue) ?? [],
+                            background: !(i["wait"]?.boolValue ?? true), startedAt: startedAt)
+    }
+    static let weatherUse = agentUse("tooluse_ag_w", name: "weather", prompt: "You check the weather with the http tool and answer in one line, in °C.", task: "Weather in Hoboken right now?", tools: ["http", "current_time"])
+    static let notesUse = agentUse("tooluse_ag_n", name: "notes", prompt: "You post short notes to the notes API. Never invent content.", task: "Post a note: 'Hoboken, 17 °C, partly cloudy'.", tools: ["http"])
+    static let issuesUse = agentUse("tooluse_ag_i", name: "issues", prompt: "You summarise GitHub issues in three bullets. Use the http tool; be brief.", task: "Summarise the three newest open issues of cagataycali/loopl.", tools: ["http"], wait: false)
+    static let notesPost = ToolUse(toolUseId: "tooluse_ag_n_post", name: "http",
+                                   input: ["method": "POST", "url": "https://notes.example.com/api/notes",
+                                           "headers": ["Authorization": "Bearer n0tes-secret", "Accept": "application/json"],
+                                           "body": ["text": "Hoboken, 17 °C, partly cloudy", "tags": ["weather"]]])
+    static let weatherHttp = ToolUse(toolUseId: "tooluse_ag_w_http", name: "http", input: ["url": .string("https://api.open-meteo.com/v1/forecast?latitude=40.74&longitude=-74.03&current=temperature_2m,weather_code")])
+    static let issuesHttp = ToolUse(toolUseId: "tooluse_ag_i_http", name: "http", input: ["url": .string("https://api.github.com/repos/cagataycali/loopl/issues?state=open&per_page=3")])
+    static let issuesSummary = "Three newest issues: **#118** composer mic placement, **#116** Models storage line, **#115** AX-XL settings rows — all opened today, none assigned."
+    static func done(_ text: String, stop: StopReason = .endTurn) -> AgentEvent { .result(AgentResult(stopReason: stop, message: .assistant(text), metrics: EventLoopMetrics())) }
+    static func wakeLine(_ info: SubAgentInfo, status: SubAgentStatus, result: String, endedAt: Date) -> String {
+        SubAgentWake.line(for: SubAgentEnvelope(info: info, status: status, result: result, endedAt: endedAt))
+    }
+
+    /// Settled fixtures carry a real end time, so elapsed reads the child's span, not "since launch".
+    static func endAgent(_ t: inout Transcript, _ id: String, at: Date) {
+        if let idx = t.agentIndex(id), case .agent(var run) = t.items[idx].kind { run.endedAt = at; t.items[idx].kind = .agent(run) }
+    }
+
+    /// The agents story as settled state. `finished:false` stops with notes waiting and issues in the background.
+    static func seedAgents(_ t: inout Transcript, finished: Bool) {
+        let t0 = Date().addingTimeInterval(finished ? -96 : -38)
+        let w = agentInfo("agent_w", weatherUse, startedAt: t0), n = agentInfo("agent_n", notesUse, startedAt: t0.addingTimeInterval(0.3)), i = agentInfo("agent_i", issuesUse, startedAt: t0.addingTimeInterval(0.6))
+        t.user(agentsPrompt)
+        t.apply(.startEventLoop(cycle: 1))
+        t.apply(.text("I'll run two helpers in parallel and start the issue summary in the background."))
+        t.apply(.modelMessage(.assistant(text: "I'll run two helpers in parallel and start the issue summary in the background.", toolUses: [weatherUse, notesUse, issuesUse])))
+        // weather — inline, done in 6.2 s
+        t.apply(.toolStarted(weatherUse)); t.apply(.childStarted(w)); t.apply(.childStatus(id: w.id, .running))
+        t.apply(.child(id: w.id, .startEventLoop(cycle: 1)))
+        t.apply(.child(id: w.id, .text("Fetching the current conditions.")))
+        t.apply(.child(id: w.id, .modelMessage(.assistant(text: "Fetching the current conditions.", toolUses: [weatherHttp]))))
+        t.apply(.child(id: w.id, .toolStarted(weatherHttp)))
+        t.apply(.child(id: w.id, .toolResult(ToolResult(toolUseId: weatherHttp.toolUseId, name: "http", content: "{\"status\":200,\"body\":{\"current\":{\"temperature_2m\":17.4,\"weather_code\":2}}}", durationMs: 412))))
+        t.apply(.child(id: w.id, .startEventLoop(cycle: 2)))
+        t.apply(.child(id: w.id, .text("Hoboken: **17 °C**, partly cloudy.")))
+        t.apply(.child(id: w.id, done("Hoboken: **17 °C**, partly cloudy.")))
+        t.apply(.childStatus(id: w.id, .done)); endAgent(&t, w.id, at: t0.addingTimeInterval(6.2))
+        t.apply(.toolResult(ToolResult(toolUseId: weatherUse.toolUseId, name: "use_agent", content: "{\"id\":\"agent_w\",\"status\":\"done\",\"result\":\"Hoboken: 17 °C, partly cloudy.\"}", durationMs: 6_200)))
+        // notes — inline, stops at the POST approval (waiting for you)
+        t.apply(.toolStarted(notesUse)); t.apply(.childStarted(n)); t.apply(.childStatus(id: n.id, .running))
+        t.apply(.child(id: n.id, .startEventLoop(cycle: 1)))
+        t.apply(.child(id: n.id, .text("Posting the note now.")))
+        t.apply(.child(id: n.id, .modelMessage(.assistant(text: "Posting the note now.", toolUses: [notesPost]))))
+        t.apply(.child(id: n.id, .approvalRequested(HttpTool().requiresApproval(for: notesPost.input)!.with(id: notesPost.toolUseId))))
+        // issues — wait:false: the row returns the envelope at once, the child runs on
+        t.apply(.toolStarted(issuesUse)); t.apply(.childStarted(i)); t.apply(.childStatus(id: i.id, .background))
+        t.apply(.toolResult(ToolResult(toolUseId: issuesUse.toolUseId, name: "use_agent", content: "{\"pending\":true,\"id\":\"agent_i\"}", durationMs: 4)))
+        t.apply(.child(id: i.id, .startEventLoop(cycle: 1)))
+        t.apply(.child(id: i.id, .modelMessage(.assistant(text: "", toolUses: [issuesHttp]))))
+        t.apply(.child(id: i.id, .toolStarted(issuesHttp)))
+        guard finished else { return }   // mid-flight: parent still running on the notes row
+        // --design-agents finished: the human denied the POST → notes failed; the parent answered; issues finished → wake → second answer.
+        t.apply(.child(id: n.id, .approvalResolved(id: notesPost.toolUseId, .deny(reason: "not now"))))
+        t.apply(.child(id: n.id, .forceStop("the note was not approved")))
+        t.apply(.child(id: n.id, done("Not posted — you declined the request.", stop: .cancelled)))
+        t.apply(.childStatus(id: n.id, .failed)); endAgent(&t, n.id, at: t0.addingTimeInterval(21))
+        t.apply(.toolResult(ToolResult(toolUseId: notesUse.toolUseId, name: "use_agent", status: .error, content: "{\"id\":\"agent_n\",\"status\":\"failed\",\"result\":\"Not posted — you declined the request.\"}", durationMs: 21_000)))
+        t.apply(.startEventLoop(cycle: 2))
+        let answer1 = "Hoboken is at **17 °C**, partly cloudy. The note was not posted — you declined it. The issue summary is still running in the background; I'll follow up when it lands."
+        t.apply(.text(answer1))
+        t.apply(done(answer1))
+        t.apply(.child(id: i.id, .toolResult(ToolResult(toolUseId: issuesHttp.toolUseId, name: "http", content: "{\"status\":200,\"body\":[{\"number\":118,\"title\":\"composer: mic on the right\"},{\"number\":116,\"title\":\"Models: storage line\"},{\"number\":115,\"title\":\"Settings rows at AX-XL\"}]}", durationMs: 688))))
+        t.apply(.child(id: i.id, .startEventLoop(cycle: 2)))
+        t.apply(.child(id: i.id, .text(issuesSummary)))
+        t.apply(.child(id: i.id, done(issuesSummary)))
+        t.apply(.childStatus(id: i.id, .done)); endAgent(&t, i.id, at: t0.addingTimeInterval(74))
+        t.note(wakeLine(i, status: .done, result: issuesSummary, endedAt: t0.addingTimeInterval(74)))
+        t.isRunning = true
+        t.apply(.startEventLoop(cycle: 1))
+        t.apply(.text(issuesSummary))
+        t.apply(done(issuesSummary))
+    }
+
+    /// The agents story over time: children stream their text, one waits for the human (auto-approved after 4 s so the
+    /// loop runs unattended), the background one finishes after the parent answered and wakes it.
+    @MainActor static func replayAgents(_ engine: Engine, loop: Bool) async {
+        func sleep(_ s: Double) async { try? await Task.sleep(for: .seconds(s)) }
+        func ev(_ e: AgentEvent) { _ = engine.transcript.apply(e) }
+        func stream(_ text: String, child: String? = nil, cps: Double = 28) async {
+            for word in text.split(separator: " ", omittingEmptySubsequences: false) {
+                let piece = String(word) + " "
+                if let child { ev(.child(id: child, .text(piece))) } else { ev(.text(piece)) }
+                await sleep(1 / cps)
+            }
+        }
+        repeat {
+            engine.transcript.clear()
+            await sleep(1.0)
+            engine.transcript.user(agentsPrompt); engine.haptics.emit(.send)
+            await sleep(0.8)
+            ev(.startEventLoop(cycle: 1))
+            await stream("I'll run two helpers in parallel and start the issue summary in the background.")
+            ev(.modelMessage(.assistant(text: "I'll run two helpers in parallel and start the issue summary in the background.", toolUses: [weatherUse, notesUse, issuesUse])))
+            await sleep(0.3)
+            let w = agentInfo("agent_w", weatherUse, startedAt: Date())
+            ev(.toolStarted(weatherUse)); ev(.childStarted(w)); ev(.childStatus(id: w.id, .running)); engine.haptics.emit(.toolStart)
+            await sleep(0.4)
+            let n = agentInfo("agent_n", notesUse, startedAt: Date())
+            ev(.toolStarted(notesUse)); ev(.childStarted(n)); ev(.childStatus(id: n.id, .running)); engine.haptics.emit(.toolStart)
+            await sleep(0.4)
+            let i = agentInfo("agent_i", issuesUse, startedAt: Date())
+            ev(.toolStarted(issuesUse)); ev(.childStarted(i)); ev(.childStatus(id: i.id, .background))
+            await sleep(0.2)
+            ev(.toolResult(ToolResult(toolUseId: issuesUse.toolUseId, name: "use_agent", content: "{\"pending\":true,\"id\":\"agent_i\"}", durationMs: 4)))
+            // weather streams and finishes
+            ev(.child(id: w.id, .startEventLoop(cycle: 1)))
+            await stream("Fetching the current conditions.", child: w.id)
+            ev(.child(id: w.id, .modelMessage(.assistant(text: "Fetching the current conditions.", toolUses: [weatherHttp]))))
+            ev(.child(id: w.id, .toolStarted(weatherHttp)))
+            // notes asks for its approval meanwhile
+            ev(.child(id: n.id, .startEventLoop(cycle: 1)))
+            await stream("Posting the note now.", child: n.id)
+            ev(.child(id: n.id, .modelMessage(.assistant(text: "Posting the note now.", toolUses: [notesPost]))))
+            ev(.child(id: n.id, .approvalRequested(HttpTool().requiresApproval(for: notesPost.input)!.with(id: notesPost.toolUseId)))); engine.haptics.emit(.approvalNeeded)
+            await sleep(1.2)
+            ev(.child(id: w.id, .toolResult(ToolResult(toolUseId: weatherHttp.toolUseId, name: "http", content: "{\"status\":200,\"body\":{\"current\":{\"temperature_2m\":17.4,\"weather_code\":2}}}", durationMs: 412))))
+            ev(.child(id: w.id, .startEventLoop(cycle: 2)))
+            await stream("Hoboken: **17 °C**, partly cloudy.", child: w.id)
+            ev(.child(id: w.id, done("Hoboken: **17 °C**, partly cloudy."))); ev(.childStatus(id: w.id, .done))
+            ev(.toolResult(ToolResult(toolUseId: weatherUse.toolUseId, name: "use_agent", content: "{\"id\":\"agent_w\",\"status\":\"done\",\"result\":\"Hoboken: 17 °C, partly cloudy.\"}", durationMs: 6_200))); engine.haptics.emit(.toolFinish)
+            // the issues child works in the background
+            ev(.child(id: i.id, .startEventLoop(cycle: 1)))
+            ev(.child(id: i.id, .modelMessage(.assistant(text: "", toolUses: [issuesHttp]))))
+            ev(.child(id: i.id, .toolStarted(issuesHttp)))
+            // the human approves (scripted after 4 s unless they tapped — the card's own buttons route through Engine.resolve)
+            await sleep(4)
+            if engine.transcript.agents.first(where: { $0.info.id == n.id })?.transcript.pendingApprovals.isEmpty == false {
+                ev(.child(id: n.id, .approvalResolved(id: notesPost.toolUseId, .approve)))
+            }
+            ev(.child(id: n.id, .toolStarted(notesPost)))
+            await sleep(0.9)
+            ev(.child(id: n.id, .toolResult(ToolResult(toolUseId: notesPost.toolUseId, name: "http", content: "{\"status\":201,\"body\":{\"id\":\"n_8821\"}}", durationMs: 640))))
+            ev(.child(id: n.id, .startEventLoop(cycle: 2)))
+            await stream("Posted — note n_8821.", child: n.id)
+            ev(.child(id: n.id, done("Posted — note n_8821."))); ev(.childStatus(id: n.id, .done))
+            ev(.toolResult(ToolResult(toolUseId: notesUse.toolUseId, name: "use_agent", content: "{\"id\":\"agent_n\",\"status\":\"done\",\"result\":\"Posted — note n_8821.\"}", durationMs: 9_100))); engine.haptics.emit(.toolFinish)
+            ev(.startEventLoop(cycle: 2))
+            await sleep(0.4)
+            let answer1 = "Hoboken is at **17 °C**, partly cloudy, and the note is posted. The issue summary is still running in the background — I'll follow up when it lands."
+            await stream(answer1)
+            ev(done(answer1))
+            await sleep(3)
+            ev(.child(id: i.id, .toolResult(ToolResult(toolUseId: issuesHttp.toolUseId, name: "http", content: "{\"status\":200,\"body\":[{\"number\":118},{\"number\":116},{\"number\":115}]}", durationMs: 688))))
+            ev(.child(id: i.id, .startEventLoop(cycle: 2)))
+            await stream(issuesSummary, child: i.id)
+            ev(.child(id: i.id, done(issuesSummary))); ev(.childStatus(id: i.id, .done))
+            await sleep(0.6)
+            engine.transcript.note(wakeLine(i, status: .done, result: issuesSummary, endedAt: Date())); engine.transcript.isRunning = true; engine.haptics.emit(.toolFinish)
+            ev(.startEventLoop(cycle: 1))
+            await sleep(0.5)
+            await stream(issuesSummary)
+            ev(done(issuesSummary))
+            await sleep(4)
+        } while loop && !Task.isCancelled
+    }
+
+    /// `history` scene: fixed ids so the UITest and the proof push are reproducible run to run.
+    ///
+    /// It also CLEARS the archive first, which it did not have to before #166. That change made the app save a
+    /// conversation on every exit — the right behaviour, and it means every other fixture scene now leaves a
+    /// thread behind. So by the time `HistoryUITests` ran inside a full suite, "Select all" selected six
+    /// conversations and asserting on three was order-dependent nonsense. A design fixture exists to produce a
+    /// KNOWN screen; starting from a known-empty archive is part of that. DEBUG-only code, never in a release.
+    @MainActor static func seedHistory(_ engine: Engine, spec: ModelSpec) {
+        // `reload()` first, ON PURPOSE: the app's archive reads its folder in the BACKGROUND (#165), so at fixture
+        // time `conversations` is still empty and `deleteAll()` alone would delete nothing — and then the background
+        // read would put the old threads back. The synchronous read fills the list, `deleteAll()` removes those files
+        // and marks the ids as touched, so the in-flight read drops them in its merge.
+        engine.archive.reload()
+        engine.archive.deleteAll()
+        let tools: [ToolSpec] = [CurrentTimeTool().toolSpec, CalculatorTool().toolSpec]
+        let day: TimeInterval = 86_400
+        let threads: [SavedConversation] = [
+            SavedConversation(id: UUID(uuidString: "8A6C0A1E-0001-4D8B-9B3C-5E0D2F7A1001")!, title: "What time is it in Istanbul, and what is 23 × 47?",
+                              updated: Date().addingTimeInterval(-2 * 3600), modelName: spec.name,
+                              items: [.user("What time is it in Istanbul, and what is 23 × 47?"),
+                                      .assistant("Let me check both."),
+                                      .tool(name: "current_time", args: ["timezone": .string("Europe/Istanbul")], result: "2026-10-06 07:41 (Europe/Istanbul, UTC+3)", isError: false, ms: 1.2),
+                                      .tool(name: "calculator", args: ["expression": .string("23*47")], result: "23*47 = 1081", isError: false, ms: 0.4),
+                                      .assistant("It is **07:41** in Istanbul, and 23 × 47 = **1081**.")],
+                              modelId: spec.repo, tools: tools),
+            SavedConversation(id: UUID(uuidString: "8A6C0A1E-0002-4D8B-9B3C-5E0D2F7A1002")!, title: "Explain what an agent loop is, in three short points",
+                              updated: Date().addingTimeInterval(-day), modelName: spec.name,
+                              items: [.user("Explain what an agent loop is, in three short points"),
+                                      .assistant("1. **Ask** — the model reads the conversation and either answers or asks for a tool.\n2. **Act** — the app runs the tool and appends the result.\n3. **Repeat** — until the model answers plainly. loopl never caps the rounds.")],
+                              modelId: spec.repo, tools: tools),
+            SavedConversation(id: UUID(uuidString: "8A6C0A1E-0003-4D8B-9B3C-5E0D2F7A1003")!, title: "Fetch https://loopl.dev and summarise it",
+                              updated: Date().addingTimeInterval(-3 * day), modelName: spec.name,
+                              items: [.user("Fetch https://loopl.dev and summarise it"),
+                                      .tool(name: "http", args: ["url": .string("https://loopl.dev")], result: nil, isError: false, ms: 0)],
+                              modelId: spec.repo, tools: tools + [HttpTool().toolSpec]),
+        ]
+        threads.reversed().forEach { engine.archive.upsert($0) }
+        // `--design-history-images`: a fourth, vision thread whose user turn carries the fixture picture; it is written
+        // to disk, re-read through the archive's decoder (the real round trip) and OPENED, so a capture proves that a
+        // reopened conversation still shows what was sent (IMPROVE #10). `--design-history-images-legacy` opens a thread
+        // saved in the 0.1 shape (no `images` key) to prove old files still decode.
+        if CommandLine.arguments.contains("--design-history-images") {
+            let png = Bundle.main.url(forResource: "vision-test", withExtension: "png").flatMap { try? Data(contentsOf: $0) } ?? Data()
+            let img = ImageBlock(data: png, mime: "image/png", width: 640, height: 400, alt: "test card")
+            var t = Transcript()
+            t.user("What do you see? Then multiply the number by 3.", images: [img])
+            t.apply(.startEventLoop(cycle: 1))
+            t.apply(.text("A red circle and a blue square, with **LOOPL 42** underneath. 42 × 3 = **126**."))
+            t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("…"), metrics: EventLoopMetrics())))
+            let id = UUID(uuidString: "8A6C0A1E-0004-4D8B-9B3C-5E0D2F7A1004")!
+            if let saved = SavedConversation.from(t, id: id, modelName: "Qwen3.5 0.8B", modelId: "mlx-community/Qwen3.5-0.8B-4bit", tools: tools) { engine.archive.upsert(saved) }
+            engine.archive.reload()                                  // decode from disk, not the in-memory copy
+            if let c = engine.archive.conversations.first(where: { $0.id == id }) { engine.open(c) }
+        }
+        // `--design-history-corpus N`: N more deterministic conversations (every 8th carries a rendered picture of coloured
+        // shapes + a number, described in the answer) — enough for a real Train-your-own run from the app (TRAIN-E2E-VISION).
+        #if DEBUG
+        if let i = CommandLine.arguments.firstIndex(of: "--design-history-corpus"), i + 1 < CommandLine.arguments.count,
+           let n = Int(CommandLine.arguments[i + 1]), n > 0 {
+            HistoryCorpus.threads(count: n, modelName: spec.name, modelId: spec.repo, tools: tools).reversed().forEach { engine.archive.upsert($0) }
+        }
+        #endif
+        if CommandLine.arguments.contains("--design-history-images-legacy") {
+            // The exact bytes a 0.1 build wrote: `user` has only `_0`, `tool` has no `images`.
+            let legacy = """
+            {"id":"8A6C0A1E-0005-4D8B-9B3C-5E0D2F7A1005","title":"Legacy file","updated":"2026-10-01T10:00:00Z","modelName":"Qwen3-0.6B (4-bit)",
+             "items":[{"user":{"_0":"Legacy file: saved before History kept pictures"}},
+                      {"tool":{"name":"calculator","args":{"expression":"2*21"},"result":"2*21 = 42","isError":false,"ms":0.3}},
+                      {"assistant":{"_0":"42."}}]}
+            """
+            try? legacy.data(using: .utf8)!.write(to: ConversationArchive.root.appendingPathComponent("8A6C0A1E-0005-4D8B-9B3C-5E0D2F7A1005.json"), options: .atomic)
+            engine.archive.reload()
+            if let c = engine.archive.conversations.first(where: { $0.title == "Legacy file" }) { engine.open(c) }
+        }
+    }
+
+    static let approvalUse = ToolUse(toolUseId: "tooluse_post", name: "http",
+                                     input: ["method": "POST", "url": "https://notes.example.com/api/notes",
+                                             "headers": ["Authorization": "Bearer n0tes-secret", "Accept": "application/json"],
+                                             "body": ["text": "Build is green ✓", "tags": ["ci", "loopl"]]])
+
+    /// The `approval` scene has no agent behind it: script what the loop would do after the card is answered.
+    /// `onboarding` scene: Continue scripts a download (~3 s) → load → ready, no network.
+    @MainActor static var onboardingFrozenAt: Double?
+    @MainActor static func playOnboarding(_ engine: Engine, _ spec: ModelSpec) {
+        Task { @MainActor in
+            let total = max(spec.sizeBytes, 1)
+            if let f = onboardingFrozenAt { engine.readiness = .downloading(spec, done: Int64(Double(total) * f), total: total); return }
+            // `--design-onboarding-fail`: the download lands, the load does not — the screen a user sees when a model
+            // cannot start.
+            if flag("--design-onboarding-fail") {
+                engine.readiness = .downloading(spec, done: total, total: total)
+                try? await Task.sleep(for: .milliseconds(600))
+                engine.readiness = .failed(spec, "\(spec.displayName) needs 4.1 GB of free memory; this iPhone has 3.2 GB right now.")
+                return
+            }
+            for step in 1...12 {
+                engine.readiness = .downloading(spec, done: total * Int64(step) / 12, total: total)
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+            for p in stride(from: 0.0, through: 1.0, by: 0.25) { engine.readiness = .loading(spec, progress: p); try? await Task.sleep(for: .milliseconds(120)) }
+            engine.readiness = .ready(spec)
+        }
+    }
+
+    /// a control tap in a fixture (no model). Flashlight and music run their REAL tool code through the seams
+    /// installed by the `controls` scene (`FixtureTorch`, `FixtureMusicSource`) — the Simulator's proof that "tap Turn off"
+    /// reaches `FlashlightTool` and comes back as "flashlight: off" with a "Turn on" switch. Vibrate is scripted (no Taptic
+    /// Engine on a Simulator). The row updates exactly as the Engine does it: `Transcript.applyControlResult`.
+    @MainActor static func tapControl(_ engine: Engine, _ toolUseId: String, _ action: ControlAction) async {
+        engine.controlBusy.insert(toolUseId)
+        engine.haptics.emit(.toolStart)
+        try? await Task.sleep(for: .seconds(0.45))
+        let use = ToolUse(toolUseId: Engine.tapId(), name: action.tool, input: action.args)
+        let tool: (any Tool)? = switch action.tool {
+        case "flashlight": FlashlightTool()
+        case "music": MusicTool()
+        default: nil
+        }
+        var result: ToolResult
+        if let tool {
+            do {
+                let out = try await tool.callOutput(action.args)
+                result = ToolResult(toolUseId: use.toolUseId, name: use.name, content: out.text, durationMs: 21, images: out.images, control: out.control)
+            } catch {
+                result = .error(use, "Error: \((error as? LocalizedError)?.errorDescription ?? "\(error)")")
+            }
+        } else if action.tool == "vibrate", let r = try? VibrateTool.parse(action.args) {
+            result = ToolResult(toolUseId: use.toolUseId, name: use.name, content: "vibrated: \(r.pattern) (intensity \(String(format: "%.2f", r.intensity)))", durationMs: 262, control: VibrateTool.control(r))
+        } else {
+            result = .error(use, "Error: \(action.tool) is not part of this fixture")
+        }
+        engine.transcript.applyControlResult(for: toolUseId, result)
+        if result.isError { engine.lastError = result.content }
+        engine.haptics.emit(result.isError ? .error : .toolFinish)
+        engine.controlBusy.remove(toolUseId)
+    }
+
+    @MainActor static func resolve(_ engine: Engine, _ req: ApprovalRequest, _ decision: ApprovalDecision) async {
+        func sleep(_ s: Double) async { try? await Task.sleep(for: .seconds(s)) }
+        // A child's card answered (agents scene): the decision goes to THAT child, the way the parent Agent bubbles it live.
+        if let run = engine.transcript.agents.first(where: { $0.transcript.pendingApprovals.contains { $0.id == req.id } }) {
+            await resolveChild(engine, run: run, req, decision); return
+        }
+        _ = engine.transcript.apply(.approvalResolved(id: req.id, decision))
+        let use = ToolUse(toolUseId: req.id, name: req.toolName, input: decision.input(default: req.input) ?? req.input)
+        await sleep(0.35)
+        if decision.isApproved {
+            _ = engine.transcript.apply(.toolStarted(use)); engine.haptics.emit(.toolStart)
+            await sleep(1.1)
+            _ = engine.transcript.apply(.toolResult(ToolResult(toolUseId: use.toolUseId, name: use.name,
+                                                               content: "HTTP 201 application/json\n{\"id\":\"n_8f21\",\"text\":\"Build is green ✓\"}", durationMs: 1086)))
+            engine.haptics.emit(.toolFinish)
+            await sleep(0.5)
+            _ = engine.transcript.apply(.startEventLoop(cycle: 2))
+            await sleep(0.3)
+            for w in "Posted — your note **n_8f21** is saved.".split(separator: " ") { _ = engine.transcript.apply(.text(String(w) + " ")); await sleep(0.04) }
+        } else {
+            _ = engine.transcript.apply(.toolResult(.error(use, "Tool call denied by the user. Do not retry it; continue without it.")))
+            await sleep(0.5)
+            _ = engine.transcript.apply(.startEventLoop(cycle: 2))
+            await sleep(0.3)
+            for w in "Okay — I won't post it. Tell me if you'd like it changed first.".split(separator: " ") { _ = engine.transcript.apply(.text(String(w) + " ")); await sleep(0.04) }
+        }
+        _ = engine.transcript.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("done"), metrics: EventLoopMetrics())))
+    }
+
+    /// `agents` scene: the notes child after its POST card is answered — approve → posts, deny → the child stops (failed) —
+    /// then the parent's row returns and the parent answers.
+    @MainActor static func resolveChild(_ engine: Engine, run: SubAgentRun, _ req: ApprovalRequest, _ decision: ApprovalDecision) async {
+        func sleep(_ s: Double) async { try? await Task.sleep(for: .seconds(s)) }
+        func ev(_ e: AgentEvent) { _ = engine.transcript.apply(e) }
+        let id = run.info.id, parent = run.info.parentToolUseId
+        ev(.child(id: id, .approvalResolved(id: req.id, decision)))
+        let use = ToolUse(toolUseId: req.id, name: req.toolName, input: decision.input(default: req.input) ?? req.input)
+        await sleep(0.35)
+        let summary: String
+        if decision.isApproved {
+            ev(.child(id: id, .toolStarted(use))); engine.haptics.emit(.toolStart)
+            await sleep(0.9)
+            ev(.child(id: id, .toolResult(ToolResult(toolUseId: use.toolUseId, name: use.name, content: "{\"status\":201,\"body\":{\"id\":\"n_8821\"}}", durationMs: 640))))
+            ev(.child(id: id, .startEventLoop(cycle: 2)))
+            summary = "Posted — note n_8821."
+            for w in summary.split(separator: " ") { ev(.child(id: id, .text(String(w) + " "))); await sleep(0.04) }
+            ev(.child(id: id, done(summary))); ev(.childStatus(id: id, .done))
+            ev(.toolResult(ToolResult(toolUseId: parent, name: "use_agent", content: "{\"id\":\"\(id)\",\"status\":\"done\",\"result\":\"\(summary)\"}", durationMs: 9_100)))
+        } else {
+            ev(.child(id: id, .forceStop("the note was not approved")))
+            summary = "Not posted — you declined the request."
+            ev(.child(id: id, done(summary, stop: .cancelled))); ev(.childStatus(id: id, .failed))
+            ev(.toolResult(ToolResult(toolUseId: parent, name: "use_agent", status: .error, content: "{\"id\":\"\(id)\",\"status\":\"failed\",\"result\":\"\(summary)\"}", durationMs: 9_100)))
+        }
+        engine.haptics.emit(.toolFinish)
+        await sleep(0.5)
+        ev(.startEventLoop(cycle: 2))
+        await sleep(0.3)
+        let answer = decision.isApproved
+            ? "Hoboken is at **17 °C**, partly cloudy, and the note is posted. The issue summary is still running in the background — I'll follow up when it lands."
+            : "Hoboken is at **17 °C**, partly cloudy. The note was not posted — you declined it. The issue summary is still running in the background; I'll follow up when it lands."
+        for w in answer.split(separator: " ") { ev(.text(String(w) + " ")); await sleep(0.04) }
+        ev(done(answer))
+    }
+
+    /// The `edit` scene has no agent: script the regenerated answer to an edited / retried user turn.
+    @MainActor static func regenerate(_ engine: Engine, text: String, images: [ImageBlock]) async {
+        func sleep(_ s: Double) async { try? await Task.sleep(for: .seconds(s)) }
+        engine.haptics.emit(.send)
+        engine.transcript.user(text, images: images)
+        await sleep(0.8)
+        _ = engine.transcript.apply(.startEventLoop(cycle: 1))
+        let lower = text.lowercased()
+        let cities: [(String, (String, String, String))] = [("tokyo", ("Tokyo", "12:14", "six hours ahead")), ("london", ("London", "04:14", "two hours behind")),
+                    ("new york", ("New York", "23:14 (Monday)", "seven hours behind")), ("berlin", ("Berlin", "05:14", "one hour behind")),
+                    ("sydney", ("Sydney", "14:14", "eight hours ahead"))]
+        // The LAST city named wins, so "Tokyo → London" edits answer about London.
+        let city = cities.compactMap { k, v in lower.range(of: k).map { ($0.lowerBound, v) } }.max { $0.0 < $1.0 }?.1 ?? ("there", "the same", "")
+        let answer = city.2.isEmpty ? "I'd need a city to compare with Istanbul — which one did you mean?"
+                                    : "\(city.0) is \(city.2) of Istanbul time, so it's **\(city.1)** there right now."
+        for tok in tokenize(answer) { _ = engine.transcript.apply(.text(tok)); await sleep(0.03) }
+        _ = engine.transcript.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant(answer), metrics: EventLoopMetrics())))
+    }
+
+    /// Synthesises the `audio` scene's take silently (AVSpeechSynthesizer.write → AAC 16 kHz mono), exactly the
+    /// file the composer would have written, so the chip plays in captures. Idempotent.
+    @MainActor static func writeFixtureRecording(to url: URL) async {
+        guard !FileManager.default.fileExists(atPath: url.path) else { return }
+        let utt = AVSpeechUtterance(string: "hello from loopl, this is a recording")
+        utt.voice = AVSpeechSynthesisVoice(language: "en-US")
+        let synth = AVSpeechSynthesizer()
+        final class Box: @unchecked Sendable { var file: AVAudioFile?; var done = false }
+        let box = Box()
+        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+            synth.write(utt) { buffer in
+                guard let pcm = buffer as? AVAudioPCMBuffer else { return }
+                if pcm.frameLength == 0 { if !box.done { box.done = true; box.file = nil; c.resume() }; return }
+                if box.file == nil {
+                    var settings = AudioAttachment.settings
+                    settings[AVSampleRateKey] = pcm.format.sampleRate   // keep the synthesiser's rate; AAC encodes it fine
+                    box.file = try? AVAudioFile(forWriting: url, settings: settings, commonFormat: pcm.format.commonFormat, interleaved: pcm.format.isInterleaved)
+                }
+                try? box.file?.write(from: pcm)
+            }
+        }
+    }
+
+    @MainActor static func replayApple(_ engine: Engine) async {
+        func sleep(_ s: Double) async { try? await Task.sleep(for: .seconds(s)) }
+        let t0 = Date()
+        engine.transcript.user("Draw a black smart ring on a slate tile, and say \"hello from loopl\" out loud.")
+        engine.haptics.emit(.send)
+        await sleep(0.8)
+        _ = engine.transcript.apply(.startEventLoop(cycle: 1))
+        _ = engine.transcript.apply(.text("On it — drawing the ring and saying hello."))
+        let c1 = ToolUse(toolUseId: "tooluse_a1", name: "generate_image", input: ["prompt": .string("a black smart ring on a slate tile, studio light"), "style": .string("illustration")])
+        let c2 = ToolUse(toolUseId: "tooluse_a2", name: "generate_voice", input: ["text": .string("hello from loopl"), "language": .string("en-US")])
+        _ = engine.transcript.apply(.modelMessage(.assistant(text: "On it — drawing the ring and saying hello.", toolUses: [c1, c2])))
+        _ = engine.transcript.apply(.toolStarted(c1)); engine.haptics.emit(.toolStart)
+        _ = engine.transcript.apply(.toolStarted(c2)); engine.haptics.emit(.toolStart)
+        // generate_voice: the real tool (the Simulator speaks through the Mac).
+        let voiceText = (try? await GenerateVoiceTool().call(c2.input)) ?? "spoke 3 words"
+        _ = engine.transcript.apply(.toolResult(ToolResult(toolUseId: c2.toolUseId, name: c2.name, content: voiceText, durationMs: 1200))); engine.haptics.emit(.toolFinish)
+        // generate_image: real when the device can; otherwise the fixture image, labelled.
+        var imageResult: ToolResult
+        if GenerateImageTool.availability().available, let out = try? await GenerateImageTool().callOutput(c1.input) {
+            imageResult = ToolResult(toolUseId: c1.toolUseId, name: c1.name, content: out.text, durationMs: Date().timeIntervalSince(t0) * 1000, images: out.images)
+        } else {
+            await sleep(1.6)
+            let reason = GenerateImageTool.availability().reason
+            if let cg = ImageCodec.testImage(width: 1024, height: 1024), let block = try? ImageCodec.jpeg(cg, alt: "design fixture — not a generated image (\(reason))") {
+                imageResult = ToolResult(toolUseId: c1.toolUseId, name: c1.name, content: "DESIGN FIXTURE: generate_image is unavailable here (\(reason)); showing a flat placeholder image, 1024×1024.", durationMs: 1612, images: [block])
+            } else {
+                imageResult = .error(c1, reason)
+            }
+        }
+        _ = engine.transcript.apply(.toolResult(imageResult)); engine.haptics.emit(imageResult.isError ? .error : .toolFinish)
+        await sleep(0.5)
+        _ = engine.transcript.apply(.startEventLoop(cycle: 2))
+        let answer = "Here's the ring — and that was me saying hello."
+        _ = engine.transcript.apply(.text(answer))
+        _ = engine.transcript.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant(answer), metrics: EventLoopMetrics())))
+    }
+
+    /// Streams the `tool` scene over time the way a real run looks: ~30 chunks/s text, two tool
+    /// calls that take a moment, a second cycle, the answer. Drives the engine's haptic bus too.
+    /// The running `live` replay — `Engine.stop()` (Stop button / ⌘.) cancels it, so a stop is visible in fixtures too.
+    @MainActor static var replay: Task<Void, Never>?
+
+    @MainActor static func replayLive(_ engine: Engine, loop: Bool) async {
+        func sleep(_ s: Double) async { try? await Task.sleep(for: .seconds(s)) }   // cancelled → returns at once: the script fast-forwards to its end
+        func stream(_ text: String, cps: Double = 30) async {
+            var buf = ""
+            for word in text.split(separator: " ", omittingEmptySubsequences: false) {
+                buf += (buf.isEmpty ? "" : " ") + word
+                _ = engine.transcript.apply(.text(String(word) + " "))
+                await sleep(1 / cps)
+            }
+        }
+        repeat {
+            engine.transcript.clear()
+            await sleep(1.2)
+            engine.transcript.user("What time is it in Istanbul, and what is 23 × 47?")
+            engine.haptics.emit(.send)
+            await sleep(0.9)
+            _ = engine.transcript.apply(.startEventLoop(cycle: 1))
+            await stream("Let me check both of those for you.")
+            let c1 = ToolUse(toolUseId: "tooluse_1", name: "current_time", input: ["timezone": .string("Europe/Istanbul")])
+            let c2 = ToolUse(toolUseId: "tooluse_2", name: "calculator", input: ["expression": .string("23*47")])
+            _ = engine.transcript.apply(.modelMessage(.assistant(text: "Let me check both of those for you.", toolUses: [c1, c2])))
+            await sleep(0.3)
+            _ = engine.transcript.apply(.toolStarted(c1)); engine.haptics.emit(.toolStart)
+            await sleep(0.25)
+            _ = engine.transcript.apply(.toolStarted(c2)); engine.haptics.emit(.toolStart)
+            await sleep(1.4)
+            _ = engine.transcript.apply(.toolResult(ToolResult(toolUseId: "tooluse_1", name: "current_time", content: "2026-10-05T06:14:09+03:00 (Europe/Istanbul, Sunday)", durationMs: 1402))); engine.haptics.emit(.toolFinish)
+            await sleep(0.6)
+            _ = engine.transcript.apply(.toolResult(ToolResult(toolUseId: "tooluse_2", name: "calculator", content: "23*47 = 1081", durationMs: 0.4))); engine.haptics.emit(.toolFinish)
+            await sleep(0.5)
+            _ = engine.transcript.apply(.startEventLoop(cycle: 2))
+            await sleep(0.4)
+            await stream("It's **06:14** on Sunday morning in Istanbul, and 23 × 47 = **1081**. Both answers came from tools running on this iPhone — nothing left the device.")
+            var m = Metrics(); m.ttftMs = 212; m.tokensPerSecond = 41.7; m.promptTokens = 318; m.generatedTokens = 56; m.contextUsed = 374; m.contextMax = 8192
+            _ = engine.transcript.apply(.metrics(m))
+            _ = engine.transcript.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant("done"), metrics: EventLoopMetrics())))
+            await sleep(3)
+        } while loop && !Task.isCancelled
+    }
+}
+
+extension DesignFixture {
+    /// The text the `jump` scene streams — bold, lists, a code fence, long paragraphs: every reflow case.
+    static let jumpAnswer = """
+    An **agent loop** is the smallest program that lets a language model *act* instead of only answering. Here is how loopl runs it on this phone, step by step.
+
+    1. **Ask** — the model reads the whole conversation and either answers or asks for a tool with a structured call.
+    2. **Act** — the app runs that tool locally (clock, calculator, `http` with your approval) and appends the result as a new message.
+    3. **Repeat** — the model reads the result and continues; there is no cap on rounds, only the context window.
+
+    ```swift
+    let agent = Agent(model: model, tools: [Clock(), Calculator()])
+    for try await event in agent.stream("what time is it in Istanbul?") {
+        if case .text(let delta) = event { print(delta, terminator: "") }
+    }
+    ```
+
+    Why does this matter on a device? Because every token is produced *here*: nothing leaves the phone, the loop keeps running on a plane, and a tool result is just another message the model gets to read. The runtime streams each chunk as it is decoded, so the first words appear after a few hundred milliseconds even on a 0.8B model.
+
+    - MLX models run through `mlx-swift`, GGUF models through `llama.cpp`, and Apple's on-device model through FoundationModels.
+    - Tool calls are parsed from the stream as they form, so a call can start before the sentence around it is finished.
+    - When the context fills up, older tool results are trimmed first and the request is retried once.
+
+    That is the whole algorithm: **ask, act, repeat** — the same cycle Strands Agents runs in Python, ported to Swift so it works with the model in your pocket.
+    """
+
+    /// Splits text into token-sized pieces (2–5 characters, markers like `**` and backticks often alone), the way a BPE stream arrives.
+    static func tokenize(_ s: String) -> [String] {
+        var out: [String] = []; var buf = ""
+        var rng = SystemRandomNumberGenerator()
+        for ch in s {
+            buf.append(ch)
+            let cut = buf.count >= 5 || (buf.count >= 2 && Int.random(in: 0..<3, using: &rng) == 0) || ch == "\n" || (buf.count >= 2 && buf.hasSuffix("**"))
+            if cut { out.append(buf); buf = "" }
+        }
+        if !buf.isEmpty { out.append(buf) }
+        return out
+    }
+
+    @MainActor static func replayJump(_ engine: Engine) async {
+        func sleep(_ s: Double) async { try? await Task.sleep(for: .seconds(s)) }
+        engine.transcript.clear()
+        await sleep(1.0)
+        engine.transcript.user("Explain what an agent loop is and how loopl runs it on my phone.")
+        await sleep(0.6)
+        _ = engine.transcript.apply(.startEventLoop(cycle: 1))
+        for piece in tokenize(jumpAnswer) {
+            _ = engine.transcript.apply(.text(piece))
+            await sleep(1.0 / 40)
+        }
+        var m = Metrics(); m.ttftMs = 298; m.tokensPerSecond = 43; m.promptTokens = 212; m.generatedTokens = 420; m.contextUsed = 632; m.contextMax = 8192
+        _ = engine.transcript.apply(.metrics(m))
+        _ = engine.transcript.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant(jumpAnswer), metrics: EventLoopMetrics())))
+    }
+}
+
+private extension ApprovalRequest {
+    func with(id: String) -> ApprovalRequest { var c = self; c.id = id; return c }
+}
+
+
+// MARK: - `render` scenes
+
+extension DesignFixture {
+    /// One `render_ui` call → one card. The specs here are the exact JSON shapes the FINAL schema documents (DATASET-V12 R1–R6).
+    static func renderScene(_ t: inout Transcript, kind: String) {
+        func call(_ ask: String, _ input: [String: JSONValue], answer: String, images: [ImageBlock] = [], ms: Double = 6) {
+            t.user(ask)
+            t.apply(.startEventLoop(cycle: 1))
+            let use = ToolUse(toolUseId: "tooluse_r_\(kind)", name: RenderUITool.toolName, input: input)
+            t.apply(.modelMessage(.assistant(text: "", toolUses: [use])))
+            t.apply(.toolStarted(use))
+            let text = (try? RenderSpec(args: input).resultText) ?? "rendered"
+            t.apply(.toolResult(ToolResult(toolUseId: use.toolUseId, name: RenderUITool.toolName, content: text, durationMs: ms, images: images)))
+            t.apply(.startEventLoop(cycle: 2))
+            t.apply(.text(answer))
+            t.apply(.result(AgentResult(stopReason: .endTurn, message: .assistant(answer), metrics: EventLoopMetrics())))
+        }
+        let steps: JSONValue = ["type": "chart", "title": "Steps this week", "kind": "bar", "series": [["name": "steps", "points": [
+            ["label": "Mon", "value": 4000], ["label": "Tue", "value": 6200], ["label": "Wed", "value": 7100], ["label": "Thu", "value": 3800],
+            ["label": "Fri", "value": 9400], ["label": "Sat", "value": 12100], ["label": "Sun", "value": 5600]]]]]
+        let cafes: JSONValue = ["type": "map", "title": "Three cafés in Hoboken", "pins": [
+            ["lat": 40.7447, "lon": -74.0323, "label": "bwè kafe"], ["lat": 40.7398, "lon": -74.0300, "label": "Black Rail Coffee"], ["lat": 40.7480, "lon": -74.0290, "label": "Hidden Grounds"]]]
+        let login: JSONValue = ["type": "diagram", "title": "Login flow", "nodes": [
+            ["id": "open", "label": "Open app"], ["id": "creds", "label": "Enter email + password"], ["id": "verify", "label": "Verify"],
+            ["id": "mfa", "label": "2FA code"], ["id": "home", "label": "Home"], ["id": "error", "label": "Show error"]],
+            "edges": [["from": "open", "to": "creds"], ["from": "creds", "to": "verify"], ["from": "verify", "to": "mfa", "label": "ok"],
+                      ["from": "verify", "to": "error", "label": "wrong"], ["from": "mfa", "to": "home"], ["from": "error", "to": "creds", "label": "retry"]]]
+        switch kind {
+        case "chart":
+            call("Chart my steps this week: Mon 4k, Tue 6.2k, Wed 7.1k, Thu 3.8k, Fri 9.4k, Sat 12.1k, Sun 5.6k.", ["components": [steps]],
+                 answer: "Saturday was your big day — 12,100 steps, about three times Thursday.")
+        case "line":
+            call("Plot the temperature by hour.", ["components": [["type": "chart", "title": "Today", "kind": "line", "series": [
+                ["name": "°C", "points": [["label": "6", "value": 11], ["label": "9", "value": 14], ["label": "12", "value": 19], ["label": "15", "value": 21], ["label": "18", "value": 17], ["label": "21", "value": 13]]],
+                ["name": "feels like", "points": [["label": "6", "value": 9], ["label": "9", "value": 13], ["label": "12", "value": 19], ["label": "15", "value": 22], ["label": "18", "value": 16], ["label": "21", "value": 11]]]]]]],
+                 answer: "Warmest around 3 pm, cooling fast after six.")
+        case "pie":
+            call("Show my budget split as a pie.", ["components": [["type": "chart", "title": "October", "kind": "pie", "series": [["points": [
+                ["label": "Rent", "value": 1850], ["label": "Food", "value": 620], ["label": "Transit", "value": 140], ["label": "Fun", "value": 310], ["label": "Savings", "value": 900]]]]]]],
+                 answer: "Rent is just under half; savings a quarter.")
+        case "map":
+            call("Show these 3 cafés on a map.", ["components": [cafes]], answer: "All three are within a ten-minute walk of each other — tap the map for directions.")
+        case "diagram":
+            call("Diagram the login flow.", ["components": [login]], answer: "Six steps; a wrong password loops back to the form.")
+        case "table":
+            call("Compare the loopl models in a table.", ["components": [["type": "table", "title": "loopl v1.1", "headers": ["Model", "Size", "Vision", "Speed"],
+                "rows": [["loopl-0.8b", "625 MB", "yes", "~70 tok/s"], ["loopl-2b", "1.3 GB", "yes", "~40 tok/s"], ["loopl-4b", "2.5 GB", "yes", "~22 tok/s"]]]]],
+                 answer: "The 2B is the sweet spot on this phone.")
+        case "keyvalue":
+            call("Show me this device's stats as a card.", ["components": [["type": "keyvalue", "title": "This iPhone", "data": [
+                "Model": "iPhone 17 Pro", "Battery": "82 %", "Free storage": "61.2 GB", "Memory for a model": "5.1 GB", "Network": "Wi-Fi"]]]],
+                 answer: "Plenty of room for the 4B if you want it.")
+        case "list":
+            call("List what I asked you to remember, as a card.", ["components": [["type": "list", "title": "Remembered", "items": [
+                ["title": "Coffee: oat milk, no sugar", "subtitle": "yesterday", "icon": "cup.and.saucer"],
+                ["title": "Mom's birthday is 14 March", "subtitle": "Monday", "icon": "gift"],
+                ["title": "Parking spot B2-17", "subtitle": "today", "icon": "car"]]]]],
+                 answer: "Three notes so far.")
+        case "progress":
+            call("How far along is the download?", ["components": [["type": "progress", "description": "loopl-4b-4bit", "total": 2_540, "completed": 1_740],
+                                                          ["type": "text", "content": "about 2 minutes left at this speed", "style": "secondary"]]],
+                 answer: "Two-thirds done — about two minutes left.")
+        case "misc":
+            call("Make a card with the rest.", ["title": "Everything else", "components": [
+                ["type": "markdown", "content": "**Markdown** with a [link](https://loopl.dev), `code` and a list:\n\n- one\n- two"],
+                ["type": "rule", "title": "styles"],
+                ["type": "text", "content": "plain"], ["type": "text", "content": "secondary", "style": "secondary"], ["type": "text", "content": "strong", "style": "strong"],
+                ["type": "text", "content": "caption", "style": "caption"], ["type": "text", "content": "let x = 42", "style": "mono"],
+                ["type": "rule"],
+                ["type": "image", "url": "https://loopl.dev/assets/readme/hero.png", "caption": "a picture by URL"]]],
+                 answer: "Done.")
+        case "unknown":
+            // R6: an invented type and "4k" strings → the card says what it could not read, the result tells the model.
+            call("Show a gauge of my steps.", ["components": [["type": "gauge", "value": 7421], ["type": "chart", "kind": "bar", "series": [["points": [["label": "Mon", "value": "4k"], ["label": "Tue", "value": "n/a"]]]]]]],
+                 answer: "I can't draw a gauge, so here is the bar instead — Tuesday had no reading.")
+        default:
+            call("How did this week go? Give me a card.", ["title": "Your week", "components": [
+                ["type": "markdown", "content": "Steps up **18 %** on last week; sleep steady."],
+                steps,
+                ["type": "keyvalue", "data": ["Total": "48,200", "Best day": "Saturday", "Resting HR": "58 bpm"]],
+                ["type": "rule", "title": "next"],
+                ["type": "list", "items": [["title": "Keep the Saturday walk", "icon": "figure.walk"], ["title": "Bed before 23:00 twice", "icon": "moon.zzz"]]]]],
+                 answer: "A good week — Saturday carried it. Shall I set the two reminders?")
+        }
+    }
+}
+
+
+extension DesignFixture {
+    /// Poster for the fixture clip — synchronous (the fixture builds its transcript in one pass); nil = grey tile.
+    static func fixtureVideoPoster(_ url: URL) -> ImageBlock? {
+        let gen = AVAssetImageGenerator(asset: AVURLAsset(url: url))
+        gen.appliesPreferredTrackTransform = true
+        gen.maximumSize = CGSize(width: 256, height: 256)
+        guard let cg = try? gen.copyCGImage(at: CMTime(seconds: 1, preferredTimescale: 600), actualTime: nil) else { return nil }
+        let ci = CIImage(cgImage: cg)
+        guard let cs = CGColorSpace(name: CGColorSpace.sRGB),
+              let jpeg = CIContext().jpegRepresentation(of: ci, colorSpace: cs, options: [kCGImageDestinationLossyCompressionQuality as CIImageRepresentationOption: 0.8]) else { return nil }
+        return ImageBlock(data: jpeg, mime: "image/jpeg", width: cg.width, height: cg.height, alt: "video poster")
+    }
+}

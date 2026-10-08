@@ -1,0 +1,174 @@
+site_name: loopl
+site_url: https://loopl.dev/
+site_description: "loopl — the Swift SDK for agents that run on the device. A local model, the agent loop and native iPhone tools. Offline, no account."
+repo_url: https://github.com/cagataycali/loopl
+repo_name: cagataycali/loopl
+edit_uri: ""
+exclude_docs: |
+  hooks/
+  gen_models.py
+  check_snippets.sh
+  build_docc.sh
+  check_symbols.sh
+  allowed_symbols.txt
+  overrides/
+copyright: "© 2026 Çağatay Çalı · loopl is open source · No data collected"
+
+theme:
+  name: material
+  custom_dir: docs/overrides
+  language: en
+  logo: assets/loopl-mark.svg
+  favicon: assets/loopl-mark.svg
+  icon:
+    repo: fontawesome/brands/github
+  font: false   # self-hosted Inter Tight + system stacks (docs/DESIGN.md); no Google Fonts request
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.path
+    - navigation.top
+    - navigation.footer
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+    - content.tooltips
+    - announce.dismiss
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+
+extra_css:
+  # bump the suffix on every CSS change: Cloudflare caches assets for 4 h (HTML is DYNAMIC)
+  - stylesheets/loopl.v9.css
+
+hooks:
+  - docs/hooks/strip_snippet_tags.py
+  # One changelog fragment per pull request (docs/changelog.d/) spliced into the
+  # Unreleased section at build time, so two branches never edit the same line.
+  - docs/hooks/changelog_fragments.py
+
+extra_javascript:
+  - javascripts/loopl.js
+
+plugins:
+  - redirects:
+      redirect_maps:
+        sdk/budget.md: sdk/agent.md
+        app/hf-token.md: privacy.md
+        getting-started/index.md: start.md
+        getting-started/install.md: start.md
+        getting-started/first-agent.md: start.md
+        getting-started/run-on-device.md: start.md
+        sdk/index.md: sdk/agent.md
+        sdk/event-loop.md: sdk/agent.md
+        sdk/messages-events.md: sdk/agent.md
+        sdk/conversation-managers.md: sdk/hooks.md
+        runtimes/index.md: sdk/models.md
+        runtimes/mlx.md: sdk/models.md
+        runtimes/apple-foundation-models.md: sdk/models.md
+        runtimes/gguf.md: sdk/models.md
+        app/downloads.md: app/index.md
+        app/offline.md: app/index.md
+  - search:
+      separator: '[\s\-,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
+  # Social cards (og:image per page). Needs cairo + pillow — the docs workflow installs them;
+  # set LOOPL_SOCIAL_CARDS=false for a quick local build without cairo.
+  - social:
+      enabled: !ENV [LOOPL_SOCIAL_CARDS, true]
+      cards_layout_options:
+        background_color: "#0A0A0B"
+        color: "#EDEDEF"
+        font_family: Inter Tight
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/cagataycali/loopl
+    - icon: fontawesome/brands/apple
+      link: https://loopl.dev/app/
+    - icon: fontawesome/solid/fire
+      link: https://tiny.technology
+  generator: false
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+      slugify: !!python/object/apply:pymdownx.slugs.slugify
+        kwds:
+          case: lower
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.keys
+  - pymdownx.mark
+  - pymdownx.caret
+  - pymdownx.tilde
+  - def_list
+  - footnotes
+  - abbr
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+nav:
+  - Home: index.md
+  - Get started: start.md
+  - SDK:
+      - Agent: sdk/agent.md
+      - Tools: sdk/tools.md
+      - Runtimes: sdk/models.md
+      - Hooks & conversation: sdk/hooks.md
+      - Human in the loop: sdk/hitl.md
+      - Sub-agents: sdk/sub-agents.md
+      - Render UI: sdk/render-ui.md
+      - Asking the user: sdk/ask-user.md
+      - Video input: sdk/video.md
+      - Structured output: sdk/structured-output.md
+      - Checkpoints: sdk/checkpoints.md
+      - Tracing: sdk/tracing.md
+  - Models: models.md
+  - App:
+      - Overview: app/index.md
+      - Models: app/models.md
+      - Tools: app/tools.md
+      - Share to Hugging Face: app/share-to-hugging-face.md
+      - Storage: app/storage.md
+      - Train your own: app/train.md
+  - Privacy: privacy.md
+  - FAQ: faq.md
+  - Changelog: changelog.md
+  - API: https://loopl.dev/api/

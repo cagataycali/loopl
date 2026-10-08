@@ -1,0 +1,21 @@
+*.xcodeproj
+App/Tests-Info.plist
+xcuserdata/
+DerivedData/
+.build/
+*.ipa
+*.dSYM.zip
+.DS_Store
+*.hf_token
+
+# llama.cpp xcframework (scripts/fetch-llama-xcframework.sh)
+Vendor/
+
+# derived data from the documented gate command (-derivedDataPath .dd)
+.dd*/
+
+# mkdocs-material social plugin output
+.cache/
+site/
+__pycache__/
+*.pyc

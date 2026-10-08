@@ -1,0 +1,18 @@
+{% extends "main.html" %}
+{% block content %}
+<div class="l-home l-404">
+  <section class="l-end l-end--v2">
+    <svg class="l-mark l-mark--404" viewBox="0 0 1024 1024" aria-hidden="true"><path class="l-mark__loop" pathLength="1" d="M 801.324 706.796 A 327.68 327.68 0 1 1 675.84 269.181" fill="none" stroke="currentColor" stroke-width="128" stroke-linecap="round"/><g class="l-mark__flame" transform="rotate(-6 675.84 191.459) translate(546.304 -2.845) scale(259.072 388.608)"><path d="M 0.66 0 C 0.86 0.22 1 0.44 1 0.64 C 1 0.86 0.78 1 0.5 1 C 0.22 1 0 0.86 0 0.64 C 0 0.34 0.42 0.3 0.66 0 Z" fill="currentColor"/></g></svg>
+    <p class="l-num">404</p>
+    <h2>This page ran out of context.</h2>
+    <p class="l-lede"><code id="loopl-404-path"></code> is not on loopl.dev — the docs were reorganised, or the link was mistyped.</p>
+    <div class="l-actions">
+      <a class="l-btn l-btn--ink" href="{{ config.site_url }}">Home</a>
+      <a class="l-link" href="{{ config.site_url }}start/">Get started</a>
+      <a class="l-link" href="{{ config.site_url }}sdk/">SDK</a>
+      <a class="l-link" href="https://github.com/cagataycali/loopl/issues/new">Report a broken link</a>
+    </div>
+  </section>
+</div>
+<script>document.getElementById("loopl-404-path").textContent = location.pathname;</script>
+{% endblock %}

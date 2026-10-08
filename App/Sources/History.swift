@@ -1,0 +1,611 @@
+import Foundation
+import Observation
+import SwiftUI
+import Loopl
+import LooplUI
+
+/// Saved conversations — a JSON file per conversation in Application Support.
+/// The transcript is what is kept (what you saw), not the model's raw messages.
+struct SavedConversation: Codable, Identifiable, Hashable {
+    enum Item: Codable, Hashable {
+        /// `images`: the pictures the user attached / a tool produced, kept as ≤ 512 px thumbnails (see `HistoryImage`)
+        /// so a reopened vision thread still shows what was sent. Optional + decodeIfPresent — 0.1 files decode as nil.
+        /// `control`: the live control the result carried (flashlight → "Turn off"), saved so a reopened thread
+        /// re-renders it. Optional + tolerant: older files decode as nil; an unknown future control type reads as nil.
+        /// `videos`: the clips the user attached — file path + poster + transcript, never the bytes. Optional too.
+        case user(String, images: [ImageBlock]?, videos: [VideoBlock]?), assistant(String), tool(name: String, args: [String: JSONValue], result: String?, isError: Bool, ms: Double, images: [ImageBlock]?, control: ToolControl?), note(String)
+
+        /// Text-only spellings (fixtures, tests, the pre-images call sites).
+        static func user(_ s: String) -> Item { .user(s, images: nil, videos: nil) }
+        static func user(_ s: String, images: [ImageBlock]?) -> Item { .user(s, images: images, videos: nil) }
+        static func tool(name: String, args: [String: JSONValue], result: String?, isError: Bool, ms: Double) -> Item {
+            .tool(name: name, args: args, result: result, isError: isError, ms: ms, images: nil, control: nil)
+        }
+        static func tool(name: String, args: [String: JSONValue], result: String?, isError: Bool, ms: Double, images: [ImageBlock]?) -> Item {
+            .tool(name: name, args: args, result: result, isError: isError, ms: ms, images: images, control: nil)
+        }
+    }
+    var id: UUID
+    var title: String
+    var updated: Date
+    var modelName: String?
+    var items: [Item]
+    /// Set when the thread was rewritten (a message edited, retried, or cut) — optional so 0.1 files still decode.
+    var editedAt: Date?
+    /// Share to Hugging Face: the Hub id of the model that answered and the tools the thread OFFERED
+    /// (OpenAI function specs). Optional + tolerant — files saved before this field exist decode as nil.
+    var modelId: String?
+    var tools: [ToolSpec]?
+    /// the tool names MOUNTED for this thread when it was last saved (Settings' defaults ± what the agent
+    /// mounted/unmounted with `manage_tools`). Reopening restores it. Optional — older files decode as nil → defaults.
+    var mounted: [String]?
+
+    init(id: UUID, title: String, updated: Date, modelName: String?, items: [Item], editedAt: Date? = nil, modelId: String? = nil, tools: [ToolSpec]? = nil, mounted: [String]? = nil) {
+        self.id = id; self.title = title; self.updated = updated; self.modelName = modelName; self.items = items
+        self.editedAt = editedAt; self.modelId = modelId; self.tools = tools; self.mounted = mounted
+    }
+
+    static func from(_ t: Transcript, id: UUID, modelName: String?, editedAt: Date? = nil, modelId: String? = nil, tools: [ToolSpec]? = nil, mounted: [String]? = nil) -> SavedConversation? {
+        let items: [Item] = t.items.compactMap {
+            switch $0.kind {
+            case .user(let s): .user(s, images: HistoryImage.thumbnails($0.images), videos: $0.videos.isEmpty ? nil : $0.videos)
+            case .assistant(let s): .assistant(s)
+            case .toolUse(let c, let r): .tool(name: c.name, args: c.input, result: r?.content, isError: r?.isError ?? false, ms: r?.durationMs ?? 0, images: HistoryImage.thumbnails($0.images), control: r?.control)
+            case .note(let s): .note(s)
+            case .agent(let run): .note("agent \(run.info.name) (\(run.status.rawValue))" + (run.resultText.map { ": \($0)" } ?? ""))   // summary only; the child's rows are not replayed
+            // ask_user: saved as the tool pair it was, with the MASKED answer (passwords never reach disk); an open card is saved cancelled.
+            case .ask(_, let request, let answer): .tool(name: AskUserTool.toolName, args: request.toolArgs, result: (answer ?? .cancelled).masked(for: request).toolResult.compact, isError: false, ms: 0, images: nil)
+            case .approval(let req, let d):
+                switch d {
+                case nil: nil                                   // still waiting — the agent will not be there on reopen
+                case .deny(let reason)?: .note("denied \(req.title)" + (reason.map { " — \($0)" } ?? ""))
+                case .approve?, .approveEdited?: .note("approved \(req.title)")
+                }
+            case .reasoning: nil
+            }
+        }
+        guard items.contains(where: { if case .user = $0 { return true }; return false }) else { return nil }
+        let firstTurn = items.first { if case .user = $0 { return true }; return false }
+        let title: String
+        if case .user(let s, let images, let videos)? = firstTurn { title = ConversationTitle.make(s, hasImages: !(images ?? []).isEmpty, hasVideos: !(videos ?? []).isEmpty) }
+        else { title = ConversationTitle.fallback }
+        return SavedConversation(id: id, title: title, updated: Date(), modelName: modelName, items: items, editedAt: editedAt, modelId: modelId, tools: tools, mounted: mounted)
+    }
+
+    /// Everything strictly before the item at `index` (History-level "delete from here" / the kept half of an edit).
+    func truncated(before index: Int) -> SavedConversation {
+        var c = self
+        c.items = Array(items.prefix(max(0, index)))
+        c.editedAt = Date()
+        c.updated = c.editedAt!
+        return c
+    }
+
+    /// Replace the user message at `index` (must be a `.user` item) and drop everything after it.
+    func replacing(userAt index: Int, with text: String) -> SavedConversation? {
+        guard items.indices.contains(index), case .user(_, let images, let videos) = items[index] else { return nil }
+        var c = truncated(before: index)
+        c.items.append(.user(text, images: images, videos: videos))
+        if index == 0 { c.title = ConversationTitle.make(text, hasImages: !(images ?? []).isEmpty, hasVideos: !(videos ?? []).isEmpty) }
+        return c
+    }
+
+    /// What `ConversationExport` needs: the transcript as agent messages. Each tool row becomes an
+    /// assistant tool call + its result turn; rows without a result (interrupted) and notes are not learnable and are skipped.
+    func exportThread() -> ConversationExport.Thread {
+        var messages: [Message] = []
+        for item in items {
+            switch item {
+            // Pictures go along (as the ≤ 512 px thumbnails History keeps) — ConversationExport writes them to images/<sha>.png
+            // unless the person ticks "Remove pictures". Dropping them here made every shared dataset text-only (TRAIN-E2E-VISION).
+            case .user(let s, let images, let videos): messages.append(.user(s, images: images ?? [], videos: videos ?? []))
+            case .assistant(let s): messages.append(.assistant(s))
+            case .tool(let name, let args, let result, let isError, let ms, _, _):
+                guard let result else { continue }
+                let use = ToolUse(name: name, input: args)
+                messages.append(.assistant(text: "", toolUses: [use]))
+                messages.append(.toolResults([ToolResult(toolUseId: use.toolUseId, name: name, status: isError ? .error : .success, content: result, durationMs: ms)]))
+            case .note: continue
+            }
+        }
+        return ConversationExport.Thread(id: id.uuidString, title: title, messages: messages, tools: tools ?? [], modelId: modelId ?? modelName, updated: updated)
+    }
+
+    func transcript() -> Transcript {
+        var t = Transcript()
+        t.items = items.map {
+            switch $0 {
+            case .user(let s, let images, let videos): return TranscriptItem(kind: .user(s), images: images ?? [], videos: videos ?? [])
+            case .assistant(let s): return TranscriptItem(kind: .assistant(s))
+            case .tool(let name, let args, let result, let isError, let ms, let images, let control):
+                let use = ToolUse(name: name, input: args)
+                if name == AskUserTool.toolName, let request = try? AskUserRequest(args: args), let result, let answer = AskUserAnswer(toolResult: result) {
+                    return TranscriptItem(kind: .ask(toolUseId: use.toolUseId, request, answer: answer))   // reopened as the settled card
+                }
+                return TranscriptItem(kind: .toolUse(use, result: result.map { ToolResult(toolUseId: use.toolUseId, name: name, status: isError ? .error : .success, content: $0, durationMs: ms, control: control) }), images: images ?? [])
+            case .note(let s): return TranscriptItem(kind: .note(s))
+            }
+        }
+        t.isRunning = false
+        return t
+    }
+}
+
+/// The History row title from the first message. Before: the raw first 60 characters — a message that
+/// started with line breaks gave a row whose first line was blank, a photo-only turn gave an EMPTY row, and long ones
+/// were cut mid-word with no sign that more followed.
+enum ConversationTitle {
+    static let maxLength = 60
+    static let fallback = "Conversation"
+
+    static func make(_ text: String, hasImages: Bool = false, hasVideos: Bool = false) -> String {
+        // One line: every run of whitespace (including newlines) becomes a single space.
+        let flat = text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        if flat.isEmpty { return hasVideos ? "Video" : hasImages ? "Photo" : fallback }
+        if flat.count <= maxLength { return flat }
+        // Cut at the last word boundary that keeps the title under the limit; a single giant word is cut hard.
+        let hard = String(flat.prefix(maxLength - 1))
+        if let space = hard.lastIndex(of: " "), hard.distance(from: hard.startIndex, to: space) >= maxLength / 2 {
+            return String(hard[..<space]).trimmingCharacters(in: .punctuationCharacters.union(.whitespaces)) + "…"
+        }
+        return hard + "…"
+    }
+}
+
+/// Pictures in saved conversations: a ≤ 512 px JPEG per image (≈ 40–120 KB) so History stays small and the
+/// reopened thread still shows what was sent. Nothing is ever upscaled; already-small PNGs keep their bytes.
+enum HistoryImage {
+    static let maxEdge: CGFloat = 512
+    static let maxStoredBytes = 400_000
+
+    static func thumbnails(_ images: [ImageBlock]) -> [ImageBlock]? {
+        guard !images.isEmpty else { return nil }
+        return images.compactMap(thumbnail)
+    }
+
+    static func thumbnail(_ b: ImageBlock) -> ImageBlock? {
+        if b.data.count <= maxStoredBytes, let w = b.width, let h = b.height, max(w, h) <= Int(maxEdge) { return b }
+        guard let ui = UIImage(data: b.data) else { return nil }
+        let scaled = ui.normalizedOrientation().downscaled(maxEdge: maxEdge)
+        guard let jpeg = scaled.jpegData(compressionQuality: 0.8) else { return nil }
+        return ImageBlock(data: jpeg, mime: "image/jpeg", width: Int(scaled.size.width * scaled.scale), height: Int(scaled.size.height * scaled.scale), alt: b.alt)
+    }
+}
+
+@MainActor @Observable
+final class ConversationArchive {
+    private(set) var conversations: [SavedConversation] = []
+    static let root: URL = {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let dir = base.appendingPathComponent("conversations", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }()
+    /// Where this archive lives — `Self.root` in the app; a temporary folder in tests.
+    let root: URL
+
+    /// True while the first read of the folder runs in the background (the list shows a spinner, not "nothing here yet").
+    private(set) var isLoading = false
+    /// Threads written or removed while the background read was still running — the read must not undo them.
+    private var touchedWhileLoading: [UUID: SavedConversation?] = [:]
+    private var loadTask: Task<Void, Never>?
+
+    /// The app's archive reads its folder in the background: with real history — pictures as base64
+    /// thumbnails, 60-turn threads — decoding every file on the main actor sat on the launch path (200 threads ≈ 11 MB
+    /// measured; a phone with 100 MB of threads would stall first paint). Tests and fixtures pass `inBackground: false`
+    /// and get the old synchronous read.
+    init(root: URL = ConversationArchive.root, inBackground: Bool? = nil) {
+        self.root = root
+        try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        if inBackground ?? (root == Self.root) { reloadInBackground() } else { reload() }
+    }
+
+    /// Everything `reload()` does, off the main actor; the result lands on the main actor and merges with whatever
+    /// `upsert`/`delete` did meanwhile. Idempotent: a second call while one runs is ignored.
+    func reloadInBackground() {
+        guard loadTask == nil else { return }
+        isLoading = true
+        touchedWhileLoading.removeAll()
+        let root = self.root
+        loadTask = Task.detached(priority: .userInitiated) { [weak self] in
+            let (decoded, listing) = Self.read(root)
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                var merged = decoded.filter { self.touchedWhileLoading[$0.id] == nil }
+                for case let (_, .some(c)) in self.touchedWhileLoading { merged.append(c) }   // written while loading → the newer copy wins
+                self.conversations = merged.sorted { $0.updated > $1.updated }
+                self.sweepOrphans(listing)
+                self.touchedWhileLoading.removeAll()
+                self.isLoading = false
+                self.loadTask = nil
+            }
+        }
+    }
+
+    /// Wait for a background read to finish (tests; the UI just observes `isLoading`).
+    func waitUntilLoaded() async { await loadTask?.value }
+
+    /// The folder → decoded threads (retitled) + the raw listing. Pure; runs on any thread.
+    nonisolated static func read(_ root: URL) -> (threads: [SavedConversation], listing: [URL]) {
+        let files = (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []
+        let dec = JSONDecoder(); dec.dateDecodingStrategy = .iso8601
+        let threads = files.filter { $0.pathExtension == "json" }
+            .compactMap { url -> SavedConversation? in
+                guard let data = try? Data(contentsOf: url, options: .mappedIfSafe) else { return nil }
+                return try? dec.decode(SavedConversation.self, from: data)
+            }
+            .map(retitled).sorted { $0.updated > $1.updated }
+        return (threads, files)
+    }
+
+    /// `<root>/<id>.attachments/` — the thread's pictures and recordings (see `AudioAttachment.directory(for:)`).
+    func attachmentsDirectory(for id: UUID) -> URL { root.appendingPathComponent("\(id.uuidString).attachments", isDirectory: true) }
+
+    /// Synchronous read (tests, design fixtures that write a file and open it on the next line).
+    func reload() {
+        let (threads, files) = Self.read(root)
+        conversations = threads
+        sweepOrphans(files)
+    }
+
+    /// `<id>.attachments` folders whose `<id>.json` is gone — a delete interrupted between its two removes, a crash
+    /// before the first save, older builds — held recordings and clips forever and counted in Storage with nothing
+    /// to tap. Removed on every reload. Returns how many went.
+    @discardableResult
+    func sweepOrphans(_ listing: [URL]? = nil) -> Int {
+        let fm = FileManager.default
+        let files = listing ?? ((try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? [])
+        let kept = Set(files.filter { $0.pathExtension == "json" }.map { $0.deletingPathExtension().lastPathComponent })
+        var n = 0
+        for dir in files where dir.pathExtension == "attachments" {
+            let id = dir.deletingPathExtension().lastPathComponent
+            if !kept.contains(id), UUID(uuidString: id) != nil { try? fm.removeItem(at: dir); n += 1 }
+        }
+        return n
+    }
+
+    /// Threads saved by earlier builds carry the raw first-60-characters title (blank first lines, empty rows for a
+    /// photo). The title is derived from the first message anyway, so it is recomputed on load — in memory; the file
+    /// catches up on its next save.
+    nonisolated static func retitled(_ c: SavedConversation) -> SavedConversation {
+        guard case .user(let s, let images, let videos)? = c.items.first(where: { if case .user = $0 { return true }; return false }) else { return c }
+        var c = c
+        c.title = ConversationTitle.make(s, hasImages: !(images ?? []).isEmpty, hasVideos: !(videos ?? []).isEmpty)
+        return c
+    }
+
+    func upsert(_ c: SavedConversation) {
+        let enc = JSONEncoder(); enc.dateEncodingStrategy = .iso8601
+        if let data = try? enc.encode(c) { try? data.write(to: root.appendingPathComponent("\(c.id.uuidString).json"), options: .atomic) }
+        conversations.removeAll { $0.id == c.id }
+        conversations.insert(c, at: 0)
+        if isLoading { touchedWhileLoading[c.id] = .some(c) }
+    }
+
+    func delete(_ c: SavedConversation) { delete(id: c.id) }
+
+    func delete(id: UUID) { delete(ids: [id]) }
+
+    /// Remove threads for good: the JSON file and the `.attachments` folder (pictures, recordings) of each.
+    /// One list mutation for the whole batch, so a `withAnimation` around the call animates every row out together.
+    /// Returns how many were actually in the archive.
+    @discardableResult
+    func delete(ids: Set<UUID>) -> Int {
+        guard !ids.isEmpty else { return 0 }
+        let fm = FileManager.default
+        for id in ids {
+            try? fm.removeItem(at: root.appendingPathComponent("\(id.uuidString).json"))
+            try? fm.removeItem(at: attachmentsDirectory(for: id))   // pictures + recordings go with the thread
+        }
+        let before = conversations.count
+        conversations.removeAll { ids.contains($0.id) }
+        if isLoading { for id in ids { touchedWhileLoading[id] = .some(nil) } }
+        return before - conversations.count
+    }
+
+    func deleteAll() { delete(ids: Set(conversations.map(\.id))) }
+}
+
+/// History at scale: 200 threads were one flat list under a single "History" header with no way to
+/// search. Rows are grouped by when they were last touched, and a search field filters by title and by what was said.
+enum HistoryGroups {
+    struct Group: Identifiable { let label: String; let conversations: [SavedConversation]; var id: String { label } }
+
+    /// Today · Yesterday · This week · This month · then one group per month ("September 2026"). Order is kept (newest first).
+    static func group(_ conversations: [SavedConversation], now: Date = Date(), calendar: Calendar = .current) -> [Group] {
+        var order: [String] = [], buckets: [String: [SavedConversation]] = [:]
+        let startOfToday = calendar.startOfDay(for: now)
+        let weekAgo = calendar.date(byAdding: .day, value: -6, to: startOfToday) ?? startOfToday
+        let startOfMonth = calendar.date(from: calendar.dateComponents([.year, .month], from: now)) ?? startOfToday
+        let monthFormat = Date.FormatStyle().month(.wide).year()
+        for c in conversations {
+            let label: String
+            if c.updated >= startOfToday { label = "Today" }
+            else if c.updated >= (calendar.date(byAdding: .day, value: -1, to: startOfToday) ?? startOfToday) { label = "Yesterday" }
+            else if c.updated >= weekAgo { label = "This week" }
+            else if c.updated >= startOfMonth { label = "This month" }
+            else { label = c.updated.formatted(monthFormat) }
+            if buckets[label] == nil { order.append(label) }
+            buckets[label, default: []].append(c)
+        }
+        return order.map { Group(label: $0, conversations: buckets[$0] ?? []) }
+    }
+
+    /// Case- and diacritic-insensitive match on the title and on what the person and the model said (not tool payloads).
+    static func matches(_ c: SavedConversation, _ query: String) -> Bool {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return true }
+        if c.title.localizedStandardContains(q) { return true }
+        return c.items.contains {
+            switch $0 {
+            case .user(let s, _, _), .assistant(let s): return s.localizedStandardContains(q)
+            default: return false
+            }
+        }
+    }
+
+    /// The search field earns its row only once there is something to search through.
+    static let searchThreshold = 6
+    /// A long history opens the iPhone sheet tall; a short one keeps the half-height peek.
+    static let tallSheetThreshold = 8
+}
+
+/// The sidebar (iPad) / sheet (iPhone) list of saved conversations. Swipe left deletes one; Select → the bottom
+/// bar offers **Delete N** (after a confirmation) and **Share to Hugging Face** for many.
+struct HistoryList: View {
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @Bindable var engine: Engine
+    @Binding var selection: RootView.Pane
+    var dismiss: (() -> Void)? = nil
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    // Edit mode: multi-select → Delete / "Share to Hugging Face". `selecting` is the only state the
+    // normal list path reads, so nothing changes for the tap-to-open flow.
+    @State private var selecting = false
+    @State private var selected = Set<UUID>()
+    @State private var sharing: ShareBatch? = nil
+    /// The "Delete N conversations?" dialog is up. Deleting is the one action here with no undo, so it always asks.
+    @State private var confirmingDelete = false
+    /// Search: filters the list; while a query is typed the groups give way to one "Results" section.
+    @State private var query = ""
+    struct ShareBatch: Identifiable { let id = UUID(); var conversations: [SavedConversation] }
+
+    private var searching: Bool { !query.trimmingCharacters(in: .whitespaces).isEmpty }
+    private var filtered: [SavedConversation] { engine.archive.conversations.filter { HistoryGroups.matches($0, query) } }
+    private var groups: [HistoryGroups.Group] {
+        searching ? [HistoryGroups.Group(label: filtered.isEmpty ? "No matches" : "Results · \(filtered.count)", conversations: filtered)]
+                  : HistoryGroups.group(engine.archive.conversations)
+    }
+
+    private var allSelected: Bool { !engine.archive.conversations.isEmpty && selected.count == engine.archive.conversations.count }
+    private var deleteLabel: String { selected.isEmpty ? "Delete" : "Delete \(selected.count)" }
+    @ViewBuilder private func deleteButton(fill: Bool) -> some View {
+        Button(role: .destructive) {
+            LooplDesign.haptic()
+            confirmingDelete = true
+        } label: {
+            Label(deleteLabel, systemImage: "trash").font(.body.weight(.semibold))
+                .frame(maxWidth: fill ? .infinity : nil)
+        }
+        .buttonStyle(.bordered).tint(.red)
+        .disabled(selected.isEmpty)
+        // ⌫ on a hardware keyboard while selecting (iPad / Mac) asks the same question.
+        .keyboardShortcut(.delete, modifiers: [])
+        .accessibilityIdentifier("history.delete")
+        .accessibilityHint("deletes the selected conversations from this \(deviceName), after asking")
+    }
+    @ViewBuilder private func shareButton(_ title: String, fill: Bool) -> some View {
+        Button {
+            LooplDesign.haptic(1)
+            sharing = ShareBatch(conversations: engine.archive.conversations.filter { selected.contains($0.id) })
+        } label: {
+            Label(title, systemImage: "square.and.arrow.up").font(.body.weight(.semibold))
+                .frame(maxWidth: fill ? .infinity : nil)
+        }
+        .buttonStyle(.borderedProminent).tint(LooplDesign.accent)
+        .disabled(selected.isEmpty)
+        .accessibilityIdentifier("history.share")
+        .accessibilityLabel("Share to Hugging Face")
+        .accessibilityHint("exports the selected conversations to a private dataset in your Hugging Face account")
+    }
+    /// "iPhone" / "iPad" — the dialog names the device the files leave.
+    private var deviceName: String { UIDevice.current.localizedModel }
+
+    var body: some View {
+        List(selection: $selected) {
+            Section {
+                Button {
+                    engine.newConversation(); selection = .chat; dismiss?()
+                } label: { Label("New conversation", systemImage: "square.and.pencil") }
+                .accessibilityHint("starts an empty conversation")
+            }
+            if !engine.archive.conversations.isEmpty {
+                ForEach(groups) { group in
+                  Section(group.label) {
+                    ForEach(group.conversations) { c in
+                        Button {
+                            if selecting { toggle(c.id); return }
+                            LooplDesign.haptic(); engine.open(c); selection = .chat; dismiss?()
+                        } label: {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(c.title).lineLimit(2).foregroundStyle(.primary)
+                                HStack(spacing: 6) {
+                                    Text(c.updated, format: .relative(presentation: .named))
+                                    if let m = c.modelName { Text("·"); Text(ModelSpec.plainName(m)) }   // "(4-bit)" stays in the file, not on the row
+                                    if c.editedAt != nil { Text("·"); Label("edited", systemImage: "pencil").labelStyle(.titleAndIcon).accessibilityLabel("edited") }
+                                }.font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                            }
+                        }
+                        .tag(c.id)
+                        .listRowBackground(engine.currentId == c.id && !selecting ? LooplDesign.accent.opacity(0.1) : nil)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            Button(role: .destructive) { withAnimation(reduceMotion ? nil : LooplDesign.spring) { engine.delete(c) } } label: { Label("Delete", systemImage: "trash") }
+                        }
+                        .contextMenu {
+                            Button("Copy transcript", systemImage: "doc.on.doc") { copyTranscript(c) }
+                            ConversationShareItems(conversation: c)
+                            Button("Share to Hugging Face", systemImage: "square.and.arrow.up") { LooplDesign.haptic(); sharing = ShareBatch(conversations: [c]) }
+                            Button("Select", systemImage: "checkmark.circle") { beginSelecting(c.id) }
+                            Button("Delete", systemImage: "trash", role: .destructive) { engine.delete(c) }
+                        }
+                        .accessibilityLabel("\(c.title), \(c.updated.formatted(.relative(presentation: .named)))")
+                        .accessibilityHint("opens the conversation; swipe up or down for delete")
+                    }
+                  }
+                }
+            }
+            if dismiss == nil {
+                Section {
+                    Button { selection = .models } label: { Label("Models", systemImage: LooplDesign.iconModels) }
+                    Button { selection = .settings } label: { Label("Settings", systemImage: LooplDesign.iconSettings) }
+                }
+            }
+        }
+        // Shown as a sheet (from Chat) or as the iPad sidebar — no tab bar behind it
+        // in either case, so only the home-indicator air applies.
+        .looplBottomBar(false)
+        .looplScrollClearance()
+        .searchableIf(engine.archive.conversations.count >= HistoryGroups.searchThreshold, text: $query, prompt: "Search conversations")
+        .navigationTitle(selecting ? "\(selected.count) selected" : "loopl")
+        .environment(\.editMode, .constant(selecting ? .active : .inactive))
+        .toolbar {
+            if !engine.archive.conversations.isEmpty {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button(selecting ? "Cancel" : "Select") {
+                        LooplDesign.haptic()
+                        withAnimation(LooplDesign.Motion.reduced(LooplDesign.Motion.snappy, reduceMotion)) { selecting.toggle(); if !selecting { selected.removeAll() } }
+                    }
+                    .accessibilityIdentifier("history.select")
+                    .accessibilityHint(selecting ? "leaves selection mode" : "select conversations to delete or share to Hugging Face")
+                }
+                if selecting {
+                    // Leading, next to Cancel: the sheet's own Done keeps the trailing slot on iPhone (ChatView), so
+                    // the title "N selected" stays centred and nothing crowds the right edge.
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button(allSelected ? "Deselect all" : "Select all") {
+                            LooplDesign.haptic()
+                            if allSelected { selected.removeAll() } else { selected = Set(engine.archive.conversations.map(\.id)) }
+                        }
+                        .accessibilityIdentifier("history.selectAll")
+                    }
+                }
+            }
+        }
+        .safeAreaInset(edge: .bottom) {
+            if selecting {
+                // Two actions, destructive on the left, the constructive one on the right — the one place both live.
+                // At accessibility sizes they stack (an SE at AX-XL cut both to "Del…" / "Sha…" side by side) and the
+                // constructive one goes first, nearest the thumb's resting line.
+                let stacked = typeSize.isAccessibilitySize
+                Group {
+                    if stacked {
+                        VStack(spacing: 10) { deleteButton(fill: true); shareButton("Share to Hugging Face", fill: true) }.lineLimit(2)
+                    } else {
+                        // On a 375 pt screen "Delete 4" + "Share to Hugging Face" do not both fit at the default size
+                        // ("Share to Hugging F…" — an audit #18): the short label steps in only when needed.
+                        // (ViewThatFits must wrap the button alone: a Spacer inside the candidate makes its ideal width
+                        // infinite, so the full label would never "fit" — even on a 16 Pro.)
+                        HStack(spacing: 12) {
+                            deleteButton(fill: false)
+                            Spacer(minLength: 0)
+                            ViewThatFits(in: .horizontal) {
+                                shareButton("Share to Hugging Face", fill: false)
+                                shareButton("Share", fill: false)
+                            }
+                        }
+                        .lineLimit(1)
+                    }
+                }
+                .padding(.horizontal, LooplDesign.gutter).padding(.vertical, 10)
+                .background(.bar)
+                .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .confirmationDialog(
+            selected.count == 1 ? "Delete this conversation?" : "Delete \(selected.count) conversations?",
+            isPresented: $confirmingDelete, titleVisibility: .visible
+        ) {
+            Button(selected.count == 1 ? "Delete conversation" : "Delete \(selected.count) conversations", role: .destructive) { deleteSelected() }
+                .accessibilityIdentifier("history.delete.confirm")
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes \(selected.count == 1 ? "its" : "their") messages, pictures and recordings from this \(deviceName).")
+        }
+        .onAppear {
+            #if DEBUG
+            // `--design-share select|review` (screenshots): every thread ticked; `review` also opens the sheet.
+            if let mode = DesignFixture.share, !selecting, !engine.archive.conversations.isEmpty {
+                selecting = true; selected = Set(engine.archive.conversations.map(\.id))
+                if mode == "review" { sharing = ShareBatch(conversations: engine.archive.conversations) }
+            }
+            // `--design-history-delete select|confirm`: every thread ticked with the Delete bar up; `confirm` also raises the dialog.
+            if let mode = DesignFixture.historyDelete, !selecting, !engine.archive.conversations.isEmpty {
+                selecting = true; selected = Set(engine.archive.conversations.map(\.id))
+                if mode == "confirm" { Task { @MainActor in try? await Task.sleep(for: .milliseconds(600)); confirmingDelete = true } }
+            }
+            #endif
+        }
+        .sheet(item: $sharing) { batch in
+            HubShareView(share: HubShare(conversations: batch.conversations)) {
+                sharing = nil
+                withAnimation(LooplDesign.Motion.reduced(LooplDesign.Motion.snappy, reduceMotion)) { selecting = false; selected.removeAll() }
+            }
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+        }
+        .overlay {
+            if engine.archive.isLoading, engine.archive.conversations.isEmpty {
+                ProgressView().controlSize(.large).accessibilityLabel("Loading your conversations")
+            } else if engine.archive.conversations.isEmpty {
+                ContentUnavailableView { LooplMark().frame(width: 56, height: 56) } description: { Text("Your conversations appear here.") }   // a thread is saved as soon as it starts
+                    .allowsHitTesting(false)
+            }
+        }
+    }
+
+    private func toggle(_ id: UUID) {
+        LooplDesign.haptic()
+        if selected.contains(id) { selected.remove(id) } else { selected.insert(id) }
+    }
+
+    /// The dialog's destructive button: threads + attachments go, rows spring out together, selection mode ends.
+    /// If the open thread was among them the Engine has already reset the chat; the list's empty state appears by itself.
+    private func deleteSelected() {
+        let ids = selected
+        LooplDesign.haptic(2)
+        withAnimation(LooplDesign.Motion.reduced(LooplDesign.spring, reduceMotion)) {
+            engine.delete(ids: ids)
+            selected.removeAll()
+            selecting = false
+        }
+    }
+
+    private func beginSelecting(_ id: UUID) {
+        LooplDesign.haptic()
+        withAnimation(LooplDesign.Motion.reduced(LooplDesign.Motion.snappy, reduceMotion)) { selecting = true; selected = [id] }
+    }
+
+    private func copyTranscript(_ c: SavedConversation) {
+        let text = c.items.compactMap { item -> String? in
+            switch item {
+            case .user(let s, let imgs, let vids):
+                (imgs?.isEmpty == false ? "You: [\(imgs!.count) image\(imgs!.count == 1 ? "" : "s")] " : "You: ") + (vids?.isEmpty == false ? "[\(vids!.count) video\(vids!.count == 1 ? "" : "s")] " : "") + s
+            case .assistant(let s): "loopl: \(s)"
+            case .tool(let n, _, let r, _, _, _, _): "[\(n)] \(r ?? "…")"
+            case .note: nil
+            }
+        }.joined(separator: "\n\n")
+        copy(text)
+    }
+}
+
+@MainActor func copy(_ s: String) {
+    UIPasteboard.general.string = s
+    LooplDesign.haptic()
+}
+
+private extension View {
+    /// `.searchable` only when there is enough to search (a one-thread history should not open with a search field).
+    @ViewBuilder func searchableIf(_ on: Bool, text: Binding<String>, prompt: String) -> some View {
+        if on { self.searchable(text: text, placement: .navigationBarDrawer(displayMode: .automatic), prompt: prompt) } else { self }
+    }
+}
