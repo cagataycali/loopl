@@ -66,9 +66,10 @@ struct ModelsView: View {
         return true
     }
     /// Header of section 1: the device this is — a model on a drive carries its own "On SanDisk" line.
-    private var deviceName: String { UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone" }
+    /// One question, one answer: `LooplDesign.deviceName`. This file used to carry its own copy, which
+    /// resolved five of its seven uses and said "iPhone" on a Mac (the shared one says "Mac").
+    private var deviceName: String { LooplDesign.deviceName }
     /// For the section-order test and the animation key: the headers, top to bottom, as a first-time user reads them.
-    static let sectionOrder = ["On this iPhone", "Browse Hugging Face", "Your own model", "loopl models", "Mine", "Storage"]
 
     var body: some View {
         NavigationStack {
@@ -317,7 +318,7 @@ struct ModelsView: View {
                         .font(.caption.weight(.semibold)).disabled(settings.offline || busy || engine.isGenerating)
                         .looplHitTarget()
                         .accessibilityIdentifier("models-update-get-\(spec.id)")
-                        .accessibilityHint("downloads \(spec.sizeLabel) over the copy on this iPhone")
+                        .accessibilityHint("downloads \(spec.sizeLabel) over the copy on this \(deviceName)")
                 }
             }
             if state.isDownloaded, store.storage.location(of: spec.id).isExternal {
@@ -397,7 +398,7 @@ struct ModelsView: View {
                 let targets = store.storage.volumes.filter { $0.connected && $0.id != here }
                 if here != nil || !targets.isEmpty {
                     Divider()
-                    if here != nil { Button("Move to this iPhone", systemImage: "iphone") { store.move(spec, to: nil) } }
+                    if here != nil { Button("Move to this \(deviceName)", systemImage: "iphone") { store.move(spec, to: nil) } }
                     ForEach(targets) { v in Button("Move to \(v.name)", systemImage: "externaldrive") { store.move(spec, to: v.id) } }
                 }
             }

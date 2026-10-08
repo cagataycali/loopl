@@ -52,7 +52,7 @@ struct HubBrowseView: View {
                 // "conversions", "Metal", "repo" and "the quant" are four words that explain nothing to the person
                 // deciding, and the GGUF sentence sent them to a screen without saying what they would choose there.
                 Text(kind == .mlx
-                     ? "Models converted by the mlx-community team — the fastest option on this iPhone."
+                     ? "Models converted by the mlx-community team — the fastest option on this \(LooplDesign.deviceName)."
                      : "Any GGUF model, run by llama.cpp. Open one to choose a size: smaller is faster, larger answers better.")
             }
 

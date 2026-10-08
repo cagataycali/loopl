@@ -193,7 +193,7 @@ struct ChatView: View {
 
     private var emptyHint: String {
         switch engine.readiness {
-        case .ready(let s): "**\(s.displayName)** is ready. Everything runs on this device."
+        case .ready(let s): "**\(s.displayName)** is ready. Everything runs on this \(LooplDesign.deviceName)."
         case .downloading, .loading, .repairing: "Getting your model ready — the first launch downloads it once."
         case .failed: "No model is running yet."
         case .idle: "Runs on this \(LooplDesign.deviceName). Nothing leaves it."

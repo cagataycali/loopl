@@ -122,6 +122,30 @@ final class PlainWordsTests: XCTestCase {
         XCTAssertTrue(offenders.isEmpty, "retired copy is back: \(offenders.joined(separator: " · "))")
     }
 
+    /// **A view may not hardcode which device it is running on.** `LooplDesign.deviceName` resolves it
+    /// ("iPhone" / "iPad" / "Mac"), and `ModelsView` was already asking it in FIVE places while hardcoding
+    /// "iPhone" in two others — one of them a visible `Button("Move to this iPhone")` that an iPad owner
+    /// taps, plus a VoiceOver hint. Same question, two answers, one file.
+    ///
+    /// Scoped to the phrases that are always a claim about the hardware, so the things that are correct all
+    /// pass: `systemImage: "iphone"` (an SF Symbol name), accessibility identifiers, and the generic
+    /// "this device" — which is right everywhere and is what a tool row says now (#212).
+    func testNoViewHardcodesTheDeviceItRunsOn() throws {
+        let root = try repoRoot()
+        var offenders: [String] = []
+        for (name, text) in try source(in: root, "App/Sources/Views") {
+            for (i, line) in text.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                if trimmed.hasPrefix("//") { continue }
+                for phrase in ["this iPhone", "your iPhone", "this iPad", "your iPad"] where line.contains(phrase) {
+                    offenders.append("\(name):\(i + 1) “\(phrase)”")
+                }
+            }
+        }
+        XCTAssertTrue(offenders.isEmpty,
+                      "a view cannot know which device this is — use LooplDesign.deviceName: \(offenders.joined(separator: " · "))")
+    }
+
     private func repoRoot() throws -> URL {
         URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()   // Tests/LooplTests

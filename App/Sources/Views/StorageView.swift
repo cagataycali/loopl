@@ -177,7 +177,7 @@ struct StorageView: View {
                 Spacer()
                 if state.isDownloaded {
                     Menu {
-                        if here != nil { Button("Move to this iPhone", systemImage: "iphone") { store.move(spec, to: nil) } }
+                        if here != nil { Button("Move to this \(LooplDesign.deviceName)", systemImage: "iphone") { store.move(spec, to: nil) } }
                         ForEach(connectedVolumes.filter { $0.id != here }) { v in
                             Button("Move to \(v.name)", systemImage: "externaldrive") { store.move(spec, to: v.id) }
                         }
