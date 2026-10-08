@@ -40,7 +40,7 @@ final class HuggingFaceUITests: XCTestCase {
             // concluded it had hit the end of Settings after two swipes. The section was never missing — the walk
             // gave up. It is the same trap the squeeze guard was built around, which is why ScreenAuditUITests
             // fingerprints the whole set; this was the last test still asking the cheap question.
-            let seen = list.staticTexts.allElementsBoundByIndex.map(\.label).joined(separator: "|")
+            let seen = list.staticTexts.allElementsBoundByIndex.map { $0.label }.joined(separator: "|")
             if seen == lastSeen { break }       // nothing new came into view: we are at the end
             lastSeen = seen
         }
