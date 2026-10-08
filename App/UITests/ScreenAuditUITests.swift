@@ -14,8 +14,12 @@ import XCTest
 /// **same launch recipe on the same screens** and were kept apart only because their pull requests could not be
 /// stacked. Merging them is not tidiness:
 ///
-/// - **It launches the app 9 times instead of 15.** Six of the nine screens were in both suites, and a launch at
-///   Accessibility XL is the expensive part of each test.
+/// - **It costs runner time rather than saving it, and that was measured only after the claim was written.**
+///   This file replaces 15 tests taking 198.0 s with 9 taking 484.7 s on an iPhone 16 Pro — **2.45x slower**,
+///   about +9.6 min of macOS runner per push across `ui.yml`'s two legs. The first version of this comment
+///   said the 9-instead-of-15 launches were "the expensive part"; nobody had timed it, and it is false — the
+///   WALK is the cost (settings/tools alone is 142.0 s, models 98.1 s). The minutes buy the coverage below,
+///   and they were approved deliberately rather than by accident.
 /// - **It gives the overflow question the walk it never had.** `OverflowAuditUITests` measured ONE viewport, so
 ///   on a long screen it only ever audited the top of it, while the squeeze suite already knew the bug lives
 ///   below the fold (at Accessibility XL a Settings row is ~190 pt, so the first "Asks before …" note is the
