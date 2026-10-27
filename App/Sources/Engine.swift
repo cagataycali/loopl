@@ -420,11 +420,28 @@ public final class Engine {
     public func adoptForTesting(_ model: any Model, spec: ModelSpec) {
         self.model = model; agent = nil; readiness = .ready(spec); lastError = nil
     }
+    /// Tests only: what `load` instantiates for a spec (default: the real runtime for `spec.runtime`). Lets a test
+    /// drive the switch order with fakes that record when they were loaded and unloaded.
+    public var modelFactoryForTesting: ((ModelSpec) -> any Model)?
     #endif
+
+    private func makeModel(_ spec: ModelSpec) -> any Model {
+        #if DEBUG
+        if let f = modelFactoryForTesting { return f(spec) }
+        #endif
+        switch spec.runtime {
+        case .mlx: return MLXModel()
+        case .appleFM: return AppleFoundationModel()
+        case .gguf: return GGUFModel()
+        }
+    }
 
     /// Switch to `spec`: download if needed (progress inline), then load. Remembers the choice.
     public func select(_ spec: ModelSpec) async {
         lastError = nil
+        // Taken BEFORE a download: while the files come in, `readiness` is `.downloading`, so `loadedModel` reads nil
+        // even though the previous model is still running. `load` needs the spec to bring it back if the new one fails.
+        let previous = loadedModel
         if let problem = store.storage.anyDriveProblem(for: spec) {
             readiness = loadedModel.map { .ready($0) } ?? .failed(spec, problem)
             lastError = problem
@@ -463,30 +480,49 @@ public final class Engine {
                 break
             }
         }
-        await load(spec)
+        await load(spec, repaired: false, fallback: previous)
     }
 
     public func load(_ spec: ModelSpec) async { await load(spec, repaired: false) }
 
     /// Loads `spec`; when the load fails ON THE TOKENIZER FILES (unknown tokenizer_class, missing chat template) and the
     /// model came from the Hub, refresh its small files once (`ModelStore.repairFiles`, weights untouched) and retry.
-    private func load(_ spec: ModelSpec, repaired: Bool) async {
-        lastError = nil
-        let previous = loadedModel
-        readiness = .loading(spec, progress: 0)
-        let m: any Model = switch spec.runtime {
-        case .mlx: MLXModel()
-        case .appleFM: AppleFoundationModel()
-        case .gguf: GGUFModel()
+    ///
+    /// ORDER: the model that is loaded is UNLOADED FIRST, then the new one is read from disk. Before, the new weights
+    /// were loaded with the old ones still resident so a failed load could keep the old model — but that made the peak
+    /// of every switch `old + new`, and iOS kills the process at the jetsam ceiling (~5 GB on an 8 GB iPhone) even
+    /// when either model alone fits. Disk is the library; RAM holds one model. If the new load fails, the previous
+    /// model is reloaded from disk (`fallback`) — one extra load on the failure path instead of a kill on the common one.
+    private func load(_ spec: ModelSpec, repaired: Bool, fallback: ModelSpec? = nil) async {
+        // Same guard as the other mutators (`tapControl`, `newConversation`, …): a switch mid-answer would now unload
+        // the model the agent is streaming from. Before, the old model stayed resident until the new one had loaded,
+        // so a switch during a turn "worked" by accident; the picker row refuses it, but the context menu, Retry /
+        // Resume / Try again and a download that finishes while the person is chatting all reach here unguarded.
+        guard !isGenerating else {
+            if let fallback { readiness = .ready(fallback) } else if case .ready = readiness {} else { readiness = .idle }
+            lastError = "wait for the answer to finish, then pick \(spec.displayName) again"; haptics.emit(.error); return
         }
+        lastError = nil
+        let previous = fallback ?? loadedModel
+        readiness = .loading(spec, progress: 0)
+        let m = makeModel(spec)
         let dir = spec.isDownloadable ? store.localDirectory(spec) : nil
         if spec.isDownloadable && dir == nil {
-            if let problem = store.storage.anyDriveProblem(for: spec) { readiness = .failed(spec, problem); return }
-            readiness = .failed(spec, "\(spec.displayName) is not downloaded yet"); return
+            // Nothing has been unloaded yet: the previous model is still running and stays ready.
+            let msg: String
+            if let problem = store.storage.anyDriveProblem(for: spec) { msg = problem }
+            else { msg = "\(spec.displayName) is not downloaded yet" }
+            if let previous { readiness = .ready(previous); lastError = msg } else { readiness = .failed(spec, msg) }
+            return
+        }
+        if let old = model {
+            // Free before we fill. `Memory.fits` and the loader below see the budget with the old weights gone.
+            await old.unload()
+            model = nil; agent = nil
+            await Task.yield()   // Metal buffers are released off the calling thread; give them a beat before the next load
         }
         do {
             try await m.load(spec, from: dir) { p in Task { @MainActor in if case .loading = self.readiness { self.readiness = .loading(spec, progress: p) } } }
-            if let old = model { await old.unload() }
             model = m
             agent = nil
             readiness = .ready(spec)
@@ -502,19 +538,19 @@ public final class Engine {
                 transcript.note("Repairing \(spec.displayName)'s model files…")
                 do {
                     let changed = try await store.repairFiles(spec)
-                    if !changed.isEmpty { await load(spec, repaired: true); return }
+                    if !changed.isEmpty { await load(spec, repaired: true, fallback: previous); return }
                     lastError = nil
                     // said "Its files match Hugging Face, so the repo itself needs fixing." — which asks
                     // the reader to go and fix a repository they do not own. This branch is the dead end: loopl has
                     // already refetched the small files and they came back identical, so nothing on this device can
                     // change the outcome. Say that it is not their fault, and give them the move that is theirs.
-                    readiness = .failed(spec, TokenizerFiles.cannotBeFixedMessage(for: spec.displayName)
+                    await restore(previous, after: spec, message: TokenizerFiles.cannotBeFixedMessage(for: spec.displayName)
                                         + " (\(error.localizedDescription))")
                 } catch let repairError {
                     // The fetch itself failed (network, Hub, disk) — that IS worth retrying, and "Try again" is a
                     // real button. The old copy said "tap Repair ... Repair failed: ...", naming a control that
                     // does not exist and contradicting itself in the same breath.
-                    readiness = .failed(spec, TokenizerFiles.fetchFailedMessage(for: spec.displayName)
+                    await restore(previous, after: spec, message: TokenizerFiles.fetchFailedMessage(for: spec.displayName)
                                         + " (\(repairError.localizedDescription))")
                 }
                 haptics.emit(.error)
@@ -526,20 +562,38 @@ public final class Engine {
                 // can fix this, just not now) or `repaired` is already true (the files were refreshed and the model
                 // still will not load, so nothing here will fix it). Say which.
                 let offline = settings.offline || NetworkPolicy.isOffline
-                readiness = .failed(spec, (offline ? TokenizerFiles.needsInternetMessage(for: spec.displayName)
-                                                   : TokenizerFiles.cannotBeFixedMessage(for: spec.displayName))
+                await restore(previous, after: spec, message: (offline ? TokenizerFiles.needsInternetMessage(for: spec.displayName)
+                                                                       : TokenizerFiles.cannotBeFixedMessage(for: spec.displayName))
                                     + " (\(error.localizedDescription))")
-                lastError = nil; haptics.emit(.error); return
+                haptics.emit(.error); return
             }
             // A drive pulled mid-load reads as a missing file: say which drive, not "No such file".
             let reason = store.storage.location(of: spec.id).isExternal && store.storage.directory(for: spec) == nil
                 ? "\(store.locationName(spec)) was disconnected while loading \(spec.displayName)."
                 : error.localizedDescription
-            // Said once: with no model to fall back to, the readiness banner carries the message (and Try again);
-            // when the previous model stays loaded, the banner shows nothing and the inline line says what failed.
-            if let previous { readiness = .ready(previous); lastError = "\(spec.displayName) failed to load: \(reason)" }
-            else { readiness = .failed(spec, reason); lastError = nil }
+            await restore(previous, after: spec, message: "\(spec.displayName) failed to load: \(reason)", bare: reason)
             haptics.emit(.error)
+        }
+    }
+
+    /// The new model did not load. Bring the previous one back from disk so the user is where they were — the banner
+    /// shows nothing and the inline line (`lastError`) says what failed. With no previous model, or when the reload
+    /// itself fails, the readiness banner carries the message (and Try again).
+    private func restore(_ previous: ModelSpec?, after failed: ModelSpec, message: String, bare: String? = nil) async {
+        guard let previous else { readiness = .failed(failed, bare ?? message); lastError = nil; return }
+        let dir = previous.isDownloadable ? store.localDirectory(previous) : nil
+        if previous.isDownloadable && dir == nil { readiness = .failed(failed, bare ?? message); lastError = nil; return }
+        let m = makeModel(previous)
+        readiness = .loading(previous, progress: 0)
+        do {
+            try await m.load(previous, from: dir) { p in Task { @MainActor in if case .loading = self.readiness { self.readiness = .loading(previous, progress: p) } } }
+            model = m; agent = nil
+            readiness = .ready(previous)
+            lastError = message
+        } catch {
+            model = nil; agent = nil
+            readiness = .failed(failed, "\(bare ?? message) \(previous.displayName) could not be reloaded either: \(error.localizedDescription)")
+            lastError = nil
         }
     }
 
